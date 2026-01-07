@@ -12,40 +12,18 @@ import (
 	"github.com/njyeung/reels/player"
 )
 
-// Styles
-var (
-	usernameStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("212"))
-
-	captionStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("245"))
-
-	navStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241"))
-
-	statusStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("205"))
-
-	errorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("196"))
-)
-
 // Messages
 type (
-	backendReadyMsg    struct{}
-	backendErrorMsg    struct{ err error }
-	loginRequiredMsg   struct{}
-	loginSuccessMsg    struct{}
-	loginErrorMsg      struct{ err error }
-	reelLoadedMsg      struct{ info *backend.ReelInfo }
-	reelErrorMsg       struct{ err error }
-	backendEventMsg    backend.Event
-	videoDownloadedMsg struct {
-		path  string
-		index int
-	}
-	videoErrorMsg struct{ err error }
+	backendReadyMsg  struct{}
+	backendErrorMsg  struct{ err error }
+	loginRequiredMsg struct{}
+	loginSuccessMsg  struct{}
+	loginErrorMsg    struct{ err error }
+	reelLoadedMsg    struct{ info *backend.ReelInfo }
+	reelErrorMsg     struct{ err error }
+	backendEventMsg  backend.Event
+	videoErrorMsg    struct{ err error }
+	videoReadyMsg    struct{ index int }
 )
 
 // State represents the app state
@@ -79,10 +57,17 @@ type Model struct {
 	loginPassword textinput.Model
 	loginErr      error
 	loginPending  bool
+
+	// Test mode
+	testMode      bool
+	testVideoPath string
+
+	// UI state
+	liked bool
 }
 
 // NewModel creates a new TUI model
-func NewModel(userDataDir string, cacheDir string) Model {
+func NewModel(userDataDir, cacheDir string) Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
@@ -95,29 +80,72 @@ func NewModel(userDataDir string, cacheDir string) Model {
 	passwordInput.Placeholder = "password"
 	passwordInput.EchoMode = textinput.EchoPassword
 	passwordInput.EchoCharacter = '*'
-	
+
+	p := player.NewAVPlayer()
+	p.SetSize(270, 480) // Set initial size before any playback can start
+
 	return Model{
 		state:         stateLoading,
 		backend:       backend.NewChromeBackend(userDataDir, cacheDir),
-		player:        player.NewAVPlayer(),
+		player:        p,
 		spinner:       s,
 		status:        "Starting browser...",
 		videoWidthPx:  270,
-		videoHeightPx: 480, // 9:16 aspect ratio, smaller size
+		videoHeightPx: 480,
 		loginUsername: usernameInput,
 		loginPassword: passwordInput,
 	}
 }
 
+// NewTestModel creates a TUI model for testing with a cached video (no backend)
+func NewTestModel(videoPath string) Model {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+
+	p := player.NewAVPlayer()
+	p.SetSize(270, 480) // Set initial size before any playback can start
+
+	return Model{
+		state:         stateBrowsing,
+		player:        p,
+		spinner:       s,
+		videoWidthPx:  270,
+		videoHeightPx: 480,
+		testMode:      true,
+		testVideoPath: videoPath,
+		currentReel: &backend.ReelInfo{
+			Index: 1,
+			Total: 1,
+			Reel: backend.Reel{
+				Username: "test_user",
+				Caption:  "Test video from cache that is pretty long so it goes off the page",
+			},
+		},
+	}
+}
+
 // Init initializes the model
 func (m Model) Init() tea.Cmd {
+	if m.testMode {
+		return tea.Batch(
+			m.spinner.Tick,
+			m.startTestPlayback,
+		)
+	}
 	return tea.Batch(
 		m.spinner.Tick,
 		m.startBackend,
 	)
 }
 
-// startBackend initializes the backend
+func (m Model) startTestPlayback() tea.Msg {
+	go func() {
+		m.player.Play(m.testVideoPath)
+	}()
+	return videoReadyMsg{index: 1}
+}
+
 func (m Model) startBackend() tea.Msg {
 	if err := m.backend.Start(); err != nil {
 		return backendErrorMsg{err}
@@ -146,7 +174,6 @@ func (m Model) navigateToReels() tea.Msg {
 	return backendReadyMsg{}
 }
 
-// listenForEvents listens for backend events
 func (m Model) listenForEvents() tea.Msg {
 	event, ok := <-m.backend.Events()
 	if !ok {
@@ -155,24 +182,12 @@ func (m Model) listenForEvents() tea.Msg {
 	return backendEventMsg(event)
 }
 
-// loadCurrentReel loads the current reel
 func (m Model) loadCurrentReel() tea.Msg {
 	info, err := m.backend.GetCurrent()
 	if err != nil {
 		return reelErrorMsg{err}
 	}
 	return reelLoadedMsg{info}
-}
-
-// downloadReel downloads and returns the path
-func (m Model) downloadReel(index int) tea.Cmd {
-	return func() tea.Msg {
-		path, err := m.backend.Download(index)
-		if err != nil {
-			return videoErrorMsg{err}
-		}
-		return videoDownloadedMsg{path: path, index: index}
-	}
 }
 
 func (m Model) submitLogin() tea.Cmd {
@@ -186,6 +201,19 @@ func (m Model) submitLogin() tea.Cmd {
 	}
 }
 
+func (m Model) startPlayback(index int) tea.Cmd {
+	return func() tea.Msg {
+		path, err := m.backend.Download(index)
+		if err != nil {
+			return videoErrorMsg{err}
+		}
+		go func() {
+			m.player.Play(path)
+		}()
+		return videoReadyMsg{index}
+	}
+}
+
 // Update handles messages
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -194,93 +222,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c":
 			m.player.Stop()
 			m.player.Close()
-			m.backend.Stop()
+			if m.backend != nil {
+				m.backend.Stop()
+			}
 			return m, tea.Quit
 		}
 
 		if m.state == stateLogin {
-			if m.loginPending {
-				return m, nil
-			}
-			switch msg.String() {
-			case "tab", "shift+tab", "up", "down":
-				if m.loginUsername.Focused() {
-					m.loginUsername.Blur()
-					m.loginPassword.Focus()
-				} else {
-					m.loginPassword.Blur()
-					m.loginUsername.Focus()
-				}
-				return m, nil
-			case "enter":
-				if m.loginUsername.Focused() {
-					m.loginUsername.Blur()
-					m.loginPassword.Focus()
-					return m, nil
-				}
-				if m.loginPassword.Focused() {
-					m.loginPending = true
-					m.loginErr = nil
-					m.status = "Logging in..."
-					return m, m.submitLogin()
-				}
-			}
-
-			if m.loginUsername.Focused() {
-				var cmd tea.Cmd
-				m.loginUsername, cmd = m.loginUsername.Update(msg)
-				return m, cmd
-			}
-
-			var cmd tea.Cmd
-			m.loginPassword, cmd = m.loginPassword.Update(msg)
-			return m, cmd
+			return m.updateLogin(msg)
 		}
-		switch msg.String() {
-		case "j", "down":
-			if m.state == stateBrowsing && m.currentReel != nil {
-				nextIndex := m.currentReel.Index + 1
-				if nextIndex <= m.backend.GetTotal() {
-					m.player.Stop()
-					m.status = "Loading..."
-					// Update reel info immediately for responsive UI
-					if info, err := m.backend.GetReel(nextIndex); err == nil {
-						m.currentReel = info
-					}
-					go m.backend.SyncTo(nextIndex)
-					return m, m.downloadReel(nextIndex)
-				}
-			}
 
-		case "k", "up":
-			if m.state == stateBrowsing && m.currentReel != nil {
-				prevIndex := m.currentReel.Index - 1
-				if prevIndex >= 1 {
-					m.player.Stop()
-					m.status = "Loading..."
-					if info, err := m.backend.GetReel(prevIndex); err == nil {
-						m.currentReel = info
-					}
-					go m.backend.SyncTo(prevIndex)
-					return m, m.downloadReel(prevIndex)
-				}
-			}
-
-		case " ":
-			if m.state == stateBrowsing {
-				m.player.Pause()
-				if m.player.IsPaused() {
-					m.status = "Paused"
-				} else {
-					m.status = ""
-				}
-			}
-
-		case "l":
-			if m.state == stateBrowsing {
-				go m.backend.ToggleLike()
-				m.status = "Liked!"
-			}
+		if m.state == stateBrowsing {
+			return m.updateBrowsing(msg)
 		}
 
 	case tea.WindowSizeMsg:
@@ -337,30 +290,124 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case reelLoadedMsg:
 		m.currentReel = msg.info
-		m.status = "Downloading..."
-		return m, m.downloadReel(msg.info.Index)
+		m.status = ""
+		m.liked = false
+		return m, m.startPlayback(msg.info.Index)
 
 	case reelErrorMsg:
 		m.status = fmt.Sprintf("Error: %v", msg.err)
 		return m, nil
 
-	case videoDownloadedMsg:
-		// Update reel info if needed
-		if m.currentReel == nil || m.currentReel.Index != msg.index {
-			if info, err := m.backend.GetReel(msg.index); err == nil {
-				m.currentReel = info
-			}
-		}
+	case videoReadyMsg:
 		m.status = ""
-		// Start playback in background
-		go func() {
-			m.player.Play(msg.path)
-		}()
 		return m, nil
 
 	case videoErrorMsg:
 		m.status = fmt.Sprintf("Video error: %v", msg.err)
 		return m, nil
+	}
+
+	return m, nil
+}
+
+func (m Model) updateLogin(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.loginPending {
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "tab", "shift+tab", "up", "down":
+		if m.loginUsername.Focused() {
+			m.loginUsername.Blur()
+			m.loginPassword.Focus()
+		} else {
+			m.loginPassword.Blur()
+			m.loginUsername.Focus()
+		}
+		return m, nil
+
+	case "enter":
+		if m.loginUsername.Focused() {
+			m.loginUsername.Blur()
+			m.loginPassword.Focus()
+			return m, nil
+		}
+		if m.loginPassword.Focused() {
+			m.loginPending = true
+			m.loginErr = nil
+			m.status = "Logging in..."
+			return m, m.submitLogin()
+		}
+	}
+
+	if m.loginUsername.Focused() {
+		var cmd tea.Cmd
+		m.loginUsername, cmd = m.loginUsername.Update(msg)
+		return m, cmd
+	}
+
+	var cmd tea.Cmd
+	m.loginPassword, cmd = m.loginPassword.Update(msg)
+	return m, cmd
+}
+
+func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.testMode {
+		// Limited controls in test mode
+		switch msg.String() {
+		case " ":
+			m.player.Pause()
+			if m.player.IsPaused() {
+				m.status = "Paused"
+			} else {
+				m.status = ""
+			}
+		case "l":
+			m.liked = !m.liked
+		}
+		return m, nil
+	}
+
+	switch msg.String() {
+	case "j", "down":
+		if m.currentReel != nil {
+			nextIndex := m.currentReel.Index + 1
+			if nextIndex <= m.backend.GetTotal() {
+				m.player.Stop()
+				m.status = "Loading..."
+				if info, err := m.backend.GetReel(nextIndex); err == nil {
+					m.currentReel = info
+				}
+				go m.backend.SyncTo(nextIndex)
+				return m, m.startPlayback(nextIndex)
+			}
+		}
+
+	case "k", "up":
+		if m.currentReel != nil {
+			prevIndex := m.currentReel.Index - 1
+			if prevIndex >= 1 {
+				m.player.Stop()
+				m.status = "Loading..."
+				if info, err := m.backend.GetReel(prevIndex); err == nil {
+					m.currentReel = info
+				}
+				go m.backend.SyncTo(prevIndex)
+				return m, m.startPlayback(prevIndex)
+			}
+		}
+
+	case " ":
+		m.player.Pause()
+		if m.player.IsPaused() {
+			m.status = "Paused"
+		} else {
+			m.status = ""
+		}
+
+	case "l":
+		m.liked = !m.liked
+		go m.backend.ToggleLike()
 	}
 
 	return m, nil
@@ -376,174 +423,11 @@ func (m Model) View() string {
 	case stateError:
 		return m.viewError()
 	case stateBrowsing:
+		if m.testMode {
+			return m.viewBrowsingTest()
+		}
 		return m.viewBrowsing()
 	default:
 		return ""
 	}
-}
-
-func (m Model) viewLoading() string {
-	if m.width == 0 || m.height == 0 {
-		return fmt.Sprintf("\n\n   %s %s\n\n", m.spinner.View(), m.status)
-	}
-
-	return renderLoadingScreen(m.width, m.height)
-}
-
-func (m Model) viewError() string {
-	return fmt.Sprintf("\n\n   %s\n\n   Press q to quit.\n", errorStyle.Render(m.err.Error()))
-}
-
-func (m Model) viewLogin() string {
-	if m.width == 0 || m.height == 0 {
-		return "Login required..."
-	}
-
-	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205")).Render("Login required")
-	instructions := "Enter your Instagram credentials to continue."
-
-	usernameLine := "Username: " + m.loginUsername.View()
-	passwordLine := "Password: " + m.loginPassword.View()
-	help := navStyle.Render("tab: switch  enter: submit  q: quit")
-
-	var statusLine string
-	if m.loginPending {
-		statusLine = m.spinner.View() + " Logging in..."
-	} else if m.loginErr != nil {
-		statusLine = errorStyle.Render(m.loginErr.Error())
-	}
-
-	content := []string{
-		title,
-		"",
-		instructions,
-		"",
-		usernameLine,
-		passwordLine,
-		"",
-		statusLine,
-		"",
-		help,
-	}
-
-	block := strings.Join(content, "\n")
-	padding := lipgloss.NewStyle().Padding(1, 4)
-	return padding.Render(block)
-}
-
-func (m Model) viewBrowsing() string {
-	if m.width == 0 || m.height == 0 {
-		return "Loading..."
-	}
-
-	var b strings.Builder
-
-	// Calculate layout - UI goes at the bottom
-	uiHeight := 4
-	videoHeight := m.height - uiHeight - 2
-	if videoHeight < 5 {
-		videoHeight = 5
-	}
-
-	videoWidth := videoHeight * 9 / 16
-	if videoWidth > m.width-4 {
-		videoWidth = m.width - 4
-		videoHeight = videoWidth * 16 / 9
-	}
-
-	startCol := (m.width - videoWidth) / 2
-	if startCol < 0 {
-		startCol = 0
-	}
-
-	startRow := (m.height - videoHeight - uiHeight) / 2
-	if startRow < 0 {
-		startRow = 0
-	}
-
-	padding := strings.Repeat(" ", startCol-12)
-
-	// Fill space above video area (video is rendered by player via Kitty protocol)
-	for i := 0; i < startRow; i++ {
-		b.WriteString("\n")
-	}
-
-	// Leave space for video (player renders directly via Kitty graphics)
-	for i := 0; i < videoHeight; i++ {
-		b.WriteString("\n")
-	}
-
-	b.WriteString("\n")
-
-	// Username and position/spinner
-	if m.currentReel != nil {
-		dividerWidth := m.width - startCol - 2
-		if dividerWidth < 0 {
-			dividerWidth = 0
-		}
-		divider := navStyle.Render(strings.Repeat("-", dividerWidth))
-		b.WriteString(padding + divider + "\n")
-
-		username := usernameStyle.Render("@" + m.currentReel.Username)
-		var indicator string
-		if strings.Contains(m.status, "Loading") || strings.Contains(m.status, "Downloading") {
-			indicator = m.spinner.View()
-		}
-
-		b.WriteString(padding + username + "  " + indicator + "\n")
-
-		caption := strings.ReplaceAll(m.currentReel.Caption, "\n", " ")
-		maxCaptionLen := m.width - startCol - 2
-		if maxCaptionLen > 0 && len(caption) > maxCaptionLen {
-			caption = caption[:maxCaptionLen-3] + "..."
-		}
-		b.WriteString(padding + captionStyle.Render(caption) + "\n")
-	} else {
-		b.WriteString(padding + m.spinner.View() + " " + m.status + "\n\n")
-	}
-
-	nav := navStyle.Render("↑/k: prev  ↓/j: next  space: pause  l: like  q: quit")
-	b.WriteString(padding + nav + "\n")
-
-	return b.String()
-}
-
-func renderLoadingScreen(width, height int) string {
-	logo := []string{
-		" ____  _____  _____  _      ___",
-		"|  _ \\| ____|| ____|| |   / ___|",
-		"| |_) |  _|  |  _|  | |   \\ \\__ ",
-		"|  _ <| |___ | |___ | |__  ___ \\",
-		"|_| \\_\\_____||_____||____|/____/",
-	}
-
-	blockHeight := len(logo)
-	startRow := (height - blockHeight) / 2
-
-	var b strings.Builder
-	for y := 0; y < height; y++ {
-		var line string
-		switch {
-		case y >= startRow && y < startRow+len(logo):
-			text := logo[y-startRow]
-			pad := width - len(text)
-			if pad < 0 {
-				pad = 0
-				text = text[:width]
-			}
-			left := pad / 2
-			right := pad - left
-			leftPad := strings.Repeat(" ", left)
-			rightPad := strings.Repeat(" ", right)
-			textStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
-			line = leftPad + textStyle.Render(text) + rightPad
-		default:
-			line = strings.Repeat(" ", width)
-		}
-		b.WriteString(line)
-		if y < height-1 {
-			b.WriteString("\n")
-		}
-	}
-	return b.String()
 }

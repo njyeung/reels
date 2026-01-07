@@ -475,7 +475,6 @@ func (b *ChromeBackend) Download(index int) (string, error) {
 	var data []byte
 	err := chromedp.Run(b.ctx,
 		chromedp.ActionFunc(func(ctx context.Context) error {
-			// Use an async IIFE that we await
 			js := fmt.Sprintf(`
 				(async () => {
 					const r = await fetch("%s");

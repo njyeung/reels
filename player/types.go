@@ -31,7 +31,7 @@ type Player interface {
 	// SetOutput sets the writer for video frames (terminal output)
 	SetOutput(w io.Writer)
 
-	// SetSize sets the video display dimensions in terminal cells
+	// SetSize sets the video display dimensions in pixels
 	SetSize(width, height int)
 }
 
@@ -71,7 +71,7 @@ type AudioSamples struct {
 }
 
 const (
-	// SyncThreshold is the max drift before we skip/wait frames
+	// SyncThreshold is the max drift before we skip/wait frames in video
 	SyncThreshold = 0.1 // 100ms
 
 	// TargetFPS for video playback
@@ -79,7 +79,4 @@ const (
 
 	// AudioSampleRate for resampling
 	AudioSampleRate = 44100
-
-	// AudioChannels (stereo)
-	AudioChannels = 2
 )

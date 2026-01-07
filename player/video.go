@@ -139,7 +139,9 @@ func (v *VideoDecoder) DecodePacket(pkt *astiav.Packet) (*Frame, error) {
 
 	// Calculate PTS in seconds
 	pts := float64(v.frame.Pts()) * float64(v.timeBase.Num()) / float64(v.timeBase.Den())
-	duration := 1.0 / float64(TargetFPS) // Estimate if not available
+
+	// Calculate duration from packet duration
+	var duration = float64(pkt.Duration()) * float64(v.timeBase.Num()) / float64(v.timeBase.Den())
 
 	// Initialize sws context if needed
 	if v.swsCtx == nil {
@@ -149,13 +151,11 @@ func (v *VideoDecoder) DecodePacket(pkt *astiav.Packet) (*Frame, error) {
 		}
 	}
 
-	// Scale/convert to RGB
 	if err := v.swsCtx.ScaleFrame(v.frame, v.rgbFrame); err != nil {
 		v.frame.Unref()
 		return nil, fmt.Errorf("failed to scale frame: %w", err)
 	}
 
-	// Get RGB data
 	data := v.rgbFrame.Data()
 	rgbBytes, err := data.Bytes(1)
 	if err != nil {
@@ -163,7 +163,7 @@ func (v *VideoDecoder) DecodePacket(pkt *astiav.Packet) (*Frame, error) {
 		return nil, fmt.Errorf("failed to get RGB bytes: %w", err)
 	}
 
-	// Copy the data (since the frame buffer will be reused)
+	// Copy the data since the frame buffer will be reused
 	rgb := make([]byte, len(rgbBytes))
 	copy(rgb, rgbBytes)
 

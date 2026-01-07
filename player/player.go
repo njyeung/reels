@@ -18,8 +18,8 @@ type AVPlayer struct {
 	playing atomic.Bool
 	paused  atomic.Bool
 
-	playMu sync.Mutex
-	mu     sync.Mutex
+	playMu   sync.Mutex
+	configMu sync.Mutex
 
 	sessionMu sync.Mutex
 	session   *playSession
@@ -34,8 +34,9 @@ func NewAVPlayer() *AVPlayer {
 
 // SetOutput sets the writer for video frames
 func (p *AVPlayer) SetOutput(w io.Writer) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.configMu.Lock()
+	defer p.configMu.Unlock()
+
 	p.output = w
 	if p.renderer != nil {
 		p.renderer.SetOutput(w)
@@ -44,8 +45,9 @@ func (p *AVPlayer) SetOutput(w io.Writer) {
 
 // SetSize sets the video display dimensions in pixels
 func (p *AVPlayer) SetSize(width, height int) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.configMu.Lock()
+	defer p.configMu.Unlock()
+
 	p.width = width
 	p.height = height
 	p.withSession(func(s *playSession) {
@@ -64,7 +66,8 @@ func (p *AVPlayer) Play(url string) error {
 	p.paused.Store(false)
 
 	for p.playing.Load() {
-		if err := p.playOnce(url); err != nil {
+		err := p.playOnce(url)
+		if err != nil {
 			return err
 		}
 	}
@@ -125,8 +128,9 @@ func (p *AVPlayer) cleanup() {
 // Close releases all resources
 func (p *AVPlayer) Close() {
 	p.Stop()
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.configMu.Lock()
+	defer p.configMu.Unlock()
+
 	p.cleanup()
 }
 
@@ -137,11 +141,14 @@ type sessionConfig struct {
 }
 
 func (p *AVPlayer) sessionConfig() sessionConfig {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.configMu.Lock()
+	defer p.configMu.Unlock()
+
+	// first time, make a new renderer
 	if p.renderer == nil {
 		p.renderer = NewKittyRenderer(p.output)
 	}
+
 	return sessionConfig{
 		width:    p.width,
 		height:   p.height,
@@ -152,12 +159,14 @@ func (p *AVPlayer) sessionConfig() sessionConfig {
 func (p *AVPlayer) setSession(s *playSession) {
 	p.sessionMu.Lock()
 	defer p.sessionMu.Unlock()
+
 	p.session = s
 }
 
 func (p *AVPlayer) clearSession(s *playSession) {
 	p.sessionMu.Lock()
 	defer p.sessionMu.Unlock()
+
 	if p.session == s {
 		p.session = nil
 	}
@@ -167,6 +176,7 @@ func (p *AVPlayer) withSession(fn func(*playSession)) {
 	p.sessionMu.Lock()
 	s := p.session
 	p.sessionMu.Unlock()
+
 	if s != nil {
 		fn(s)
 	}

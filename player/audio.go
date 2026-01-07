@@ -10,22 +10,13 @@ import (
 	"github.com/gopxl/beep/v2/speaker"
 )
 
-// speakerOnce ensures speaker is only initialized once
-var speakerOnce sync.Once
-var speakerInitErr error
-
-// initSpeaker initializes the global speaker once
-// proceeding calls are no-op
-func initSpeaker() error {
-	speakerOnce.Do(func() {
-		format := beep.Format{
-			SampleRate:  beep.SampleRate(AudioSampleRate),
-			NumChannels: AudioChannels,
-			Precision:   2, // 16-bit
-		}
-		speakerInitErr = speaker.Init(format.SampleRate, format.SampleRate.N(50*1000000)) // 50ms buffer
-	})
-	return speakerInitErr
+func init() {
+	// Initialize speaker at startup to trigger audio permission prompts early
+	// (better UX than prompting after user has logged in and expects playback)
+	format := beep.Format{
+		SampleRate: beep.SampleRate(AudioSampleRate),
+	}
+	speaker.Init(format.SampleRate, format.SampleRate.N(50*1000000)) // 50ms buffer
 }
 
 // AudioPlayer decodes and plays audio, providing the master clock
@@ -46,7 +37,7 @@ type AudioPlayer struct {
 
 	// Sample buffer for decoded audio
 	sampleBuf []byte
-	bufMu     sync.Mutex
+	buffMu    sync.Mutex
 
 	closed bool
 	mu     sync.Mutex
@@ -61,11 +52,12 @@ type audioStreamer struct {
 }
 
 func (s *audioStreamer) Stream(samples [][2]float64) (n int, ok bool) {
-	s.player.bufMu.Lock()
-	defer s.player.bufMu.Unlock()
+	s.player.buffMu.Lock()
+	defer s.player.buffMu.Unlock()
 
+	// when paused, fill buff with silence
 	if s.player.paused.Load() {
-		// Fill with silence when paused (don't advance clock)
+
 		for i := range samples {
 			samples[i][0] = 0
 			samples[i][1] = 0
@@ -73,12 +65,21 @@ func (s *audioStreamer) Stream(samples [][2]float64) (n int, ok bool) {
 		return len(samples), true
 	}
 
-	bytesPerSample := 4 // 2 bytes per sample * 2 channels (s16le stereo)
+	// sampleBuf (raw bytes from FFmpeg):
+	// ┌────┬────┬────┬────┬────┬────┬────┬────┬─...
+	// │ L0 │ L0 │ R0 │ R0 │ L1 │ L1 │ R1 │ R1 │
+	// │ lo │ hi │ lo │ hi │ lo │ hi │ lo │ hi │
+	// └────┴────┴────┴────┴────┴────┴────┴────┴─...
+	// 	b0 	 b1   b2   b3
+	//
+	// (4 bytes = 1 stereo sample)
+	bytesPerSample := 4 // (s16le stereo)
 	samplesPlayed := 0
 
 	for i := range samples {
+
 		if len(s.player.sampleBuf) < bytesPerSample {
-			// No more data, fill rest with silence but keep streaming
+			// no more data, fill rest with silence but keep streaming
 			for j := i; j < len(samples); j++ {
 				samples[j][0] = 0
 				samples[j][1] = 0
@@ -86,18 +87,24 @@ func (s *audioStreamer) Stream(samples [][2]float64) (n int, ok bool) {
 			break
 		}
 
-		// Convert s16le stereo to float64
+		// Convert sampleBuf to float64 and normalize
+		// to [-1, 1] that beep expects
+		//
+		// left low byte | left high byte << 8
+		// 	  8 bits            8 bits
+		const MAX_INT_16 = int16(32767)
 		left := int16(s.player.sampleBuf[0]) | int16(s.player.sampleBuf[1])<<8
 		right := int16(s.player.sampleBuf[2]) | int16(s.player.sampleBuf[3])<<8
+		samples[i][0] = float64(left) / float64(MAX_INT_16)
+		samples[i][1] = float64(right) / float64(MAX_INT_16)
 
-		samples[i][0] = float64(left) / 32768.0
-		samples[i][1] = float64(right) / 32768.0
-
+		// consume
 		s.player.sampleBuf = s.player.sampleBuf[bytesPerSample:]
 		samplesPlayed++
 	}
 
-	// Only update clock based on actual samples played (not silence)
+	// update clock based on actual samples played
+	// time elapsed = samples played / audio sample rate
 	if samplesPlayed > 0 {
 		s.player.clock.Store(s.player.clock.Load().(float64) + float64(samplesPlayed)/float64(AudioSampleRate))
 	}
@@ -150,16 +157,8 @@ func NewAudioPlayer(codecParams *astiav.CodecParameters) (*AudioPlayer, error) {
 		return nil, fmt.Errorf("failed to allocate swr context")
 	}
 
-	// Initialize beep speaker
-	if err := initSpeaker(); err != nil {
-		a.Close()
-		return nil, fmt.Errorf("failed to init speaker: %w", err)
-	}
-
 	format := beep.Format{
-		SampleRate:  beep.SampleRate(AudioSampleRate),
-		NumChannels: AudioChannels,
-		Precision:   2, // 16-bit
+		SampleRate: beep.SampleRate(AudioSampleRate),
 	}
 
 	// Create streamer
@@ -228,12 +227,12 @@ func (a *AudioPlayer) DecodePacket(pkt *astiav.Packet, pts float64) error {
 		if data != nil {
 			// Calculate actual byte size: samples * channels * bytes_per_sample
 			numSamples := outFrame.NbSamples()
-			byteSize := numSamples * AudioChannels * 2 // 2 bytes per sample (S16)
+			byteSize := numSamples * 2 * 2 // 2 channels * 2 bytes per sample (S16)
 			plane, err := data.Bytes(0)
 			if err == nil && plane != nil && len(plane) >= byteSize {
-				a.bufMu.Lock()
+				a.buffMu.Lock()
 				a.sampleBuf = append(a.sampleBuf, plane[:byteSize]...)
-				a.bufMu.Unlock()
+				a.buffMu.Unlock()
 			}
 		}
 
@@ -251,8 +250,8 @@ func (a *AudioPlayer) Time() float64 {
 
 // BufferSize returns the current size of the audio buffer in bytes
 func (a *AudioPlayer) BufferSize() int {
-	a.bufMu.Lock()
-	defer a.bufMu.Unlock()
+	a.buffMu.Lock()
+	defer a.buffMu.Unlock()
 	return len(a.sampleBuf)
 }
 

@@ -14,6 +14,30 @@ Human perception:
 Therefore: Let audio run smoothly, video adapts to match.
 ```
 
+## Component Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              AVPlayer                                        │
+│                     (player.go - main coordinator)                          │
+│                                                                              │
+│  - Manages playback state (playing, paused)                                 │
+│  - Creates playSession for each play cycle                                  │
+│  - Supports looping playback                                                │
+│  - Thread-safe with atomic state and mutex protection                       │
+└──────────────────────────────────┬──────────────────────────────────────────┘
+                                   │
+                                   ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                             playSession                                      │
+│                    (session.go - single playback)                           │
+│                                                                              │
+│  - Coordinates demuxer, audio, video, and renderer                          │
+│  - Manages three-goroutine architecture                                     │
+│  - Handles pre-buffering and cleanup                                        │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
 ## Three-Goroutine Architecture
 
 The player uses three concurrent goroutines to prevent audio choppiness caused by video rendering blocking packet reading:
@@ -26,36 +50,38 @@ The player uses three concurrent goroutines to prevent audio choppiness caused b
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                         DEMUX GOROUTINE                                      │
+│                       (session.go:demuxLoop)                                │
 │                                                                              │
 │  Runs continuously, reads packets from FFmpeg demuxer                        │
 │  Routes packets to appropriate channel based on stream type                  │
-│  Never blocks on slow consumers (uses buffered channels)                     │
+│  Clones audio packets before sending (video packets sent directly)          │
 └───────────────────┬──────────────────────────────┬──────────────────────────┘
                     │                              │
           ┌─────────▼─────────┐          ┌────────▼────────┐
           │   videoPktCh      │          │   audioPktCh    │
           │   (chan, 30)      │          │   (chan, 64)    │
-          │   ~1 sec buffer   │          │   larger buffer │
+          │   ~1 sec buffer   │          │   audioPacket   │
           └─────────┬─────────┘          └────────┬────────┘
                     │                              │
                     ▼                              ▼
 ┌───────────────────────────────┐    ┌────────────────────────────────────────┐
 │     VIDEO RENDER LOOP         │    │        AUDIO DECODE GOROUTINE          │
-│     (main goroutine)          │    │                                        │
-│                               │    │  Receives packets from audioPktCh      │
+│     (session.go)              │    │        (session.go:audioDecodeLoop)    │
+│     runs in run() caller      │    │                                        │
+│                               │    │  Receives audioPacket from channel     │
 │  1. Receive packet from chan  │    │  Decodes to PCM samples                │
-│  2. Decode to frame           │    │  Resamples to 44100 Hz stereo s16      │
-│  3. Get audio clock time      │    │  Appends to shared sample buffer       │
-│  4. Compare frame PTS         │    │                                        │
-│  5. If ahead: sleep           │    └───────────────────┬────────────────────┘
-│  6. If behind: skip frame     │                        │
-│  7. Render to terminal        │                        ▼
-│                               │    ┌────────────────────────────────────────┐
-└───────────────────────────────┘    │        BEEP SPEAKER THREAD             │
-                                     │        (pulls from buffer)              │
+│  2. Handle pause state        │    │  Resamples to 44100 Hz stereo s16      │
+│  3. Decode to frame           │    │  Appends to shared sample buffer       │
+│  4. Get audio clock time      │    │                                        │
+│  5. Compare frame PTS         │    └───────────────────┬────────────────────┘
+│  6. If ahead: sleep           │                        │
+│  7. If behind: skip frame     │                        ▼
+│  8. Render to terminal        │    ┌────────────────────────────────────────┐
+│                               │    │        BEEP SPEAKER THREAD             │
+└───────────────────────────────┘    │        (pulls from buffer)              │
                                      │                                        │
-                                     │  1. Calls Stream() on our streamer     │
-                                     │  2. We provide samples from buffer     │
+                                     │  1. Calls Stream() on audioStreamer    │
+                                     │  2. Provides samples from sampleBuf    │
                                      │  3. If buffer empty: provide silence   │
                                      │  4. Update audio clock (samples played)│
                                      │                                        │
@@ -88,66 +114,88 @@ The player uses three concurrent goroutines to prevent audio choppiness caused b
 │              │      │ ReceiveFrame │      │              │
 └──────────────┘      └──────────────┘      └──────────────┘
 
-Audio: Demuxer → AudioDecoder → Resampler → sampleBuf → beep.Speaker
-Video: Demuxer → VideoDecoder → Scaler → RGB bytes → KittyRenderer
+Audio: Demuxer → audioPktCh → AudioDecoder → Resampler → sampleBuf → beep.Speaker
+Video: Demuxer → videoPktCh → VideoDecoder → Scaler → RGB bytes → KittyRenderer
 ```
 
 ## Key Components
 
-### 1. Demuxer (`demuxer.go`)
+### 1. AVPlayer (`player.go`)
+- Top-level player interface implementation
+- Manages `playSession` lifecycle
+- Supports looping playback via `Play()` loop
+- Thread-safe state with `atomic.Bool` for playing/paused
+- Session management with mutex protection
+
+### 2. PlaySession (`session.go`)
+- Encapsulates a single playback instance
+- Creates and coordinates all components
+- Manages goroutine lifecycle with `sync.WaitGroup`
+- Handles aspect-ratio fitting via `fitSize()`
+- Centers video in terminal via renderer
+
+### 3. Demuxer (`demuxer.go`)
 - Opens video URL/file via `FormatContext.OpenInput()`
 - Finds audio and video stream indices
 - Reads packets via `FormatContext.ReadFrame()`
 - Converts PTS to seconds using stream time bases
+- Thread-safe with mutex protection
 
-### 2. Audio Pipeline (`audio.go`)
+### 4. Audio Pipeline (`audio.go`)
 
 **AudioPlayer struct:**
 - `codecCtx`: FFmpeg decoder context
-- `resampler`: Converts any format to 44100 Hz stereo s16
-- `sampleBuf`: Shared buffer (protected by mutex)
+- `swrCtx`: Resampler (any format → 44100 Hz stereo s16)
+- `sampleBuf`: Shared byte buffer (protected by mutex)
 - `clock`: atomic.Value storing playback position in seconds
-- `streamer`: Implements beep.Streamer interface
+- `streamer`: audioStreamer implementing beep.Streamer
+
+**audioStreamer:**
+- Implements `beep.Streamer` interface
+- Pulls samples from `sampleBuf`
+- Returns silence (not EOF) when buffer empty
+- Only advances clock when actual samples played
 
 **Key behaviors:**
-- `DecodePacket()`: Decodes and resamples, appends to buffer
-- `Stream()`: Called by beep, provides samples from buffer
-- Returns silence (not EOF) when buffer empty to keep stream alive
-- Clock only advances when actual samples are played, not silence
+- Speaker initialized once globally via `sync.Once`
+- Fresh output frame per conversion (avoids "Output changed" errors)
+- Pause support that fills silence without advancing clock
 
-### 3. Video Pipeline (`video.go`)
+### 5. Video Pipeline (`video.go`)
 
 **VideoDecoder struct:**
 - `codecCtx`: FFmpeg decoder context
-- `scaler`: Converts YUV to RGB and resizes
-- `scaledFrame`: Reusable frame for output
+- `swsCtx`: Scaler (YUV → RGB24 at target size)
+- `frame`: Reusable decode frame
+- `rgbFrame`: Reusable output frame
 
-**VideoFrame struct:**
+**Frame struct:**
 - `RGB`: Raw RGB24 pixel data (3 bytes per pixel)
 - `Width`, `Height`: Dimensions
 - `PTS`: Presentation timestamp in seconds
+- `Duration`: Frame duration in seconds
 
-### 4. Renderer (`render.go`)
+### 6. Renderer (`render.go`)
 
 **KittyRenderer:**
 - Renders RGB frames via Kitty graphics protocol
 - Uses synchronized updates to prevent flicker
 - Chunks base64 data into 4096-byte segments
-- Deletes previous image before drawing new one
+- Supports centered video placement
+- Tracks terminal dimensions (cells and pixels)
 
-### 5. Player Coordinator (`player.go`)
-
-**AVPlayer:**
-- Creates and manages all components
-- Handles pre-buffering before playback
-- Coordinates shutdown across goroutines
-- Manages pause/stop state
+### 7. Types & Interfaces (`types.go`)
+- `Player` interface for video playback
+- `Clock` interface for audio sync
+- `Renderer` interface for terminal output
+- Constants: `SyncThreshold`, `TargetFPS`, `AudioSampleRate`, `AudioChannels`
+- FFmpeg log level set to quiet in `init()`
 
 ## Sync Algorithm
 
 ```go
 // In videoRenderLoop
-audioTime := p.audio.Time()  // Get current audio position
+audioTime := s.audio.Time()  // Get current audio position
 diff := frame.PTS - audioTime
 
 if diff > SyncThreshold {    // 100ms
@@ -165,20 +213,24 @@ if diff > SyncThreshold {    // 100ms
 - Loose enough to handle timing variations
 - Allows smooth playback without constant adjustments
 
+**Fallback (no audio):**
+- Uses frame-rate timing (TargetFPS = 30)
+- Tracks `lastFrameTime` and sleeps to maintain cadence
+
 ## Pre-buffering Strategy
 
 Before starting playback:
 ```go
 targetBytes := AudioSampleRate * AudioChannels * 2 / 5  // 200ms
 
-for p.audio.BufferSize() < targetBytes {
-    pkt, isVideo, err := p.demuxer.ReadPacket()
+for s.audio.BufferSize() < targetBytes {
+    pkt, isVideo, err := s.demuxer.ReadPacket()
     if isVideo {
         // IMPORTANT: Decode video to maintain H.264 reference frames
         // But discard the output frame
-        p.video.DecodePacket(pkt)
+        s.video.DecodePacket(pkt)
     } else {
-        p.audio.DecodePacket(pkt, pts)
+        s.audio.DecodePacket(pkt, pts)
     }
 }
 ```
@@ -208,14 +260,20 @@ ESC_G <params> ; <base64-data> ESC\
 // Begin synchronized update - terminal buffers all changes
 fmt.Fprint(out, "\x1b[?2026h")
 
-// Move cursor to top-left
-fmt.Fprint(out, "\x1b[H")
+// Save cursor position
+fmt.Fprint(out, "\x1b7")
 
 // Delete previous image to prevent ghosting
 fmt.Fprintf(out, "\x1b_Ga=d,d=i,i=%d,q=2\x1b\\", imageID)
 
+// Move cursor to target position
+fmt.Fprintf(out, "\x1b[%d;%dH", row, col)
+
 // Send new frame (chunked)
 // ...
+
+// Restore cursor position
+fmt.Fprint(out, "\x1b8")
 
 // End synchronized update - display atomically
 fmt.Fprint(out, "\x1b[?2026l")
@@ -226,18 +284,30 @@ Base64 data is split into 4096-byte chunks:
 - First chunk: includes full header with dimensions
 - Continuation chunks: only `m=` flag and data
 
+### Video Centering
+The renderer calculates cell position to center video:
+```go
+cellW := termWidthPx / termCols
+cellH := termHeightPx / termRows
+videoCols := (videoWidth + cellW - 1) / cellW
+videoRows := (videoHeight + cellH - 1) / cellH
+cellCol = (termCols - videoCols) / 2 + 1
+cellRow = (termRows - videoRows) / 2 + 1
+```
+
 ## File Structure
 
 ```
 player/
-├── ARCHITECTURE.md        # This file - design overview
-├── IMPLEMENTATION_NOTES.md # Detailed technical discoveries and quirks
-├── player.go              # Main coordinator, goroutine management
-├── demuxer.go             # FFmpeg demuxing (packet reading)
-├── audio.go               # Audio decode + resample + playback + clock
-├── video.go               # Video decode + scaling
-├── render.go              # Kitty graphics rendering
-└── constants.go           # Shared constants (sample rates, thresholds)
+├── ARCHITECTURE.md     # This file - design overview
+├── IMPLEMENTATION.md   # Technical discoveries and quirks
+├── types.go            # Interfaces, types, and constants
+├── player.go           # AVPlayer - main coordinator
+├── session.go          # playSession - single playback lifecycle
+├── demuxer.go          # FFmpeg demuxing (packet reading)
+├── audio.go            # Audio decode + resample + playback + clock
+├── video.go            # Video decode + scaling
+└── render.go           # Kitty graphics rendering
 ```
 
 ## Dependencies
@@ -245,27 +315,11 @@ player/
 ### Go Packages
 - **astiav**: Go bindings for FFmpeg 7.0+ (libavformat, libavcodec, libswresample, libswscale)
 - **beep**: Audio output via oto (cross-platform audio playback)
+- **golang.org/x/sys/unix**: Terminal size detection via ioctl
 
 ### System Requirements
-- **FFmpeg 7.0+**: astiav v0.39.0 requires FFmpeg 7.x (Ubuntu default may be 6.x)
+- **FFmpeg 7.0+**: astiav v0.39.0 requires FFmpeg 7.x
 - **Kitty terminal**: Or any terminal supporting Kitty graphics protocol
-
-### Installing FFmpeg
-
-```bash
-# Ubuntu/Debian (may need PPA for 7.0+)
-sudo apt install libavcodec-dev libavformat-dev libavutil-dev \
-                 libswscale-dev libswresample-dev
-
-# Fedora
-sudo dnf install ffmpeg-devel
-
-# macOS
-brew install ffmpeg
-
-# Arch
-sudo pacman -S ffmpeg
-```
 
 ## Performance Considerations
 
@@ -276,10 +330,12 @@ sudo pacman -S ffmpeg
 5. **Reuse frames**: Video scaler reuses output frame buffer
 6. **Synchronized updates**: Kitty renders atomically, reduces flicker overhead
 7. **Fresh audio output frames**: Avoid "Output changed" errors from resampler
+8. **Packet cloning for audio**: Allows demuxer to continue while audio processes
 
 ## Error Handling
 
 - **EOF detection**: Use `err == astiav.ErrEof`, not string comparison
 - **Channel shutdown**: Select on `stopCh` to handle graceful termination
-- **Audio buffer drain**: Wait for audio to finish before exiting
+- **Graceful degradation**: Audio failure doesn't prevent video playback
 - **Decoder state**: Always decode video packets (even if discarding) to maintain reference frames
+- **sync.Once for stop**: Prevents double-close panics on stopCh

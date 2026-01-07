@@ -80,16 +80,13 @@ func (s *playSession) run(p *AVPlayer) error {
 	var demuxWg sync.WaitGroup
 	var audioWg sync.WaitGroup
 
-	if s.audio != nil {
-		audioWg.Add(1)
-		go func() {
-			defer audioWg.Done()
-			s.audioDecodeLoop()
-		}()
+	audioWg.Add(1)
+	go func() {
+		defer audioWg.Done()
+		s.audioDecodeLoop()
+	}()
 
-		s.prebufferAudio()
-		s.audio.Start()
-	}
+	s.audio.Start()
 
 	demuxWg.Add(1)
 	go func() {
@@ -130,33 +127,6 @@ func (s *playSession) cleanup() {
 	if s.demuxer != nil {
 		s.demuxer.Close()
 		s.demuxer = nil
-	}
-}
-
-// prebufferAudio reads packets until we have enough audio buffered
-// Video packets are decoded but frames are discarded to maintain decoder state
-func (s *playSession) prebufferAudio() {
-	if s.audio == nil {
-		return
-	}
-
-	targetBytes := AudioSampleRate * AudioChannels * 2 / 5
-
-	for s.audio.BufferSize() < targetBytes {
-		pkt, isVideo, err := s.demuxer.ReadPacket()
-		if err != nil {
-			break
-		}
-
-		if isVideo {
-			s.video.DecodePacket(pkt)
-			pkt.Free()
-			continue
-		}
-
-		pts := s.demuxer.PTSToSeconds(pkt.Pts(), false)
-		s.audio.DecodePacket(pkt, pts)
-		pkt.Free()
 	}
 }
 
@@ -249,7 +219,7 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 			diff := frame.PTS - audioTime
 
 			if diff > SyncThreshold {
-				time.Sleep(time.Duration(diff * float64(time.Second)))
+				time.Sleep(time.Duration(diff * float64(time.Second) * 0.2)) // proportional correction
 			} else if diff < -SyncThreshold {
 				continue
 			}

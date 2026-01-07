@@ -9,11 +9,11 @@ import (
 
 // Demuxer handles opening media and reading packets
 type Demuxer struct {
-	formatCtx    *astiav.FormatContext
-	videoStream  *astiav.Stream
-	audioStream  *astiav.Stream
-	videoIdx     int
-	audioIdx     int
+	formatCtx   *astiav.FormatContext
+	videoStream *astiav.Stream
+	audioStream *astiav.Stream
+	videoIdx    int
+	audioIdx    int
 
 	// Time base for PTS conversion
 	videoTimeBase astiav.Rational
@@ -36,7 +36,7 @@ func NewDemuxer(url string) (*Demuxer, error) {
 		return nil, fmt.Errorf("failed to allocate format context")
 	}
 
-	// Open input
+	// Open input (url is filepath)
 	if err := d.formatCtx.OpenInput(url, nil, nil); err != nil {
 		d.formatCtx.Free()
 		return nil, fmt.Errorf("failed to open input: %w", err)
