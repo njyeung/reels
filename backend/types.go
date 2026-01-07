@@ -1,29 +1,5 @@
 package backend
 
-const (
-	// MaxRetries is the maximum number of scroll/retry attempts for sync operations
-	MaxRetries = 30
-
-	// InstagramPKLength is the length of Instagram primary keys (19 digits)
-	InstagramPKLength = 19
-)
-
-// Reel represents a single Instagram reel with metadata
-type Reel struct {
-	PK       string `json:"pk"`
-	Code     string `json:"code"`
-	VideoURL string `json:"video_url"`
-	Username string `json:"username"`
-	Caption  string `json:"caption"`
-}
-
-// ReelInfo includes the reel data plus its position in the feed
-type ReelInfo struct {
-	Index int `json:"index"`
-	Total int `json:"total"`
-	Reel
-}
-
 // Backend defines the interface between frontend and backend
 type Backend interface {
 	// Start initializes the browser (does not navigate yet)
@@ -62,6 +38,30 @@ type Backend interface {
 
 	// Events returns a channel for backend events (new reels captured, etc)
 	Events() <-chan Event
+}
+
+const (
+	// MaxRetries is the maximum number of scroll/retry attempts for sync operations
+	MaxRetries = 30
+
+	// InstagramPKLength is the length of Instagram primary keys (19 digits)
+	InstagramPKLength = 19
+)
+
+// Reel represents a single Instagram reel with metadata
+type Reel struct {
+	PK       string `json:"pk"`
+	Code     string `json:"code"`
+	VideoURL string `json:"video_url"`
+	Username string `json:"username"`
+	Caption  string `json:"caption"`
+}
+
+// ReelInfo includes the reel data plus its position in the feed
+type ReelInfo struct {
+	Index int `json:"index"`
+	Total int `json:"total"`
+	Reel
 }
 
 // EventType represents different backend events

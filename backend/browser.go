@@ -17,10 +17,11 @@ import (
 	"github.com/chromedp/cdproto/fetch"
 	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
 
-// pkRegex is compiled once for extracting ig_cache_key from URLs
+// compiled once for extracting ig_cache_key from URLs
 var pkRegex = regexp.MustCompile(`ig_cache_key=([^&]+)`)
 
 // ChromeBackend implements Backend using chromedp
@@ -474,13 +475,18 @@ func (b *ChromeBackend) Download(index int) (string, error) {
 	var data []byte
 	err := chromedp.Run(b.ctx,
 		chromedp.ActionFunc(func(ctx context.Context) error {
+			// Use an async IIFE that we await
 			js := fmt.Sprintf(`
-				fetch("%s")
-					.then(r => r.arrayBuffer())
-					.then(buf => Array.from(new Uint8Array(buf)))
+				(async () => {
+					const r = await fetch("%s");
+					const buf = await r.arrayBuffer();
+					return Array.from(new Uint8Array(buf));
+				})()
 			`, reel.VideoURL)
 			var arr []int
-			if err := chromedp.Evaluate(js, &arr).Do(ctx); err != nil {
+			if err := chromedp.Evaluate(js, &arr, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
+				return p.WithAwaitPromise(true)
+			}).Do(ctx); err != nil {
 				return err
 			}
 			data = make([]byte, len(arr))
