@@ -187,8 +187,6 @@ func (s *playSession) demuxLoop(p *AVPlayer) {
 
 // videoRenderLoop processes video packets and renders frames
 func (s *playSession) videoRenderLoop(p *AVPlayer) error {
-	var lastFrameTime time.Time
-	frameDuration := time.Second / TargetFPS
 
 	for pkt := range s.videoPktCh {
 		if !p.playing.Load() {
@@ -214,7 +212,7 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 			continue
 		}
 
-		if s.audio != nil && s.audio.IsPlaying() {
+		if s.audio.IsPlaying() {
 			audioTime := s.audio.Time()
 			diff := frame.PTS - audioTime
 
@@ -223,14 +221,6 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 			} else if diff < -SyncThreshold {
 				continue
 			}
-		} else {
-			if !lastFrameTime.IsZero() {
-				elapsed := time.Since(lastFrameTime)
-				if elapsed < frameDuration {
-					time.Sleep(frameDuration - elapsed)
-				}
-			}
-			lastFrameTime = time.Now()
 		}
 
 		if err := s.renderer.RenderFrame(frame.RGB, frame.Width, frame.Height); err != nil {

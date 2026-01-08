@@ -74,9 +74,6 @@ const (
 	// SyncThreshold is the max drift before we skip/wait frames in video
 	SyncThreshold = 0.1 // 100ms
 
-	// TargetFPS for video playback
-	TargetFPS = 30
-
 	// AudioSampleRate for resampling
 	AudioSampleRate = 44100
 )

@@ -50,11 +50,14 @@ const (
 
 // Reel represents a single Instagram reel with metadata
 type Reel struct {
-	PK       string `json:"pk"`
-	Code     string `json:"code"`
-	VideoURL string `json:"video_url"`
-	Username string `json:"username"`
-	Caption  string `json:"caption"`
+	PK         string `json:"pk"`
+	Code       string `json:"code"`
+	VideoURL   string `json:"video_url"`
+	Username   string `json:"username"`
+	Caption    string `json:"caption"`
+	Liked      bool   `json:"has_liked"`
+	LikeCount  int    `json:"like_count"`
+	IsVerified bool   `json:"is_verified"`
 }
 
 // ReelInfo includes the reel data plus its position in the feed

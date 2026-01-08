@@ -1,0 +1,2 @@
+fix cursor fighting with Bubble Tea, causes layout to fucky wucky sometimes.
+implement proper caching, separate out storage functions their own file. 

@@ -58,12 +58,6 @@ type Model struct {
 	loginErr      error
 	loginPending  bool
 
-	// Test mode
-	testMode      bool
-	testVideoPath string
-
-	// UI state
-	liked bool
 }
 
 // NewModel creates a new TUI model
@@ -97,53 +91,13 @@ func NewModel(userDataDir, cacheDir string) Model {
 	}
 }
 
-// NewTestModel creates a TUI model for testing with a cached video (no backend)
-func NewTestModel(videoPath string) Model {
-	s := spinner.New()
-	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
-
-	p := player.NewAVPlayer()
-	p.SetSize(270, 480) // Set initial size before any playback can start
-
-	return Model{
-		state:         stateBrowsing,
-		player:        p,
-		spinner:       s,
-		videoWidthPx:  270,
-		videoHeightPx: 480,
-		testMode:      true,
-		testVideoPath: videoPath,
-		currentReel: &backend.ReelInfo{
-			Index: 1,
-			Total: 1,
-			Reel: backend.Reel{
-				Username: "test_user",
-				Caption:  "Test video from cache that is pretty long so it goes off the page",
-			},
-		},
-	}
-}
 
 // Init initializes the model
 func (m Model) Init() tea.Cmd {
-	if m.testMode {
-		return tea.Batch(
-			m.spinner.Tick,
-			m.startTestPlayback,
-		)
-	}
 	return tea.Batch(
 		m.spinner.Tick,
 		m.startBackend,
 	)
-}
-
-func (m Model) startTestPlayback() tea.Msg {
-	go func() {
-		m.player.Play(m.testVideoPath)
-	}()
-	return videoReadyMsg{index: 1}
 }
 
 func (m Model) startBackend() tea.Msg {
@@ -291,7 +245,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case reelLoadedMsg:
 		m.currentReel = msg.info
 		m.status = ""
-		m.liked = false
 		return m, m.startPlayback(msg.info.Index)
 
 	case reelErrorMsg:
@@ -352,22 +305,6 @@ func (m Model) updateLogin(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.testMode {
-		// Limited controls in test mode
-		switch msg.String() {
-		case " ":
-			m.player.Pause()
-			if m.player.IsPaused() {
-				m.status = "Paused"
-			} else {
-				m.status = ""
-			}
-		case "l":
-			m.liked = !m.liked
-		}
-		return m, nil
-	}
-
 	switch msg.String() {
 	case "j", "down":
 		if m.currentReel != nil {
@@ -406,8 +343,10 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "l":
-		m.liked = !m.liked
-		go m.backend.ToggleLike()
+		if m.currentReel != nil {
+			m.currentReel.Liked = !m.currentReel.Liked
+			go m.backend.ToggleLike()
+		}
 	}
 
 	return m, nil
@@ -423,9 +362,6 @@ func (m Model) View() string {
 	case stateError:
 		return m.viewError()
 	case stateBrowsing:
-		if m.testMode {
-			return m.viewBrowsingTest()
-		}
 		return m.viewBrowsing()
 	default:
 		return ""

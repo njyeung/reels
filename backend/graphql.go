@@ -17,14 +17,17 @@ type graphQLResponse struct {
 			Edges []struct {
 				Node struct {
 					Media struct {
-						PK            string `json:"pk"`
-						Code          string `json:"code"`
+						PK        string `json:"pk"`
+						Code      string `json:"code"`
+						HasLiked  bool   `json:"has_liked"`
+						LikeCount int    `json:"like_count"`
 						VideoVersions []struct {
 							URL   string `json:"url"`
 							Width int    `json:"width"`
 						} `json:"video_versions"`
 						User struct {
-							Username string `json:"username"`
+							Username   string `json:"username"`
+							IsVerified bool   `json:"is_verified"`
 						} `json:"user"`
 						Caption *struct {
 							Text string `json:"text"`
@@ -74,11 +77,14 @@ func (b *ChromeBackend) processGraphQLResponse(body string) {
 		}
 
 		reel := Reel{
-			PK:       media.PK,
-			Code:     media.Code,
-			VideoURL: videoURL,
-			Username: media.User.Username,
-			Caption:  caption,
+			PK:         media.PK,
+			Code:       media.Code,
+			VideoURL:   videoURL,
+			Username:   media.User.Username,
+			Caption:    caption,
+			Liked:      media.HasLiked,
+			LikeCount:  media.LikeCount,
+			IsVerified: media.User.IsVerified,
 		}
 		b.orderedReels = append(b.orderedReels, reel)
 		newCount++
@@ -89,7 +95,7 @@ func (b *ChromeBackend) processGraphQLResponse(body string) {
 	}
 }
 
-// processPausedRequest handles a paused request, reads the body, then continues
+// processResponse handles a paused request, reads the body, then continues
 func (b *ChromeBackend) processResponse(e *fetch.EventRequestPaused) {
 	// Get the response body while the request is paused
 	var body []byte

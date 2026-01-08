@@ -416,34 +416,35 @@ func (b *ChromeBackend) scrollUp() error {
 	)
 }
 
-// ToggleLike simulates a double-tap to like/unlike
+// ToggleLike clicks the like button for the current reel
 func (b *ChromeBackend) ToggleLike() (bool, error) {
-	// Double click on the video
+	// First, use JS to add a temporary ID to the like button so chromedp can find it
 	js := `
 		(() => {
-			const videos = document.querySelectorAll('video[playsinline]');
-			for (const video of videos) {
-				const rect = video.getBoundingClientRect();
-				const viewportHeight = window.innerHeight;
-				const videoCenter = rect.top + rect.height / 2;
-				if (videoCenter > 0 && videoCenter < viewportHeight) {
-					const event = new MouseEvent('dblclick', {
-						bubbles: true,
-						cancelable: true,
-						view: window
-					});
-					video.dispatchEvent(event);
-					return true;
-				}
-			}
-			return false;
+			const svg = document.querySelector('svg[aria-label="Like"], svg[aria-label="Unlike"]');
+			if (!svg) return false;
+			const btn = svg.closest('[role="button"]');
+			if (!btn) return false;
+			btn.setAttribute('data-reels-like-btn', 'true');
+			return true;
 		})()
 	`
-	var success bool
-	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &success)); err != nil {
+	var found bool
+	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &found)); err != nil {
 		return false, err
 	}
-	return success, nil
+	if !found {
+		return false, nil
+	}
+
+	// Now use chromedp's native click on the marked element
+	err := chromedp.Run(b.ctx,
+		chromedp.Click(`[data-reels-like-btn="true"]`, chromedp.ByQuery),
+	)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // Download downloads a reel video to the cache directory
