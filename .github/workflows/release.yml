@@ -23,7 +23,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libavformat-dev libavcodec-dev libswresample-dev libswscale-dev libasound2-dev
+          sudo apt-get install -y libavformat-dev libavcodec-dev libswresample-dev libswscale-dev libavdevice-dev libavfilter-dev libasound2-dev
 
       - name: Build
         env:
@@ -41,10 +41,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: macos-13
+          - runner: macos-15
             arch: amd64
             artifact: reels-darwin-amd64
-          - runner: macos-14
+          - runner: macos-latest
             arch: arm64
             artifact: reels-darwin-arm64
 
@@ -60,7 +60,12 @@ jobs:
 
       - name: Install dependencies
         run: |
-          brew install ffmpeg
+          brew install ffmpeg@7
+          echo "PKG_CONFIG_PATH=$(brew --prefix ffmpeg@7)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
+          echo "LDFLAGS=-L$(brew --prefix ffmpeg@7)/lib" >> $GITHUB_ENV
+          echo "CFLAGS=-I$(brew --prefix ffmpeg@7)/include" >> $GITHUB_ENV
+          echo "CGO_LDFLAGS=-L$(brew --prefix ffmpeg@7)/lib" >> $GITHUB_ENV
+          echo "CGO_CFLAGS=-I$(brew --prefix ffmpeg@7)/include" >> $GITHUB_ENV
 
       - name: Build
         env:
