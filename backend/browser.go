@@ -55,18 +55,17 @@ func NewChromeBackend(userDataDir, cacheDir string) *ChromeBackend {
 
 // Start initializes Chrome and navigates to Instagram homepage
 func (b *ChromeBackend) Start() error {
-
 	// Create user data directory for persistent sessions
 	err := os.MkdirAll(b.userDataDir, 0755)
 	if err != nil {
 		return fmt.Errorf("failed to create user data dir: %w", err)
 	}
 
-	// Chrome options
+	// Chrome options - run headed but off-screen to avoid headless detection
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.UserDataDir(b.userDataDir),
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
-		chromedp.Flag("headless", false),
+		chromedp.Flag("headless", "new"),
 	)
 
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
