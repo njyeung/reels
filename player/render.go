@@ -1,16 +1,20 @@
 package player
 
 import (
+	"bytes"
 	"encoding/base64"
 	"fmt"
 	"io"
 	"os"
+	"sync"
 
 	"golang.org/x/sys/unix"
 )
 
 // KittyRenderer renders frames using Kitty's graphics protocol
 type KittyRenderer struct {
+	mu sync.Mutex
+
 	out       io.Writer
 	imageID   int
 	lastW     int
@@ -39,11 +43,15 @@ func NewKittyRenderer(out io.Writer) *KittyRenderer {
 
 // SetOutput changes the output writer
 func (r *KittyRenderer) SetOutput(w io.Writer) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.out = w
 }
 
 // SetTerminalSize sets the terminal dimensions (cells and pixels)
 func (r *KittyRenderer) SetTerminalSize(cols, rows, widthPx, heightPx int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.termCols = cols
 	r.termRows = rows
 	r.termWidthPx = widthPx
@@ -52,12 +60,16 @@ func (r *KittyRenderer) SetTerminalSize(cols, rows, widthPx, heightPx int) {
 
 // SetCellPosition sets the cell position for video placement (1-indexed)
 func (r *KittyRenderer) SetCellPosition(row, col int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.cellRow = row
 	r.cellCol = col
 }
 
 // CenterVideo calculates and sets the cell position to center a video of the given pixel dimensions
 func (r *KittyRenderer) CenterVideo(videoWidth, videoHeight int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.termCols > 0 && r.termRows > 0 && r.termWidthPx > 0 && r.termHeightPx > 0 {
 		// Calculate cell size in pixels
 		cellW := r.termWidthPx / r.termCols
@@ -91,23 +103,29 @@ func GetTerminalSize() (cols, rows, widthPx, heightPx int, err error) {
 
 // RenderFrame renders an RGB frame using Kitty graphics protocol
 func (r *KittyRenderer) RenderFrame(rgb []byte, width, height int) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Buffer the entire frame to write atomically
+	var buf bytes.Buffer
+
 	// Begin synchronized update
-	fmt.Fprint(r.out, "\x1b[?2026h")
+	buf.WriteString("\x1b[?2026h")
 
 	// Save cursor position
-	fmt.Fprint(r.out, "\x1b7")
+	buf.WriteString("\x1b7")
 
 	// Delete previous image first
 	if r.lastW > 0 {
-		fmt.Fprintf(r.out, "\x1b_Ga=d,d=i,i=%d,q=2\x1b\\", r.imageID)
+		fmt.Fprintf(&buf, "\x1b_Ga=d,d=i,i=%d,q=2\x1b\\", r.imageID)
 	}
 
 	// Move cursor to target cell position for image placement
 	if r.cellRow > 0 && r.cellCol > 0 {
-		fmt.Fprintf(r.out, "\x1b[%d;%dH", r.cellRow, r.cellCol)
+		fmt.Fprintf(&buf, "\x1b[%d;%dH", r.cellRow, r.cellCol)
 	} else {
 		// Default to top-left
-		fmt.Fprint(r.out, "\x1b[H")
+		buf.WriteString("\x1b[H")
 	}
 
 	// Encode RGB as base64
@@ -145,22 +163,12 @@ func (r *KittyRenderer) RenderFrame(rgb []byte, width, height int) error {
 		if first {
 			// First chunk: include all parameters
 			// m=1 means more chunks follow, m=0 means last chunk
-			_, err := fmt.Fprintf(r.out, "\x1b_Ga=T,f=24,s=%d,v=%d,i=%d,q=2,m=%d;%s\x1b\\",
+			fmt.Fprintf(&buf, "\x1b_Ga=T,f=24,s=%d,v=%d,i=%d,q=2,m=%d;%s\x1b\\",
 				width, height, r.imageID, more, chunk)
-			if err != nil {
-				fmt.Fprint(r.out, "\x1b8")   // Restore cursor
-				fmt.Fprint(r.out, "\x1b[?2026l")
-				return err
-			}
 			first = false
 		} else {
 			// Continuation chunks
-			_, err := fmt.Fprintf(r.out, "\x1b_Gm=%d;%s\x1b\\", more, chunk)
-			if err != nil {
-				fmt.Fprint(r.out, "\x1b8")   // Restore cursor
-				fmt.Fprint(r.out, "\x1b[?2026l")
-				return err
-			}
+			fmt.Fprintf(&buf, "\x1b_Gm=%d;%s\x1b\\", more, chunk)
 		}
 	}
 
@@ -168,17 +176,21 @@ func (r *KittyRenderer) RenderFrame(rgb []byte, width, height int) error {
 	r.lastH = height
 
 	// Restore cursor position
-	fmt.Fprint(r.out, "\x1b8")
+	buf.WriteString("\x1b8")
 
 	// End synchronized update
-	// this atomically displays all changes
-	fmt.Fprint(r.out, "\x1b[?2026l")
+	buf.WriteString("\x1b[?2026l")
 
-	return nil
+	// Write entire frame atomically
+	_, err := r.out.Write(buf.Bytes())
+	return err
 }
 
 // Clear clears the video area
 func (r *KittyRenderer) Clear() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	if r.supported {
 		// Delete the image by ID
 		_, err := fmt.Fprintf(r.out, "\x1b_Ga=d,d=i,i=%d\x1b\\", r.imageID)

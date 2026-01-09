@@ -11,8 +11,7 @@ import (
 )
 
 func init() {
-	// Initialize speaker at startup to trigger audio permission prompts early
-	// (better UX than prompting after user has logged in and expects playback)
+	// Initialize speaker at startup
 	format := beep.Format{
 		SampleRate: beep.SampleRate(AudioSampleRate),
 	}

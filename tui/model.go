@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -57,11 +58,10 @@ type Model struct {
 	loginPassword textinput.Model
 	loginErr      error
 	loginPending  bool
-
 }
 
 // NewModel creates a new TUI model
-func NewModel(userDataDir, cacheDir string) Model {
+func NewModel(userDataDir, cacheDir string, output io.Writer) Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
@@ -90,7 +90,6 @@ func NewModel(userDataDir, cacheDir string) Model {
 		loginPassword: passwordInput,
 	}
 }
-
 
 // Init initializes the model
 func (m Model) Init() tea.Cmd {

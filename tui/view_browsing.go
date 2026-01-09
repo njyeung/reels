@@ -32,14 +32,16 @@ func (m Model) viewBrowsing() string {
 		b.WriteString("\n")
 	}
 
-	// Status line (spinner during loading)
+	// Status line
+	// spinner during loading
 	var statusLine string
-	if strings.Contains(m.status, "Loading") || strings.Contains(m.status, "Downloading") {
+	if strings.Contains(m.status, "Loading") {
 		statusLine = m.spinner.View()
 	}
 	b.WriteString(padding + statusLine + "\n")
 
-	// Heart and play/pause icons - positioned on the right side of video
+	// Heart and play/pause icons
+	// positioned on the right side of video
 	heartIcon := "🤍"
 	likeCount := ""
 	if m.currentReel != nil {
@@ -54,7 +56,8 @@ func (m Model) viewBrowsing() string {
 		playPauseIcon = "❚❚"
 	}
 
-	// Calculate vertical position for icons (centered on right side of video)
+	// Calculate vertical position for icons
+	// centered on right side of video
 	iconStartRow := videoHeightChars / 2
 
 	// Draw video area rows with side icons
@@ -102,9 +105,10 @@ func (m Model) viewBrowsing() string {
 
 	b.WriteString("\n")
 
-	nav := navStyle.Render("↑/k: prev  ↓/j: next  space: pause  l: like  q: quit")
-	navPadding := strings.Repeat(" ", startCol-5)
-	b.WriteString(navPadding + nav + "\n")
+	nav1 := navStyle.Render("↑/k: prev  ↓/j: next")
+	nav2 := navStyle.Render("space: pause  l: like  q: quit")
+	b.WriteString(padding + nav1 + "\n")
+	b.WriteString(padding + nav2 + "\n")
 
 	return b.String()
 }

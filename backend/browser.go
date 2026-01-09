@@ -8,7 +8,6 @@ import (
 	"math/rand"
 	"net/url"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -17,7 +16,6 @@ import (
 	"github.com/chromedp/cdproto/fetch"
 	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/cdproto/network"
-	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
 
@@ -42,13 +40,17 @@ type ChromeBackend struct {
 
 // NewChromeBackend creates a new Chrome-based backend
 func NewChromeBackend(userDataDir, cacheDir string) *ChromeBackend {
-	return &ChromeBackend{
+	backend := ChromeBackend{
 		orderedReels: make([]Reel, 0),
 		seenPKs:      make(map[string]bool),
 		events:       make(chan Event, 100),
 		userDataDir:  userDataDir,
 		cacheDir:     cacheDir,
 	}
+
+	backend.initStorage()
+
+	return &backend
 }
 
 // Start initializes Chrome and navigates to Instagram homepage
@@ -418,15 +420,42 @@ func (b *ChromeBackend) scrollUp() error {
 
 // ToggleLike clicks the like button for the current reel
 func (b *ChromeBackend) ToggleLike() (bool, error) {
-	// First, use JS to add a temporary ID to the like button so chromedp can find it
+	// Get the current reel's PK first
+	pk, err := b.getCurrentPK()
+	if err != nil {
+		return false, err
+	}
+
+	// Clear any previous marker, then find the like button for the visible video
 	js := `
 		(() => {
-			const svg = document.querySelector('svg[aria-label="Like"], svg[aria-label="Unlike"]');
-			if (!svg) return false;
-			const btn = svg.closest('[role="button"]');
-			if (!btn) return false;
-			btn.setAttribute('data-reels-like-btn', 'true');
-			return true;
+			// Clear old markers first
+			document.querySelectorAll('[data-reels-like-btn]').forEach(el => {
+				el.removeAttribute('data-reels-like-btn');
+			});
+
+			const videos = document.querySelectorAll('video[playsinline]');
+			for (const video of videos) {
+				const rect = video.getBoundingClientRect();
+				const viewportHeight = window.innerHeight;
+				const videoCenter = rect.top + rect.height / 2;
+				if (videoCenter > 0 && videoCenter < viewportHeight) {
+					let parent = video.parentElement;
+					for (let i = 0; i < 15; i++) {
+						if (!parent) break;
+						const svg = parent.querySelector('svg[aria-label="Like"], svg[aria-label="Unlike"]');
+						if (svg) {
+							const btn = svg.closest('[role="button"]');
+							if (btn) {
+								btn.setAttribute('data-reels-like-btn', 'true');
+								return true;
+							}
+						}
+						parent = parent.parentElement;
+					}
+				}
+			}
+			return false;
 		})()
 	`
 	var found bool
@@ -438,71 +467,21 @@ func (b *ChromeBackend) ToggleLike() (bool, error) {
 	}
 
 	// Now use chromedp's native click on the marked element
-	err := chromedp.Run(b.ctx,
+	if err := chromedp.Run(b.ctx,
 		chromedp.Click(`[data-reels-like-btn="true"]`, chromedp.ByQuery),
-	)
-	if err != nil {
+	); err != nil {
 		return false, err
 	}
+
+	// Toggle like in the stored reel
+	b.mu.Lock()
+	for i := range b.orderedReels {
+		if b.orderedReels[i].PK == pk {
+			b.orderedReels[i].Liked = !b.orderedReels[i].Liked
+			break
+		}
+	}
+	b.mu.Unlock()
+
 	return true, nil
-}
-
-// Download downloads a reel video to the cache directory
-func (b *ChromeBackend) Download(index int) (string, error) {
-	b.mu.RLock()
-	if index < 1 || index > len(b.orderedReels) {
-		b.mu.RUnlock()
-		return "", fmt.Errorf("index out of range")
-	}
-	reel := b.orderedReels[index-1]
-	b.mu.RUnlock()
-
-	if reel.VideoURL == "" {
-		return "", fmt.Errorf("no video URL")
-	}
-
-	if err := os.MkdirAll(b.cacheDir, 0755); err != nil {
-		return "", err
-	}
-
-	filename := filepath.Join(b.cacheDir, fmt.Sprintf("%03d_%s.mp4", index, reel.Code))
-
-	// Check if already downloaded
-	if _, err := os.Stat(filename); err == nil {
-		return filename, nil
-	}
-
-	// Download using chromedp fetch
-	var data []byte
-	err := chromedp.Run(b.ctx,
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			js := fmt.Sprintf(`
-				(async () => {
-					const r = await fetch("%s");
-					const buf = await r.arrayBuffer();
-					return Array.from(new Uint8Array(buf));
-				})()
-			`, reel.VideoURL)
-			var arr []int
-			if err := chromedp.Evaluate(js, &arr, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
-				return p.WithAwaitPromise(true)
-			}).Do(ctx); err != nil {
-				return err
-			}
-			data = make([]byte, len(arr))
-			for i, v := range arr {
-				data[i] = byte(v)
-			}
-			return nil
-		}),
-	)
-	if err != nil {
-		return "", err
-	}
-
-	if err := os.WriteFile(filename, data, 0644); err != nil {
-		return "", err
-	}
-
-	return filename, nil
 }
