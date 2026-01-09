@@ -1,0 +1,101 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libavformat-dev libavcodec-dev libswresample-dev libswscale-dev libasound2-dev
+
+      - name: Build
+        env:
+          CGO_ENABLED: 1
+        run: |
+          go build -o reels-linux-amd64 .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: reels-linux-amd64
+          path: reels-linux-amd64
+
+  build-macos:
+    strategy:
+      matrix:
+        include:
+          - runner: macos-13
+            arch: amd64
+            artifact: reels-darwin-amd64
+          - runner: macos-14
+            arch: arm64
+            artifact: reels-darwin-arm64
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Install dependencies
+        run: |
+          brew install ffmpeg
+
+      - name: Build
+        env:
+          CGO_ENABLED: 1
+        run: |
+          go build -o ${{ matrix.artifact }} .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+
+  release:
+    needs: [build-linux, build-macos]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create source tarball
+        run: |
+          git archive --format=tar.gz --prefix=reels-${GITHUB_REF_NAME#v}/ HEAD > artifacts/reels-${GITHUB_REF_NAME#v}.tar.gz
+
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/reels-linux-amd64/reels-linux-amd64
+            artifacts/reels-darwin-amd64/reels-darwin-amd64
+            artifacts/reels-darwin-arm64/reels-darwin-arm64
+            artifacts/reels-*.tar.gz
+          generate_release_notes: true
