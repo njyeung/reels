@@ -56,6 +56,11 @@ func (m Model) viewBrowsing() string {
 		playPauseIcon = "❚❚"
 	}
 
+	muteIcon := "  "
+	if m.player.IsMuted() {
+		muteIcon = "M"
+	}
+
 	// Calculate vertical position for icons
 	// centered on right side of video
 	iconStartRow := videoHeightChars / 2
@@ -72,6 +77,8 @@ func (m Model) viewBrowsing() string {
 			b.WriteString(" " + heartIcon + " " + likeCountStyle.Render(likeCount))
 		case iconStartRow + 2:
 			b.WriteString(" " + playPauseIcon)
+		case iconStartRow + 4:
+			b.WriteString(" " + muteIcon)
 		default:
 			b.WriteString("  ")
 		}
@@ -105,7 +112,7 @@ func (m Model) viewBrowsing() string {
 
 	b.WriteString("\n")
 
-	nav1 := navStyle.Render("↑/k: prev  ↓/j: next")
+	nav1 := navStyle.Render("k: prev  j: next  m: mute")
 	nav2 := navStyle.Render("space: pause  l: like  q: quit")
 	b.WriteString(padding + nav1 + "\n")
 	b.WriteString(padding + nav2 + "\n")

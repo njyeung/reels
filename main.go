@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -23,6 +24,10 @@ func (sf *SyncFile) Write(p []byte) (n int, err error) {
 }
 
 func main() {
+	loginFlag := flag.Bool("login", false, "Open browser in headed mode for manual Instagram login")
+	headedFlag := flag.Bool("headed", false, "Run browser in headed (visible) mode")
+	flag.Parse()
+
 	homeDir, _ := os.UserHomeDir()
 	userDataDir := filepath.Join(homeDir, "Desktop", "reels", ".reels", "chrome-data")
 	cacheDir := filepath.Join(homeDir, "Desktop", "reels", ".reels", "cache")
@@ -31,7 +36,7 @@ func main() {
 	syncOut := &SyncFile{File: os.Stdout}
 
 	p := tea.NewProgram(
-		tui.NewModel(userDataDir, cacheDir, syncOut),
+		tui.NewModel(userDataDir, cacheDir, syncOut, tui.Config{LoginMode: *loginFlag, HeadedMode: *headedFlag}),
 		tea.WithAltScreen(),
 		tea.WithOutput(syncOut),
 	)

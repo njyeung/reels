@@ -25,6 +25,9 @@ type Player interface {
 	// IsPaused returns current pause state
 	IsPaused() bool
 
+	// IsMuted returns current mute state
+	IsMuted() bool
+
 	// Close releases all resources
 	Close()
 

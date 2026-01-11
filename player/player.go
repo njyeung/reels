@@ -17,12 +17,56 @@ type AVPlayer struct {
 
 	playing atomic.Bool
 	paused  atomic.Bool
+	muted   atomic.Bool
 
 	playMu   sync.Mutex
 	configMu sync.Mutex
 
 	sessionMu sync.Mutex
 	session   *playSession
+}
+
+func (p *AVPlayer) sessionConfig() sessionConfig {
+	p.configMu.Lock()
+	defer p.configMu.Unlock()
+
+	// first time, make a new renderer
+	if p.renderer == nil {
+		p.renderer = NewKittyRenderer(p.output)
+	}
+
+	return sessionConfig{
+		width:    p.width,
+		height:   p.height,
+		renderer: p.renderer,
+		muted:    p.muted.Load(),
+	}
+}
+
+func (p *AVPlayer) setSession(s *playSession) {
+	p.sessionMu.Lock()
+	defer p.sessionMu.Unlock()
+
+	p.session = s
+}
+
+func (p *AVPlayer) clearSession(s *playSession) {
+	p.sessionMu.Lock()
+	defer p.sessionMu.Unlock()
+
+	if p.session == s {
+		p.session = nil
+	}
+}
+
+func (p *AVPlayer) withSession(fn func(*playSession)) {
+	p.sessionMu.Lock()
+	s := p.session
+	p.sessionMu.Unlock()
+
+	if s != nil {
+		fn(s)
+	}
 }
 
 // NewAVPlayer creates a new FFmpeg-based player
@@ -99,6 +143,16 @@ func (p *AVPlayer) Stop() {
 	})
 }
 
+// Mute toggles mute state
+func (p *AVPlayer) Mute() {
+	p.muted.Store(!p.muted.Load())
+	p.withSession(func(s *playSession) {
+		if s.audio != nil {
+			s.audio.Mute()
+		}
+	})
+}
+
 // Pause toggles pause state
 func (p *AVPlayer) Pause() {
 	p.paused.Store(!p.paused.Load())
@@ -112,6 +166,11 @@ func (p *AVPlayer) Pause() {
 // IsPaused returns current pause state
 func (p *AVPlayer) IsPaused() bool {
 	return p.paused.Load()
+}
+
+// IsMuted returns current mute state
+func (p *AVPlayer) IsMuted() bool {
+	return p.muted.Load()
 }
 
 // cleanup releases all resources including renderer
@@ -132,52 +191,4 @@ func (p *AVPlayer) Close() {
 	defer p.configMu.Unlock()
 
 	p.cleanup()
-}
-
-type sessionConfig struct {
-	width    int
-	height   int
-	renderer *KittyRenderer
-}
-
-func (p *AVPlayer) sessionConfig() sessionConfig {
-	p.configMu.Lock()
-	defer p.configMu.Unlock()
-
-	// first time, make a new renderer
-	if p.renderer == nil {
-		p.renderer = NewKittyRenderer(p.output)
-	}
-
-	return sessionConfig{
-		width:    p.width,
-		height:   p.height,
-		renderer: p.renderer,
-	}
-}
-
-func (p *AVPlayer) setSession(s *playSession) {
-	p.sessionMu.Lock()
-	defer p.sessionMu.Unlock()
-
-	p.session = s
-}
-
-func (p *AVPlayer) clearSession(s *playSession) {
-	p.sessionMu.Lock()
-	defer p.sessionMu.Unlock()
-
-	if p.session == s {
-		p.session = nil
-	}
-}
-
-func (p *AVPlayer) withSession(fn func(*playSession)) {
-	p.sessionMu.Lock()
-	s := p.session
-	p.sessionMu.Unlock()
-
-	if s != nil {
-		fn(s)
-	}
 }

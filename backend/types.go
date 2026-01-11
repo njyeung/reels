@@ -3,16 +3,14 @@ package backend
 // Backend defines the interface between frontend and backend
 type Backend interface {
 	// Start initializes the browser (does not navigate yet)
-	Start() error
+	// If headless is false, the browser opens visibly for manual login
+	Start(headless bool) error
 
 	// Stop closes the browser and cleans up
 	Stop()
 
 	// NeedsLogin checks if login is required
 	NeedsLogin() (bool, error)
-
-	// Login attempts to log in with credentials
-	Login(username, password string) error
 
 	// NavigateToReels goes to /reels and syncs to first captured reel
 	NavigateToReels() error

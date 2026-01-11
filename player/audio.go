@@ -29,6 +29,7 @@ type AudioPlayer struct {
 	clockMu sync.RWMutex
 	playing atomic.Bool
 	paused  atomic.Bool
+	muted   atomic.Bool
 
 	// Beep streamer
 	streamer *audioStreamer
@@ -54,15 +55,16 @@ func (s *audioStreamer) Stream(samples [][2]float64) (n int, ok bool) {
 	s.player.buffMu.Lock()
 	defer s.player.buffMu.Unlock()
 
-	// when paused, fill buff with silence
+	// when paused, fill buff with silence and don't advance clock
 	if s.player.paused.Load() {
-
 		for i := range samples {
 			samples[i][0] = 0
 			samples[i][1] = 0
 		}
 		return len(samples), true
 	}
+
+	muted := s.player.muted.Load()
 
 	// sampleBuf (raw bytes from FFmpeg):
 	// ┌────┬────┬────┬────┬────┬────┬────┬────┬─...
@@ -86,16 +88,22 @@ func (s *audioStreamer) Stream(samples [][2]float64) (n int, ok bool) {
 			break
 		}
 
-		// Convert sampleBuf to float64 and normalize
-		// to [-1, 1] that beep expects
-		//
-		// left low byte | left high byte << 8
-		// 	  8 bits            8 bits
-		const MAX_INT_16 = int16(32767)
-		left := int16(s.player.sampleBuf[0]) | int16(s.player.sampleBuf[1])<<8
-		right := int16(s.player.sampleBuf[2]) | int16(s.player.sampleBuf[3])<<8
-		samples[i][0] = float64(left) / float64(MAX_INT_16)
-		samples[i][1] = float64(right) / float64(MAX_INT_16)
+		if muted {
+			// consume buffer but output silence
+			samples[i][0] = 0
+			samples[i][1] = 0
+		} else {
+			// Convert sampleBuf to float64 and normalize
+			// to [-1, 1] that beep expects
+			//
+			// left low byte | left high byte << 8
+			// 	  8 bits            8 bits
+			const MAX_INT_16 = int16(32767)
+			left := int16(s.player.sampleBuf[0]) | int16(s.player.sampleBuf[1])<<8
+			right := int16(s.player.sampleBuf[2]) | int16(s.player.sampleBuf[3])<<8
+			samples[i][0] = float64(left) / float64(MAX_INT_16)
+			samples[i][1] = float64(right) / float64(MAX_INT_16)
+		}
 
 		// consume
 		s.player.sampleBuf = s.player.sampleBuf[bytesPerSample:]
@@ -254,6 +262,11 @@ func (a *AudioPlayer) BufferSize() int {
 	return len(a.sampleBuf)
 }
 
+// Mute toggles mute state
+func (a *AudioPlayer) Mute() {
+	a.muted.Store(!a.muted.Load())
+}
+
 // IsPlaying returns true if audio is playing
 func (a *AudioPlayer) IsPlaying() bool {
 	return a.playing.Load() && !a.paused.Load()
@@ -267,6 +280,11 @@ func (a *AudioPlayer) Pause() {
 // IsPaused returns current pause state
 func (a *AudioPlayer) IsPaused() bool {
 	return a.paused.Load()
+}
+
+// IsMuted returns current mute state
+func (a *AudioPlayer) IsMuted() bool {
+	return a.muted.Load()
 }
 
 // ResetClock resets the audio clock to zero

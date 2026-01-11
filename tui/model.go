@@ -3,10 +3,9 @@ package tui
 import (
 	"fmt"
 	"io"
-	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/njyeung/reels/backend"
@@ -19,7 +18,6 @@ type (
 	backendErrorMsg  struct{ err error }
 	loginRequiredMsg struct{}
 	loginSuccessMsg  struct{}
-	loginErrorMsg    struct{ err error }
 	reelLoadedMsg    struct{ info *backend.ReelInfo }
 	reelErrorMsg     struct{ err error }
 	backendEventMsg  backend.Event
@@ -54,29 +52,27 @@ type Model struct {
 	videoWidthPx  int
 	videoHeightPx int
 
-	loginUsername textinput.Model
-	loginPassword textinput.Model
-	loginErr      error
-	loginPending  bool
+	flags Config
+
+	loginSuccess bool
+}
+
+type Config struct {
+	HeadedMode bool
+	LoginMode  bool
 }
 
 // NewModel creates a new TUI model
-func NewModel(userDataDir, cacheDir string, output io.Writer) Model {
+func NewModel(userDataDir, cacheDir string, output io.Writer, flags Config) Model {
+	playerHeight := 480
+	playerWidth := 270
+
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
-	usernameInput := textinput.New()
-	usernameInput.Placeholder = "username or email"
-	usernameInput.Focus()
-
-	passwordInput := textinput.New()
-	passwordInput.Placeholder = "password"
-	passwordInput.EchoMode = textinput.EchoPassword
-	passwordInput.EchoCharacter = '*'
-
 	p := player.NewAVPlayer()
-	p.SetSize(270, 480) // Set initial size before any playback can start
+	p.SetSize(playerWidth, playerHeight) // Set initial size before any playback can start
 
 	return Model{
 		state:         stateLoading,
@@ -84,10 +80,9 @@ func NewModel(userDataDir, cacheDir string, output io.Writer) Model {
 		player:        p,
 		spinner:       s,
 		status:        "Starting browser...",
-		videoWidthPx:  270,
-		videoHeightPx: 480,
-		loginUsername: usernameInput,
-		loginPassword: passwordInput,
+		videoWidthPx:  playerWidth,
+		videoHeightPx: playerHeight,
+		flags:         flags,
 	}
 }
 
@@ -100,7 +95,8 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) startBackend() tea.Msg {
-	if err := m.backend.Start(); err != nil {
+
+	if err := m.backend.Start(!(m.flags.HeadedMode || m.flags.LoginMode)); err != nil {
 		return backendErrorMsg{err}
 	}
 
@@ -113,17 +109,15 @@ func (m Model) startBackend() tea.Msg {
 		return loginRequiredMsg{}
 	}
 
+	// if we don't need login, that means success
+	if m.flags.LoginMode {
+		return loginSuccessMsg{}
+	}
+
 	if err := m.backend.NavigateToReels(); err != nil {
 		return backendErrorMsg{err}
 	}
 
-	return backendReadyMsg{}
-}
-
-func (m Model) navigateToReels() tea.Msg {
-	if err := m.backend.NavigateToReels(); err != nil {
-		return backendErrorMsg{err}
-	}
 	return backendReadyMsg{}
 }
 
@@ -143,15 +137,18 @@ func (m Model) loadCurrentReel() tea.Msg {
 	return reelLoadedMsg{info}
 }
 
-func (m Model) submitLogin() tea.Cmd {
-	username := strings.TrimSpace(m.loginUsername.Value())
-	password := m.loginPassword.Value()
-	return func() tea.Msg {
-		if err := m.backend.Login(username, password); err != nil {
-			return loginErrorMsg{err}
-		}
+func (m Model) checkLoginStatus() tea.Msg {
+	// Poll every 2 seconds to check if user has logged in via the browser
+	time.Sleep(2 * time.Second)
+	needsLogin, err := m.backend.NeedsLogin()
+	if err != nil {
+		// Browser might be navigating, keep polling
+		return loginRequiredMsg{}
+	}
+	if !needsLogin {
 		return loginSuccessMsg{}
 	}
+	return loginRequiredMsg{}
 }
 
 func (m Model) startPlayback(index int) tea.Cmd {
@@ -167,6 +164,13 @@ func (m Model) startPlayback(index int) tea.Cmd {
 	}
 }
 
+func (m Model) prefetchNext(index int) {
+	nextIndex := index + 1
+	if nextIndex <= m.backend.GetTotal() {
+		m.backend.Download(nextIndex)
+	}
+}
+
 // Update handles messages
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -179,10 +183,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.backend.Stop()
 			}
 			return m, tea.Quit
-		}
-
-		if m.state == stateLogin {
-			return m.updateLogin(msg)
 		}
 
 		if m.state == stateBrowsing {
@@ -209,25 +209,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case loginRequiredMsg:
 		m.state = stateLogin
-		m.status = "Login required"
-		m.loginErr = nil
-		m.loginPending = false
-		m.loginUsername.SetValue("")
-		m.loginPassword.SetValue("")
-		m.loginUsername.Focus()
-		m.loginPassword.Blur()
+		if m.flags.LoginMode {
+			// In login mode, poll for login completion
+			return m, m.checkLoginStatus
+		}
+		// In normal mode, just show message to restart with --login
 		return m, nil
 
 	case loginSuccessMsg:
-		m.state = stateLoading
-		m.status = "Loading reels..."
-		m.loginPending = false
-		return m, m.navigateToReels
-
-	case loginErrorMsg:
-		m.loginErr = msg.err
-		m.loginPending = false
-		m.status = "Login failed"
+		m.state = stateLogin
+		m.loginSuccess = true
 		return m, nil
 
 	case backendErrorMsg:
@@ -252,6 +243,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case videoReadyMsg:
 		m.status = ""
+		go m.prefetchNext(msg.index)
 		return m, nil
 
 	case videoErrorMsg:
@@ -260,47 +252,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
-}
-
-func (m Model) updateLogin(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.loginPending {
-		return m, nil
-	}
-
-	switch msg.String() {
-	case "tab", "shift+tab", "up", "down":
-		if m.loginUsername.Focused() {
-			m.loginUsername.Blur()
-			m.loginPassword.Focus()
-		} else {
-			m.loginPassword.Blur()
-			m.loginUsername.Focus()
-		}
-		return m, nil
-
-	case "enter":
-		if m.loginUsername.Focused() {
-			m.loginUsername.Blur()
-			m.loginPassword.Focus()
-			return m, nil
-		}
-		if m.loginPassword.Focused() {
-			m.loginPending = true
-			m.loginErr = nil
-			m.status = "Logging in..."
-			return m, m.submitLogin()
-		}
-	}
-
-	if m.loginUsername.Focused() {
-		var cmd tea.Cmd
-		m.loginUsername, cmd = m.loginUsername.Update(msg)
-		return m, cmd
-	}
-
-	var cmd tea.Cmd
-	m.loginPassword, cmd = m.loginPassword.Update(msg)
-	return m, cmd
 }
 
 func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -332,7 +283,12 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, m.startPlayback(prevIndex)
 			}
 		}
+	case "m":
+		if m.currentReel != nil {
+			m.player.Mute()
 
+			return m, nil
+		}
 	case " ":
 		m.player.Pause()
 		if m.player.IsPaused() {

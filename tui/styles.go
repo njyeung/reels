@@ -24,7 +24,7 @@ var (
 			Foreground(lipgloss.Color("196")) // red
 
 	verifiedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("255")) // white
+			Foreground(lipgloss.Color("33")) // white
 
 	likeCountStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("245")) // gray

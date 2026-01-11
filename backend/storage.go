@@ -16,6 +16,9 @@ var (
 	fifoList []string
 	fifoMap  map[string]bool
 
+	// inProgress tracks downloads currently in flight; channel is closed when done
+	inProgress map[string]chan struct{}
+
 	liked map[string]bool
 )
 
@@ -25,6 +28,7 @@ func (b *ChromeBackend) initStorage() error {
 	}
 
 	fifoMap = make(map[string]bool)
+	inProgress = make(map[string]chan struct{})
 	liked = make(map[string]bool)
 
 	// clear cache on startup
@@ -72,13 +76,38 @@ func (b *ChromeBackend) Download(index int) (string, error) {
 
 	filename := filepath.Join(b.cacheDir, fmt.Sprintf("%03d_%s.mp4", index, reel.Code))
 
-	// Check if already downloaded
+	// check cache to see if already downloaded
 	cacheMu.Lock()
-	if fifoMap[filename] == true {
+	if fifoMap[filename] {
 		cacheMu.Unlock()
 		return filename, nil
 	}
+
+	// check if in the progress of being downloaded
+	if ch, ok := inProgress[filename]; ok {
+		cacheMu.Unlock()
+		<-ch // Wait for the other download to complete
+
+		// re-check cache
+		cacheMu.Lock()
+		if fifoMap[filename] {
+			cacheMu.Unlock()
+			return filename, nil
+		}
+		// else fall through to download
+	}
+
+	// Mark as in progress
+	done := make(chan struct{})
+	inProgress[filename] = done
 	cacheMu.Unlock()
+	// cleanup: remove from inProgress and signal waiters when done
+	defer func() {
+		cacheMu.Lock()
+		delete(inProgress, filename)
+		cacheMu.Unlock()
+		close(done)
+	}()
 
 	// Download using chromedp fetch
 	var data []byte

@@ -7,27 +7,29 @@ func (m Model) viewLogin() string {
 		return "Login required..."
 	}
 
-	title := titleStyle.Render("Login required")
-	instructions := "Enter your Instagram credentials to continue."
+	var title, instructions, statusLine string
+	help := navStyle.Render("q: quit")
 
-	usernameLine := "Username: " + m.loginUsername.View()
-	passwordLine := "Password: " + m.loginPassword.View()
-	help := navStyle.Render("tab: switch  enter: submit  q: quit")
-
-	var statusLine string
-	if m.loginPending {
-		statusLine = m.spinner.View() + " Logging in..."
-	} else if m.loginErr != nil {
-		statusLine = errorStyle.Render(m.loginErr.Error())
+	if m.flags.LoginMode {
+		// Headed mode: user is logging in via browser
+		if m.loginSuccess {
+			title = titleStyle.Render("Login successful!")
+			instructions = "Tell Instagram to save your password for next time, then restart the app without --login."
+		} else {
+			title = titleStyle.Render("Manual login")
+			instructions = "Please log in to Instagram in the browser window."
+			statusLine = m.spinner.View() + " Waiting for login..."
+		}
+	} else {
+		// Normal mode: tell user to restart with --login
+		title = titleStyle.Render("Login required")
+		instructions = "Please restart the app with --login to log in:\n\n    reels --login"
 	}
 
 	content := []string{
 		title,
 		"",
 		instructions,
-		"",
-		usernameLine,
-		passwordLine,
 		"",
 		statusLine,
 		"",

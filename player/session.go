@@ -26,6 +26,13 @@ type audioPacket struct {
 	pts float64
 }
 
+type sessionConfig struct {
+	width    int
+	height   int
+	renderer *KittyRenderer
+	muted    bool
+}
+
 func newPlaySession(url string, cfg sessionConfig) (*playSession, error) {
 	demuxer, err := NewDemuxer(url)
 	if err != nil {
@@ -50,6 +57,8 @@ func newPlaySession(url string, cfg sessionConfig) (*playSession, error) {
 		audio, err = NewAudioPlayer(demuxer.AudioCodecParameters())
 		if err != nil {
 			audio = nil
+		} else if cfg.muted {
+			audio.Mute()
 		}
 	}
 

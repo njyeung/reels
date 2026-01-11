@@ -54,19 +54,23 @@ func NewChromeBackend(userDataDir, cacheDir string) *ChromeBackend {
 }
 
 // Start initializes Chrome and navigates to Instagram homepage
-func (b *ChromeBackend) Start() error {
+func (b *ChromeBackend) Start(headless bool) error {
 	// Create user data directory for persistent sessions
 	err := os.MkdirAll(b.userDataDir, 0755)
 	if err != nil {
 		return fmt.Errorf("failed to create user data dir: %w", err)
 	}
 
-	// Chrome options - run headed but off-screen to avoid headless detection
+	// Chrome options
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.UserDataDir(b.userDataDir),
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
-		chromedp.Flag("headless", "new"),
 	)
+	if headless {
+		opts = append(opts, chromedp.Flag("headless", "new"))
+	} else {
+		opts = append(opts, chromedp.Flag("headless", false))
+	}
 
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	b.allocCancel = allocCancel
@@ -115,60 +119,6 @@ func (b *ChromeBackend) NeedsLogin() (bool, error) {
 		`, &needsLogin),
 	)
 	return needsLogin, err
-}
-
-// Login attempts to log in with user credentials
-func (b *ChromeBackend) Login(username, password string) error {
-
-	// Currently instagram is A/B testing 2 login pages
-	// If they decide to add more, this will likely break
-	// We also assume that insta doesn't try to send an email for 2FA
-
-	var isVariantA bool
-	chromedp.Run(b.ctx,
-		chromedp.Evaluate(`document.querySelector('input[name="email"]') !== null`,
-			&isVariantA),
-	)
-
-	if isVariantA { // try variant A first: name='email' and name='pass'
-		err := chromedp.Run(b.ctx,
-			chromedp.Clear(`input[name="email"]`),
-			chromedp.SendKeys(`input[name="email"]`, username),
-			chromedp.Clear(`input[name="pass"]`),
-			chromedp.SendKeys(`input[name="pass"]`, password),
-			chromedp.Sleep(500*time.Millisecond),
-			chromedp.Click(`//div[@role='button'][.//*/text()[contains(., 'Log in')]]`),
-		)
-		if err != nil {
-			return fmt.Errorf("login variant A failed: %w", err)
-		}
-	} else { // try variant B: aria-labels
-		err := chromedp.Run(b.ctx,
-			chromedp.Clear(`input[aria-label="Phone number, username, or email"]`),
-			chromedp.SendKeys(`input[aria-label="Phone number, username, or email"]`, username),
-			chromedp.Clear(`input[aria-label="Password"]`),
-			chromedp.SendKeys(`input[aria-label="Password"]`, password),
-			chromedp.Sleep(500*time.Millisecond),
-			chromedp.Click(`button[type="submit"]`),
-		)
-		if err != nil {
-			return fmt.Errorf("login variant B failed: %w", err)
-		}
-	}
-
-	time.Sleep(5 * time.Second) // Wait for login to complete
-
-	// if we're logged in, there shouldn't be an input element in the html
-	var isLoggedin bool
-	chromedp.Run(b.ctx,
-		chromedp.Evaluate(`document.querySelector('input') == null`,
-			&isLoggedin),
-	)
-	if !isLoggedin {
-		return fmt.Errorf("login failed: incorrect username or password")
-	}
-
-	return nil
 }
 
 // NavigateToReels goes to /reels and syncs to first captured reel
