@@ -100,12 +100,27 @@ func (m Model) viewBrowsing() string {
 		}
 		b.WriteString(padding + userLine + "\n")
 
-		caption := strings.ReplaceAll(m.currentReel.Caption, "\n", " ")
+		var captionLines []string
 		maxCaptionLen := videoWidthChars
-		if len(caption) > maxCaptionLen {
-			caption = caption[:maxCaptionLen-3] + "..."
+		if !m.expandCaption {
+			caption := strings.ReplaceAll(m.currentReel.Caption, "\n", " ")
+			if len(caption) > maxCaptionLen {
+				caption = caption[:maxCaptionLen-3] + "..."
+			}
+			captionLines = []string{caption}
+		} else {
+			for _, line := range strings.Split(m.currentReel.Caption, "\n") {
+				for len(line) > maxCaptionLen {
+					captionLines = append(captionLines, line[:maxCaptionLen])
+					line = line[maxCaptionLen:]
+				}
+				captionLines = append(captionLines, line)
+			}
 		}
-		b.WriteString(padding + captionStyle.Render(caption) + "\n")
+
+		for _, line := range captionLines {
+			b.WriteString(padding + captionStyle.Render(line) + "\n")
+		}
 	} else {
 		b.WriteString(padding + m.spinner.View() + " " + m.status + "\n\n")
 	}

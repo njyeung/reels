@@ -52,6 +52,8 @@ type Model struct {
 	videoWidthPx  int
 	videoHeightPx int
 
+	expandCaption bool
+
 	flags Config
 
 	loginSuccess bool
@@ -158,7 +160,7 @@ func (m Model) startPlayback(index int) tea.Cmd {
 			return videoErrorMsg{err}
 		}
 		go func() {
-			m.player.Play(path)
+			m.player.Play(path, m.currentReel.Reel)
 		}()
 		return videoReadyMsg{index}
 	}
@@ -302,6 +304,8 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.currentReel.Liked = !m.currentReel.Liked
 			go m.backend.ToggleLike()
 		}
+	case "c":
+		m.expandCaption = !m.expandCaption
 	}
 
 	return m, nil

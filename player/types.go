@@ -13,7 +13,7 @@ func init() {
 
 // Player defines the interface for video playback
 type Player interface {
-	// Play starts playing from a URL, blocks until stopped or finished
+	// Play starts playing from a cache URL (local), blocks until stopped or finished
 	Play(url string) error
 
 	// Stop stops current playback

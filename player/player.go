@@ -5,6 +5,8 @@ import (
 	"os"
 	"sync"
 	"sync/atomic"
+
+	"github.com/njyeung/reels/backend"
 )
 
 // AVPlayer implements the Player interface using FFmpeg
@@ -87,30 +89,49 @@ func (p *AVPlayer) SetOutput(w io.Writer) {
 	}
 }
 
-// SetSize sets the video display dimensions in pixels
+// SetSize sets the maximum video display dimensions in pixels.
+// The video will be scaled to fit within these bounds while maintaining aspect ratio.
 func (p *AVPlayer) SetSize(width, height int) {
 	p.configMu.Lock()
 	defer p.configMu.Unlock()
 
 	p.width = width
 	p.height = height
+
 	p.withSession(func(s *playSession) {
-		if s.video != nil {
-			s.video.SetSize(width, height)
+		if s.video == nil {
+			return
+		}
+
+		// Calculate scaled size maintaining aspect ratio
+		srcW, srcH := s.video.SourceSize()
+		dstW, dstH := fitSize(srcW, srcH, width, height)
+		s.video.SetSize(dstW, dstH)
+
+		// Update renderer positioning
+		if s.renderer != nil {
+			if cols, rows, termW, termH, err := GetTerminalSize(); err == nil && cols > 0 && rows > 0 {
+				s.renderer.SetTerminalSize(cols, rows, termW, termH)
+				s.renderer.CenterVideo(dstW, dstH)
+			}
 		}
 	})
 }
 
-// Play starts playing from a URL (loops until Stop is called)
-func (p *AVPlayer) Play(url string) error {
+// Play starts playing from a cache url (loops until Stop is called)
+func (p *AVPlayer) Play(url string, reel backend.Reel) error {
 	p.playMu.Lock()
 	defer p.playMu.Unlock()
+
+	// Convert reel to what the session needs (fetch/process once)
+	var profilePic []byte
+	// TODO: fetch and process reel.ProfilePicUrl into profilePic
 
 	p.playing.Store(true)
 	p.paused.Store(false)
 
 	for p.playing.Load() {
-		err := p.playOnce(url)
+		err := p.playOnce(url, profilePic)
 		if err != nil {
 			return err
 		}
@@ -119,8 +140,9 @@ func (p *AVPlayer) Play(url string) error {
 }
 
 // playOnce plays the media file once
-func (p *AVPlayer) playOnce(url string) error {
+func (p *AVPlayer) playOnce(url string, profilePic []byte) error {
 	cfg := p.sessionConfig()
+	cfg.profilePic = profilePic
 	session, err := newPlaySession(url, cfg)
 	if err != nil {
 		return err

@@ -9,10 +9,11 @@ import (
 )
 
 type playSession struct {
-	demuxer  *Demuxer
-	audio    *AudioPlayer
-	video    *VideoDecoder
-	renderer *KittyRenderer
+	demuxer    *Demuxer
+	audio      *AudioPlayer
+	video      *VideoDecoder
+	renderer   *KittyRenderer
+	profilePic []byte
 
 	audioPktCh chan *audioPacket
 	videoPktCh chan *astiav.Packet
@@ -27,10 +28,11 @@ type audioPacket struct {
 }
 
 type sessionConfig struct {
-	width    int
-	height   int
-	renderer *KittyRenderer
-	muted    bool
+	width      int
+	height     int
+	renderer   *KittyRenderer
+	muted      bool
+	profilePic []byte
 }
 
 func newPlaySession(url string, cfg sessionConfig) (*playSession, error) {
@@ -75,6 +77,7 @@ func newPlaySession(url string, cfg sessionConfig) (*playSession, error) {
 		audio:      audio,
 		video:      video,
 		renderer:   renderer,
+		profilePic: cfg.profilePic,
 		stopCh:     make(chan struct{}),
 		videoPktCh: make(chan *astiav.Packet, 30),
 	}

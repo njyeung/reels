@@ -17,17 +17,18 @@ type graphQLResponse struct {
 			Edges []struct {
 				Node struct {
 					Media struct {
-						PK        string `json:"pk"`
-						Code      string `json:"code"`
-						HasLiked  bool   `json:"has_liked"`
-						LikeCount int    `json:"like_count"`
+						PK            string `json:"pk"`
+						Code          string `json:"code"`
+						HasLiked      bool   `json:"has_liked"`
+						LikeCount     int    `json:"like_count"`
 						VideoVersions []struct {
 							URL   string `json:"url"`
 							Width int    `json:"width"`
 						} `json:"video_versions"`
 						User struct {
-							Username   string `json:"username"`
-							IsVerified bool   `json:"is_verified"`
+							Username      string `json:"username"`
+							IsVerified    bool   `json:"is_verified"`
+							ProfilePicUrl string `json:"profile_pic_url"`
 						} `json:"user"`
 						Caption *struct {
 							Text string `json:"text"`
@@ -77,14 +78,15 @@ func (b *ChromeBackend) processGraphQLResponse(body string) {
 		}
 
 		reel := Reel{
-			PK:         media.PK,
-			Code:       media.Code,
-			VideoURL:   videoURL,
-			Username:   media.User.Username,
-			Caption:    caption,
-			Liked:      media.HasLiked,
-			LikeCount:  media.LikeCount,
-			IsVerified: media.User.IsVerified,
+			PK:            media.PK,
+			Code:          media.Code,
+			VideoURL:      videoURL,
+			ProfilePicUrl: media.User.ProfilePicUrl,
+			Username:      media.User.Username,
+			Caption:       caption,
+			Liked:         media.HasLiked,
+			LikeCount:     media.LikeCount,
+			IsVerified:    media.User.IsVerified,
 		}
 		b.orderedReels = append(b.orderedReels, reel)
 		newCount++
