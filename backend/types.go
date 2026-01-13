@@ -31,8 +31,8 @@ type Backend interface {
 	// ToggleLike likes/unlikes the current reel
 	ToggleLike() (bool, error)
 
-	// Download downloads a reel to the cache directory and returns the file path
-	Download(index int) (string, error)
+	// Download downloads a reel video and profile picture to the cache directory
+	Download(index int) (videoPath string, pfpPath string, err error)
 
 	// Events returns a channel for backend events (new reels captured, etc)
 	Events() <-chan Event

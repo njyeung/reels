@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-// Fixed video dimensions (in terminal characters)
+// Fixed video dimensions in terminal characters (bytes)
 const (
 	videoWidthChars  = 32
 	videoHeightChars = 29
@@ -24,7 +24,9 @@ func (m Model) viewBrowsing() string {
 	if startCol < 0 {
 		startCol = 0
 	}
+
 	padding := strings.Repeat(" ", startCol)
+	pfpPadding := strings.Repeat(" ", 5)
 
 	// Top padding
 	topPad := 10
@@ -94,27 +96,32 @@ func (m Model) viewBrowsing() string {
 		// Verified badge + username
 		var userLine string
 		if m.currentReel.IsVerified {
-			userLine = verifiedStyle.Render("✓") + " " + usernameStyle.Render("@"+m.currentReel.Username)
+			userLine = pfpPadding + verifiedStyle.Render("✓") + " " + usernameStyle.Render("@"+m.currentReel.Username)
 		} else {
-			userLine = usernameStyle.Render("@" + m.currentReel.Username)
+			userLine = pfpPadding + usernameStyle.Render("@"+m.currentReel.Username)
 		}
-		b.WriteString(padding + userLine + "\n")
+		b.WriteString("\n" + padding + userLine + "\n")
 
+		// caption
 		var captionLines []string
 		maxCaptionLen := videoWidthChars
-		if !m.expandCaption {
-			caption := strings.ReplaceAll(m.currentReel.Caption, "\n", " ")
-			if len(caption) > maxCaptionLen {
-				caption = caption[:maxCaptionLen-3] + "..."
-			}
-			captionLines = []string{caption}
-		} else {
+
+		if m.expandCaption {
 			for _, line := range strings.Split(m.currentReel.Caption, "\n") {
-				for len(line) > maxCaptionLen {
-					captionLines = append(captionLines, line[:maxCaptionLen])
-					line = line[maxCaptionLen:]
+				runes := []rune(line)
+				for len(runes) > maxCaptionLen {
+					captionLines = append(captionLines, string(runes[:maxCaptionLen]))
+					runes = runes[maxCaptionLen:]
 				}
-				captionLines = append(captionLines, line)
+				captionLines = append(captionLines, string(runes))
+			}
+		} else {
+			caption := strings.ReplaceAll(m.currentReel.Caption, "\n", " ")
+			runes := []rune(caption)
+			if len(runes) > maxCaptionLen {
+				captionLines = []string{string(runes[:maxCaptionLen-3]) + "..."}
+			} else {
+				captionLines = []string{caption}
 			}
 		}
 
@@ -125,12 +132,18 @@ func (m Model) viewBrowsing() string {
 		b.WriteString(padding + m.spinner.View() + " " + m.status + "\n\n")
 	}
 
-	b.WriteString("\n")
+	// navbar
+	if !m.expandCaption {
+		b.WriteString("\n")
 
-	nav1 := navStyle.Render("k: prev  j: next  m: mute")
-	nav2 := navStyle.Render("space: pause  l: like  q: quit")
-	b.WriteString(padding + nav1 + "\n")
-	b.WriteString(padding + nav2 + "\n")
+		nav1 := navStyle.Render("k: prev  j: next  m: mute")
+		nav2 := navStyle.Render("space: pause  l: like  q: quit")
+		nav3 := navStyle.Render("c: expand captions")
+		b.WriteString(padding + nav1 + "\n")
+		b.WriteString(padding + nav2 + "\n")
+		b.WriteString(padding + nav3 + "\n")
+
+	}
 
 	return b.String()
 }

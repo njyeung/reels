@@ -1,12 +1,11 @@
 package player
 
 import (
+	_ "image/jpeg"
 	"io"
 	"os"
 	"sync"
 	"sync/atomic"
-
-	"github.com/njyeung/reels/backend"
 )
 
 // AVPlayer implements the Player interface using FFmpeg
@@ -118,20 +117,16 @@ func (p *AVPlayer) SetSize(width, height int) {
 	})
 }
 
-// Play starts playing from a cache url (loops until Stop is called)
-func (p *AVPlayer) Play(url string, reel backend.Reel) error {
+// Play starts playing from cache files (loops until Stop is called)
+func (p *AVPlayer) Play(videoPath, pfpPath string) error {
 	p.playMu.Lock()
 	defer p.playMu.Unlock()
-
-	// Convert reel to what the session needs (fetch/process once)
-	var profilePic []byte
-	// TODO: fetch and process reel.ProfilePicUrl into profilePic
 
 	p.playing.Store(true)
 	p.paused.Store(false)
 
 	for p.playing.Load() {
-		err := p.playOnce(url, profilePic)
+		err := p.playOnce(videoPath, pfpPath)
 		if err != nil {
 			return err
 		}
@@ -140,10 +135,9 @@ func (p *AVPlayer) Play(url string, reel backend.Reel) error {
 }
 
 // playOnce plays the media file once
-func (p *AVPlayer) playOnce(url string, profilePic []byte) error {
+func (p *AVPlayer) playOnce(videoPath string, pfpPath string) error {
 	cfg := p.sessionConfig()
-	cfg.profilePic = profilePic
-	session, err := newPlaySession(url, cfg)
+	session, err := newPlaySession(videoPath, pfpPath, cfg)
 	if err != nil {
 		return err
 	}

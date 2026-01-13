@@ -186,6 +186,71 @@ func (r *KittyRenderer) RenderFrame(rgb []byte, width, height int) error {
 	return err
 }
 
+// RenderProfilePic renders a profile picture at an offset from the video center
+func (r *KittyRenderer) RenderProfilePic(rgba []byte, width int, height int) error {
+	const (
+		offsetCols = -15
+		offsetRows = 16
+	)
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	var buf bytes.Buffer
+
+	// Save cursor position
+	buf.WriteString("\x1b7")
+
+	// Calculate position based on video center + offset
+	if r.cellRow > 0 && r.cellCol > 0 {
+		row := r.termRows/2 + offsetRows
+		col := r.termCols/2 + offsetCols
+		if row < 1 {
+			row = 1
+		}
+		if col < 1 {
+			col = 1
+		}
+		fmt.Fprintf(&buf, "\x1b[%d;%dH", row, col)
+	} else {
+		buf.WriteString("\x1b[H")
+	}
+
+	// Encode RGBA as base64
+	encoded := base64.StdEncoding.EncodeToString(rgba)
+
+	const chunkSize = 4096
+	first := true
+
+	for len(encoded) > 0 {
+		chunk := encoded
+		more := 0
+
+		if len(chunk) > chunkSize {
+			chunk = encoded[:chunkSize]
+			encoded = encoded[chunkSize:]
+			more = 1
+		} else {
+			encoded = ""
+		}
+
+		if first {
+			// f=32 for RGBA format
+			// r.imageID + 100 since r.imageID is our video frame's ID.
+			fmt.Fprintf(&buf, "\x1b_Ga=T,f=32,s=%d,v=%d,i=%d,q=2,m=%d;%s\x1b\\", width, height, r.imageID+100, more, chunk)
+			first = false
+		} else {
+			fmt.Fprintf(&buf, "\x1b_Gm=%d;%s\x1b\\", more, chunk)
+		}
+	}
+
+	// Restore cursor position
+	buf.WriteString("\x1b8")
+
+	_, err := r.out.Write(buf.Bytes())
+	return err
+}
+
 // Clear clears the video area
 func (r *KittyRenderer) Clear() error {
 	r.mu.Lock()

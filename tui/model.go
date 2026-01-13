@@ -155,18 +155,18 @@ func (m Model) checkLoginStatus() tea.Msg {
 
 func (m Model) startPlayback(index int) tea.Cmd {
 	return func() tea.Msg {
-		path, err := m.backend.Download(index)
+		videoPath, pfpPath, err := m.backend.Download(index)
 		if err != nil {
 			return videoErrorMsg{err}
 		}
 		go func() {
-			m.player.Play(path, m.currentReel.Reel)
+			m.player.Play(videoPath, pfpPath)
 		}()
 		return videoReadyMsg{index}
 	}
 }
 
-func (m Model) prefetchNext(index int) {
+func (m Model) prefetch(index int) {
 	nextIndex := index + 1
 	if nextIndex <= m.backend.GetTotal() {
 		m.backend.Download(nextIndex)
@@ -245,7 +245,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case videoReadyMsg:
 		m.status = ""
-		go m.prefetchNext(msg.index)
+		go m.prefetch(msg.index + 1)
 		return m, nil
 
 	case videoErrorMsg:

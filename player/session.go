@@ -1,7 +1,11 @@
 package player
 
 import (
+	"bytes"
 	"fmt"
+	"image"
+	_ "image/jpeg"
+	"os"
 	"sync"
 	"time"
 
@@ -9,11 +13,11 @@ import (
 )
 
 type playSession struct {
-	demuxer    *Demuxer
-	audio      *AudioPlayer
-	video      *VideoDecoder
-	renderer   *KittyRenderer
-	profilePic []byte
+	demuxer  *Demuxer
+	audio    *AudioPlayer
+	video    *VideoDecoder
+	renderer *KittyRenderer
+	overlay  *Overlay
 
 	audioPktCh chan *audioPacket
 	videoPktCh chan *astiav.Packet
@@ -22,20 +26,25 @@ type playSession struct {
 	stopOnce sync.Once
 }
 
+type Overlay struct {
+	profilePic       []byte
+	profilePicWidth  int
+	profilePicHeight int
+}
+
 type audioPacket struct {
 	pkt *astiav.Packet
 	pts float64
 }
 
 type sessionConfig struct {
-	width      int
-	height     int
-	renderer   *KittyRenderer
-	muted      bool
-	profilePic []byte
+	width    int
+	height   int
+	renderer *KittyRenderer
+	muted    bool
 }
 
-func newPlaySession(url string, cfg sessionConfig) (*playSession, error) {
+func newPlaySession(url string, pfpPath string, cfg sessionConfig) (*playSession, error) {
 	demuxer, err := NewDemuxer(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open media: %w", err)
@@ -72,12 +81,14 @@ func newPlaySession(url string, cfg sessionConfig) (*playSession, error) {
 		}
 	}
 
+	overlay := loadOverlay(pfpPath)
+
 	session := &playSession{
 		demuxer:    demuxer,
 		audio:      audio,
 		video:      video,
 		renderer:   renderer,
-		profilePic: cfg.profilePic,
+		overlay:    overlay,
 		stopCh:     make(chan struct{}),
 		videoPktCh: make(chan *astiav.Packet, 30),
 	}
@@ -238,6 +249,12 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 		if err := s.renderer.RenderFrame(frame.RGB, frame.Width, frame.Height); err != nil {
 			return fmt.Errorf("render error: %w", err)
 		}
+
+		if s.overlay != nil {
+			if err := s.renderer.RenderProfilePic(s.overlay.profilePic, s.overlay.profilePicWidth, s.overlay.profilePicHeight); err != nil {
+				return fmt.Errorf("profile pic render error: %w", err)
+			}
+		}
 	}
 
 	return nil
@@ -256,4 +273,126 @@ func fitSize(srcW, srcH, maxW, maxH int) (int, int) {
 		return maxW, int(float64(maxW) / srcAspect)
 	}
 	return int(float64(maxH) * srcAspect), maxH
+}
+
+// loadOverlay loads a profile picture from disk, downsamples it, and converts to RGBA bytes with circular mask.
+// Returns nil if the path is empty or loading fails.
+func loadOverlay(pfpPath string) *Overlay {
+	if pfpPath == "" {
+		return nil
+	}
+
+	data, err := os.ReadFile(pfpPath)
+	if err != nil {
+		return nil
+	}
+
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil
+	}
+
+	bounds := img.Bounds()
+	srcW, srcH := bounds.Dx(), bounds.Dy()
+
+	// target pfp size
+	const profilePicSize = 32
+
+	// Calculate target dimensions maintaining aspect ratio
+	dstW, dstH := profilePicSize, profilePicSize
+	if srcW > srcH {
+		dstH = profilePicSize * srcH / srcW
+	} else if srcH > srcW {
+		dstW = profilePicSize * srcW / srcH
+	}
+
+	// Circle parameters
+	centerX := float64(dstW-1) / 2.0
+	centerY := float64(dstH-1) / 2.0
+	radius := float64(min(dstW, dstH)) / 2.0
+
+	rgba := make([]byte, dstW*dstH*4)
+
+	// Bilinear sampling
+	for dstY := 0; dstY < dstH; dstY++ {
+		for dstX := 0; dstX < dstW; dstX++ {
+			// Map destination pixel to source coordinates
+			srcXf := (float64(dstX)+0.5)*float64(srcW)/float64(dstW) - 0.5
+			srcYf := (float64(dstY)+0.5)*float64(srcH)/float64(dstH) - 0.5
+
+			x0 := int(srcXf)
+			y0 := int(srcYf)
+			x1 := x0 + 1
+			y1 := y0 + 1
+
+			// Clamp to bounds
+			if x0 < 0 {
+				x0 = 0
+			}
+			if y0 < 0 {
+				y0 = 0
+			}
+			if x1 >= srcW {
+				x1 = srcW - 1
+			}
+			if y1 >= srcH {
+				y1 = srcH - 1
+			}
+
+			// Interpolation weights
+			xFrac := srcXf - float64(x0)
+			yFrac := srcYf - float64(y0)
+			if xFrac < 0 {
+				xFrac = 0
+			}
+			if yFrac < 0 {
+				yFrac = 0
+			}
+
+			// Sample four corners
+			r00, g00, b00, _ := img.At(bounds.Min.X+x0, bounds.Min.Y+y0).RGBA()
+			r10, g10, b10, _ := img.At(bounds.Min.X+x1, bounds.Min.Y+y0).RGBA()
+			r01, g01, b01, _ := img.At(bounds.Min.X+x0, bounds.Min.Y+y1).RGBA()
+			r11, g11, b11, _ := img.At(bounds.Min.X+x1, bounds.Min.Y+y1).RGBA()
+
+			// bilinear interpolation
+			r := (1-xFrac)*(1-yFrac)*float64(r00) + xFrac*(1-yFrac)*float64(r10) + (1-xFrac)*yFrac*float64(r01) + xFrac*yFrac*float64(r11)
+			g := (1-xFrac)*(1-yFrac)*float64(g00) + xFrac*(1-yFrac)*float64(g10) + (1-xFrac)*yFrac*float64(g01) + xFrac*yFrac*float64(g11)
+			b := (1-xFrac)*(1-yFrac)*float64(b00) + xFrac*(1-yFrac)*float64(b10) + (1-xFrac)*yFrac*float64(b01) + xFrac*yFrac*float64(b11)
+
+			// Circular mask with anti-aliasing
+			dx := float64(dstX) - centerX
+			dy := float64(dstY) - centerY
+			dist := dx*dx + dy*dy
+			radiusSq := radius * radius
+
+			var alpha float64
+			if dist <= radiusSq-radius {
+				alpha = 255
+			} else if dist >= radiusSq+radius {
+				alpha = 0
+			} else {
+				// Anti-alias edge
+				edgeDist := (radiusSq - dist) / (2 * radius)
+				alpha = 255 * (0.5 + edgeDist)
+				if alpha < 0 {
+					alpha = 0
+				} else if alpha > 255 {
+					alpha = 255
+				}
+			}
+
+			idx := (dstY*dstW + dstX) * 4
+			rgba[idx] = uint8(r / 256)
+			rgba[idx+1] = uint8(g / 256)
+			rgba[idx+2] = uint8(b / 256)
+			rgba[idx+3] = uint8(alpha)
+		}
+	}
+
+	return &Overlay{
+		profilePic:       rgba,
+		profilePicWidth:  dstW,
+		profilePicHeight: dstH,
+	}
 }
