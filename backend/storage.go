@@ -62,13 +62,13 @@ func add(filepath string) error {
 
 // Download downloads a reel video and profile picture to the cache directory
 func (b *ChromeBackend) Download(index int) (string, string, error) {
-	b.mu.RLock()
+	b.reelsMu.RLock()
 	if index < 1 || index > len(b.orderedReels) {
-		b.mu.RUnlock()
+		b.reelsMu.RUnlock()
 		return "", "", fmt.Errorf("index out of range")
 	}
 	reel := b.orderedReels[index-1]
-	b.mu.RUnlock()
+	b.reelsMu.RUnlock()
 
 	if reel.VideoURL == "" {
 		return "", "", fmt.Errorf("no video URL")

@@ -28,9 +28,12 @@ type ChromeBackend struct {
 	cancel      context.CancelFunc
 	allocCancel context.CancelFunc
 
-	mu           sync.RWMutex
+	reelsMu      sync.RWMutex
 	orderedReels []Reel
 	seenPKs      map[string]bool
+
+	syncMu     sync.Mutex
+	syncCancel context.CancelFunc
 
 	events chan Event
 
@@ -237,8 +240,8 @@ func (b *ChromeBackend) GetCurrent() (*ReelInfo, error) {
 		return nil, err
 	}
 
-	b.mu.RLock()
-	defer b.mu.RUnlock()
+	b.reelsMu.RLock()
+	defer b.reelsMu.RUnlock()
 
 	for i, reel := range b.orderedReels {
 		if reel.PK == pk {
@@ -255,8 +258,8 @@ func (b *ChromeBackend) GetCurrent() (*ReelInfo, error) {
 
 // GetReel returns reel info by *1-BASED INDEX* from cache, no browser interaction
 func (b *ChromeBackend) GetReel(index int) (*ReelInfo, error) {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
+	b.reelsMu.RLock()
+	defer b.reelsMu.RUnlock()
 
 	if index < 1 || index > len(b.orderedReels) {
 		return nil, fmt.Errorf("index %d out of range (1-%d)", index, len(b.orderedReels))
@@ -272,26 +275,38 @@ func (b *ChromeBackend) GetReel(index int) (*ReelInfo, error) {
 
 // GetTotal returns total number of captured reels
 func (b *ChromeBackend) GetTotal() int {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
+	b.reelsMu.RLock()
+	defer b.reelsMu.RUnlock()
 	return len(b.orderedReels)
 }
 
 // SyncTo scrolls browser to match the given index
 func (b *ChromeBackend) SyncTo(index int) error {
+	b.syncMu.Lock()
+	// if we see that there is an ongoing SyncTo call
+	// we need to cancel it and start our new SyncTo.
+	if b.syncCancel != nil {
+		b.syncCancel()
+	}
+	ctx, cancel := context.WithCancel(b.ctx)
+	b.syncCancel = cancel
+	b.syncMu.Unlock()
+
+	defer cancel()
+
 	// get current position from DOM first
 	currentPK, _ := b.getCurrentPK()
 
 	// then lock and validate index, get target, and find current index
-	b.mu.RLock()
+	b.reelsMu.RLock()
 
 	if index < 1 || index > len(b.orderedReels) { // out of bounds
-		b.mu.RUnlock()
+		b.reelsMu.RUnlock()
 		return fmt.Errorf("index %d out of range", index)
 	}
 	targetPK := b.orderedReels[index-1].PK // we are already on this reel, no op
 	if currentPK == targetPK {
-		b.mu.RUnlock()
+		b.reelsMu.RUnlock()
 		return nil
 	}
 	currentIndex := 0
@@ -302,10 +317,17 @@ func (b *ChromeBackend) SyncTo(index int) error {
 		}
 	}
 
-	b.mu.RUnlock()
+	b.reelsMu.RUnlock()
 
 	// Scroll towards target
 	for i := 0; i < MaxRetries; i++ {
+		// check if we've been superseded by a new SyncTo
+		select {
+		case <-ctx.Done():
+			return nil // exit
+		default: // fall through
+		}
+
 		if currentIndex < index {
 			if err := b.scrollDown(); err != nil {
 				return err
@@ -325,14 +347,14 @@ func (b *ChromeBackend) SyncTo(index int) error {
 		}
 
 		// Update current index estimate
-		b.mu.RLock()
+		b.reelsMu.RLock()
 		for i, r := range b.orderedReels {
 			if r.PK == pk {
 				currentIndex = i + 1
 				break
 			}
 		}
-		b.mu.RUnlock()
+		b.reelsMu.RUnlock()
 	}
 
 	return fmt.Errorf("failed to sync to index %d after %d scrolls", index, MaxRetries)
@@ -423,14 +445,14 @@ func (b *ChromeBackend) ToggleLike() (bool, error) {
 	}
 
 	// Toggle like in the stored reel
-	b.mu.Lock()
+	b.reelsMu.Lock()
 	for i := range b.orderedReels {
 		if b.orderedReels[i].PK == pk {
 			b.orderedReels[i].Liked = !b.orderedReels[i].Liked
 			break
 		}
 	}
-	b.mu.Unlock()
+	b.reelsMu.Unlock()
 
 	return true, nil
 }

@@ -47,8 +47,8 @@ func (b *ChromeBackend) processGraphQLResponse(body string) {
 		return
 	}
 
-	b.mu.Lock()
-	defer b.mu.Unlock()
+	b.reelsMu.Lock()
+	defer b.reelsMu.Unlock()
 
 	newCount := 0
 	for _, edge := range resp.Data.Connection.Edges {
@@ -72,9 +72,6 @@ func (b *ChromeBackend) processGraphQLResponse(body string) {
 		caption := ""
 		if media.Caption != nil {
 			caption = media.Caption.Text
-			if len(caption) > 50 {
-				caption = caption[:50]
-			}
 		}
 
 		reel := Reel{
