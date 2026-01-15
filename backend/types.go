@@ -1,5 +1,30 @@
 package backend
 
+import (
+	"context"
+	"sync"
+)
+
+// ChromeBackend implements Backend using chromedp
+type ChromeBackend struct {
+	ctx         context.Context
+	cancel      context.CancelFunc
+	allocCancel context.CancelFunc
+
+	reelsMu      sync.RWMutex
+	orderedReels []Reel
+	seenPKs      map[string]bool
+
+	syncMu     sync.Mutex
+	syncCancel context.CancelFunc
+
+	events chan Event
+
+	userDataDir string
+	cacheDir    string
+	configDir   string
+}
+
 // Backend defines the interface between frontend and backend
 type Backend interface {
 	// Start initializes the browser (does not navigate yet)
@@ -23,6 +48,15 @@ type Backend interface {
 
 	// GetTotal returns total number of captured reels
 	GetTotal() int
+
+	// ToggleNavbar toggles navbar visibility and persists the state.
+	// Returns true if navbar should be shown, false if hidden.
+	ToggleNavbar() (bool, error)
+
+	// GetNavbar returns the persisted navbar visibility state.
+	// Returns true if navbar should be shown, false if hidden.
+	// Defaults to true (show navbar) if no setting exists.
+	GetNavbar() bool
 
 	// SyncTo scrolls browser to match the given index
 	// This is async-friendly - call it in background after optimistic UI update

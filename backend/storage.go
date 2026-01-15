@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,6 +11,10 @@ import (
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
+
+type settings struct {
+	ShowNavbar bool `json:"show_navbar"`
+}
 
 var (
 	cacheMu  sync.Mutex
@@ -20,6 +25,8 @@ var (
 	inProgress map[string]chan struct{}
 
 	liked map[string]bool
+
+	settingsMu sync.RWMutex
 )
 
 func (b *ChromeBackend) initStorage() error {
@@ -37,6 +44,19 @@ func (b *ChromeBackend) initStorage() error {
 	}
 	if err := os.MkdirAll(b.cacheDir, 0755); err != nil {
 		return fmt.Errorf("could not create new cache directory")
+	}
+
+	// ensure config directory exists
+	if err := os.MkdirAll(b.configDir, 0755); err != nil {
+		return fmt.Errorf("could not create config directory")
+	}
+
+	// write default settings if settings file doesn't exist
+	settingsPath := filepath.Join(b.configDir, "settings.json")
+	if _, err := os.Stat(settingsPath); os.IsNotExist(err) {
+		defaultSettings := settings{ShowNavbar: true}
+		data, _ := json.Marshal(defaultSettings)
+		os.WriteFile(settingsPath, data, 0644)
 	}
 
 	return nil
@@ -58,6 +78,43 @@ func add(filepath string) error {
 	}
 
 	return nil
+}
+
+func (b *ChromeBackend) loadSettings(path string) settings {
+	// default settings if settings file doesn't exist
+	s := settings{ShowNavbar: true}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return s
+	}
+	json.Unmarshal(data, &s)
+
+	return s
+}
+
+func (b *ChromeBackend) ToggleNavbar() (bool, error) {
+	settingsMu.Lock()
+	defer settingsMu.Unlock()
+
+	path := filepath.Join(b.configDir, "settings.json")
+	s := b.loadSettings(path)
+	s.ShowNavbar = !s.ShowNavbar
+
+	data, err := json.Marshal(s)
+	if err != nil {
+		return s.ShowNavbar, err
+	}
+
+	return s.ShowNavbar, os.WriteFile(path, data, 0666)
+}
+
+func (b *ChromeBackend) GetNavbar() bool {
+	settingsMu.RLock()
+	defer settingsMu.RUnlock()
+
+	path := filepath.Join(b.configDir, "settings.json")
+	return b.loadSettings(path).ShowNavbar
 }
 
 // Download downloads a reel video and profile picture to the cache directory

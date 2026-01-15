@@ -52,7 +52,7 @@ type Model struct {
 	videoWidthPx  int
 	videoHeightPx int
 
-	expandCaption bool
+	showNavbar bool
 
 	flags Config
 
@@ -65,7 +65,7 @@ type Config struct {
 }
 
 // NewModel creates a new TUI model
-func NewModel(userDataDir, cacheDir string, output io.Writer, flags Config) Model {
+func NewModel(userDataDir, cacheDir, configDir string, output io.Writer, flags Config) Model {
 	playerHeight := 480
 	playerWidth := 270
 
@@ -76,15 +76,18 @@ func NewModel(userDataDir, cacheDir string, output io.Writer, flags Config) Mode
 	p := player.NewAVPlayer()
 	p.SetSize(playerWidth, playerHeight) // Set initial size before any playback can start
 
+	b := backend.NewChromeBackend(userDataDir, cacheDir, configDir)
+
 	return Model{
 		state:         stateLoading,
-		backend:       backend.NewChromeBackend(userDataDir, cacheDir),
+		backend:       b,
 		player:        p,
 		spinner:       s,
 		status:        "Starting browser",
 		videoWidthPx:  playerWidth,
 		videoHeightPx: playerHeight,
 		flags:         flags,
+		showNavbar: b.GetNavbar(),
 	}
 }
 
@@ -305,7 +308,12 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			go m.backend.ToggleLike()
 		}
 	case "c":
-		m.expandCaption = !m.expandCaption
+		showNavbar, err := m.backend.ToggleNavbar()
+		if err != nil {
+			// do nothing since this is only a minor failure
+		}
+
+		m.showNavbar = showNavbar
 	}
 
 	return m, nil

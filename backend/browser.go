@@ -10,7 +10,6 @@ import (
 	"os"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/chromedp/cdproto/fetch"
@@ -22,33 +21,15 @@ import (
 // compiled once for extracting ig_cache_key from URLs
 var pkRegex = regexp.MustCompile(`ig_cache_key=([^&]+)`)
 
-// ChromeBackend implements Backend using chromedp
-type ChromeBackend struct {
-	ctx         context.Context
-	cancel      context.CancelFunc
-	allocCancel context.CancelFunc
-
-	reelsMu      sync.RWMutex
-	orderedReels []Reel
-	seenPKs      map[string]bool
-
-	syncMu     sync.Mutex
-	syncCancel context.CancelFunc
-
-	events chan Event
-
-	userDataDir string
-	cacheDir    string
-}
-
 // NewChromeBackend creates a new Chrome-based backend
-func NewChromeBackend(userDataDir, cacheDir string) *ChromeBackend {
+func NewChromeBackend(userDataDir, cacheDir, configDir string) *ChromeBackend {
 	backend := ChromeBackend{
 		orderedReels: make([]Reel, 0),
 		seenPKs:      make(map[string]bool),
 		events:       make(chan Event, 100),
 		userDataDir:  userDataDir,
 		cacheDir:     cacheDir,
+		configDir:    configDir,
 	}
 
 	backend.initStorage()

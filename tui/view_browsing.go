@@ -32,7 +32,7 @@ func (m Model) viewBrowsing() string {
 	pfpPadding := strings.Repeat(" ", 5)
 	topPad := max(int(math.Round(float64(m.height-videoHeightChars)/2.0))-1, 0)
 
-	b.WriteString(strings.Repeat("\n", topPad-1))
+	b.WriteString(strings.Repeat("\n", max(topPad-1, 0)))
 
 	// Status line
 	// spinner during loading
@@ -91,7 +91,7 @@ func (m Model) viewBrowsing() string {
 		var captionLines []string
 		maxCaptionLen := videoWidthChars
 
-		if m.expandCaption {
+		if !m.showNavbar {
 			for _, line := range strings.Split(m.currentReel.Caption, "\n") {
 				runes := []rune(line)
 				for len(runes) > maxCaptionLen {
@@ -117,12 +117,12 @@ func (m Model) viewBrowsing() string {
 	}
 
 	// navbar
-	if !m.expandCaption {
+	if m.showNavbar {
 		b.WriteString("\n")
 
 		nav1 := navStyle.Render("k: prev  j: next  m: mute")
 		nav2 := navStyle.Render("space: pause  l: like  q: quit")
-		nav3 := navStyle.Render("c: expand captions")
+		nav3 := navStyle.Render("c: expand captions / hide navbar")
 		b.WriteString(padding + nav1 + "\n")
 		b.WriteString(padding + nav2 + "\n")
 		b.WriteString(padding + nav3 + "\n")
