@@ -19,13 +19,8 @@ var (
 	titleStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("205"))
-
-	heartStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("196")) // red
-
 	verifiedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("33")) // white
-
+			Foreground(lipgloss.Color("33"))
 	likeCountStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("245")) // gray
+			Foreground(lipgloss.Color("245"))
 )

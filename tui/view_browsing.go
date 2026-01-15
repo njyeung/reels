@@ -2,13 +2,17 @@ package tui
 
 import (
 	"fmt"
+	"math"
 	"strings"
+
+	"github.com/mattn/go-runewidth"
+	"github.com/njyeung/reels/player"
 )
 
-// Fixed video dimensions in terminal characters (bytes)
+// Video dimensions from player package
 const (
-	videoWidthChars  = 32
-	videoHeightChars = 29
+	videoWidthChars  = player.VideoWidthChars
+	videoHeightChars = player.VideoHeightChars
 )
 
 func (m Model) viewBrowsing() string {
@@ -19,28 +23,20 @@ func (m Model) viewBrowsing() string {
 	var b strings.Builder
 
 	// Center the fixed-size video area
-	totalWidth := videoWidthChars
-	startCol := (m.width - totalWidth) / 2
+	startCol := (m.width - videoWidthChars) / 2
 	if startCol < 0 {
 		startCol = 0
 	}
 
 	padding := strings.Repeat(" ", startCol)
 	pfpPadding := strings.Repeat(" ", 5)
+	topPad := max(int(math.Round(float64(m.height-videoHeightChars)/2.0))-1, 0)
 
-	// Top padding
-	topPad := 10
-	for range topPad {
-		b.WriteString("\n")
-	}
+	b.WriteString(strings.Repeat("\n", topPad-1))
 
 	// Status line
 	// spinner during loading
 	var statusLine string
-	if strings.Contains(m.status, "Loading") {
-		statusLine = m.spinner.View()
-	}
-	b.WriteString(padding + statusLine + "\n")
 
 	// Heart and play/pause icons
 	// positioned on the right side of video
@@ -63,29 +59,18 @@ func (m Model) viewBrowsing() string {
 		muteIcon = "M"
 	}
 
-	// Calculate vertical position for icons
-	// centered on right side of video
-	iconStartRow := videoHeightChars / 2
+	statusLine = padding + heartIcon + " " + likeCount + "   " + playPauseIcon + "   " + muteIcon
 
-	// Draw video area rows with side icons
-	for row := range videoHeightChars {
-		b.WriteString(padding)
-		// Video area (empty space where kitty graphics will render)
-		b.WriteString(strings.Repeat(" ", videoWidthChars))
-
-		// Side icons
-		switch row {
-		case iconStartRow:
-			b.WriteString(" " + heartIcon + " " + likeCountStyle.Render(likeCount))
-		case iconStartRow + 2:
-			b.WriteString(" " + playPauseIcon)
-		case iconStartRow + 4:
-			b.WriteString(" " + muteIcon)
-		default:
-			b.WriteString("  ")
+	if runewidth.StringWidth(statusLine) < videoWidthChars {
+		currLen := runewidth.StringWidth(statusLine)
+		statusLine = statusLine + strings.Repeat(" ", videoWidthChars-currLen)
+		if m.status == "Loading" || m.status == "Starting browser" {
+			statusLine = statusLine + m.spinner.View()
 		}
-		b.WriteString("\n")
 	}
+	b.WriteString(statusLine + "\n")
+
+	b.WriteString(strings.Repeat("\n", videoHeightChars))
 
 	// Separator line
 	separator := strings.Repeat("─", videoWidthChars)
@@ -100,7 +85,7 @@ func (m Model) viewBrowsing() string {
 		} else {
 			userLine = pfpPadding + usernameStyle.Render("@"+m.currentReel.Username)
 		}
-		b.WriteString("\n" + padding + userLine + "\n")
+		b.WriteString(padding + userLine + "\n\n")
 
 		// caption
 		var captionLines []string
@@ -124,7 +109,6 @@ func (m Model) viewBrowsing() string {
 				captionLines = []string{caption}
 			}
 		}
-
 		for _, line := range captionLines {
 			b.WriteString(padding + captionStyle.Render(line) + "\n")
 		}
@@ -145,7 +129,19 @@ func (m Model) viewBrowsing() string {
 
 	}
 
-	return b.String()
+	// Center the output vertically, truncating equally from top and bottom
+	// This keeps the UI aligned with the centered video player
+	result := strings.TrimSuffix(b.String(), "\n")
+	lines := strings.Split(result, "\n")
+	if len(lines) > m.height {
+		excess := len(lines) - m.height
+		trimTop := int(math.Round(float64(excess) / 2.0))
+		trimBottom := excess - trimTop
+		lines = lines[trimTop : len(lines)-trimBottom]
+		result = strings.Join(lines, "\n")
+	}
+
+	return result
 }
 
 // formatLikeCount formats like count with K/M suffixes

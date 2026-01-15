@@ -81,7 +81,7 @@ func NewModel(userDataDir, cacheDir string, output io.Writer, flags Config) Mode
 		backend:       backend.NewChromeBackend(userDataDir, cacheDir),
 		player:        p,
 		spinner:       s,
-		status:        "Starting browser...",
+		status:        "Starting browser",
 		videoWidthPx:  playerWidth,
 		videoHeightPx: playerHeight,
 		flags:         flags,
@@ -203,7 +203,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case backendReadyMsg:
 		m.state = stateBrowsing
-		m.status = "Loading reel..."
+		m.status = "Loading"
 		return m, tea.Batch(
 			m.loadCurrentReel,
 			m.listenForEvents,
@@ -263,7 +263,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			nextIndex := m.currentReel.Index + 1
 			if nextIndex <= m.backend.GetTotal() {
 				m.player.Stop()
-				m.status = "Loading..."
+				m.status = "Loading"
 				if info, err := m.backend.GetReel(nextIndex); err == nil {
 					m.currentReel = info
 				}
@@ -277,7 +277,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			prevIndex := m.currentReel.Index - 1
 			if prevIndex >= 1 {
 				m.player.Stop()
-				m.status = "Loading..."
+				m.status = "Loading"
 				if info, err := m.backend.GetReel(prevIndex); err == nil {
 					m.currentReel = info
 				}

@@ -5,10 +5,17 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"sync"
 
 	"golang.org/x/sys/unix"
+)
+
+// Video dimensions in terminal characters (shared with TUI)
+const (
+	VideoWidthChars  = 32
+	VideoHeightChars = 28
 )
 
 // KittyRenderer renders frames using Kitty's graphics protocol
@@ -186,11 +193,11 @@ func (r *KittyRenderer) RenderFrame(rgb []byte, width, height int) error {
 	return err
 }
 
-// RenderProfilePic renders a profile picture at an offset from the video center
+// RenderProfilePic renders a profile picture at an offset from the video
 func (r *KittyRenderer) RenderProfilePic(rgba []byte, width int, height int) error {
 	const (
 		offsetCols = -15
-		offsetRows = 16
+		offsetRows = 2 // rows below the video
 	)
 
 	r.mu.Lock()
@@ -201,9 +208,12 @@ func (r *KittyRenderer) RenderProfilePic(rgba []byte, width int, height int) err
 	// Save cursor position
 	buf.WriteString("\x1b7")
 
-	// Calculate position based on video center + offset
+	// Calculate position based on video position (matching TUI layout)
 	if r.cellRow > 0 && r.cellCol > 0 {
-		row := r.termRows/2 + offsetRows
+		// Video top row
+		videoTop := max(int(math.Round(float64(r.termRows-VideoHeightChars)/2.0)-1), 0)
+		// Profile pic goes below video
+		row := videoTop + VideoHeightChars + offsetRows
 		col := r.termCols/2 + offsetCols
 		if row < 1 {
 			row = 1
