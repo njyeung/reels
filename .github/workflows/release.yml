@@ -34,17 +34,7 @@ jobs:
           path: reels-linux-amd64
 
   build-macos:
-    strategy:
-      matrix:
-        include:
-          - runner: macos-15
-            arch: amd64
-            artifact: reels-darwin-amd64
-          - runner: macos-latest
-            arch: arm64
-            artifact: reels-darwin-arm64
-
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -67,13 +57,13 @@ jobs:
         env:
           CGO_ENABLED: 1
         run: |
-          go build -o ${{ matrix.artifact }} .
+          go build -o reels-darwin-arm64 .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.artifact }}
+          name: reels-darwin-arm64
+          path: reels-darwin-arm64
 
   release:
     needs: [build-linux, build-macos]
@@ -96,7 +86,6 @@ jobs:
         with:
           files: |
             artifacts/reels-linux-amd64/reels-linux-amd64
-            artifacts/reels-darwin-amd64/reels-darwin-amd64
             artifacts/reels-darwin-arm64/reels-darwin-arm64
             artifacts/reels-*.tar.gz
           generate_release_notes: true
