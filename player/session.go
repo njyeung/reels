@@ -6,6 +6,7 @@ import (
 	"image"
 	_ "image/jpeg"
 	"os"
+	"runtime"
 	"sync"
 	"time"
 
@@ -296,7 +297,10 @@ func loadOverlay(pfpPath string) *Overlay {
 	srcW, srcH := bounds.Dx(), bounds.Dy()
 
 	// target pfp size
-	const profilePicSize = 32
+	profilePicSize := 32
+	if runtime.GOOS == "darwin" { // retina displays
+		profilePicSize *= 2
+	}
 
 	// Calculate target dimensions maintaining aspect ratio
 	dstW, dstH := profilePicSize, profilePicSize
