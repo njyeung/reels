@@ -47,7 +47,7 @@ jobs:
       - name: Install dependencies
         run: |
           brew tap homebrew-ffmpeg/ffmpeg
-          brew install homebrew-ffmpeg/ffmpeg/ffmpeg --with-libjxl
+          brew install homebrew-ffmpeg/ffmpeg/ffmpeg --with-jpeg-xl
           echo "PKG_CONFIG_PATH=$(brew --prefix ffmpeg)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
           echo "LDFLAGS=-L$(brew --prefix ffmpeg)/lib" >> $GITHUB_ENV
           echo "CFLAGS=-I$(brew --prefix ffmpeg)/include" >> $GITHUB_ENV
