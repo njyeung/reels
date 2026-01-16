@@ -45,6 +45,7 @@ reels
 ### AUR (Arch Linux)
 
 ```bash
+sudo pacman -Syu ffmpeg # make sure you're on ffmpeg n8.0
 yay -S reels-bin
 reels
 ```
