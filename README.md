@@ -42,8 +42,6 @@ brew install reels
 reels
 ```
 
-This installs a pre-built binary with FFmpeg handled automatically.
-
 ### AUR (Arch Linux)
 
 ```bash
