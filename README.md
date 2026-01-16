@@ -1,4 +1,6 @@
-TUI for instagram reels. Doomscrollbrainrotmaxxing
+# reels
+
+TUI for Instagram Reels. Doomscrollbrainrotmaxxing in the terminal.
 
 ## Prerequisites
 
@@ -11,60 +13,61 @@ You need a terminal that supports the **Kitty graphics protocol**:
 ### Browser
 Chrome, Chromium, or Brave must be installed. The app uses headless browser automation to interact with Instagram.
 
-### System Dependencies
-
-**FFmpeg 7+ is required.** The default packages on Ubuntu/Debian are too old.
-
-#### Linux (Debian/Ubuntu)
-
-Ubuntu/Debian ship with FFmpeg 4-6, but this project requires FFmpeg 7+. Use the [ubuntuhandbook1 PPA](https://launchpad.net/~ubuntuhandbook1/+archive/ubuntu/ffmpeg7):
-
-```bash
-sudo add-apt-repository ppa:ubuntuhandbook1/ffmpeg7
-sudo apt update
-sudo apt install ffmpeg libavformat-dev libavcodec-dev libswresample-dev libswscale-dev libasound2-dev
-```
-
-#### Linux (Fedora/RHEL)
-
-FFmpeg 7+ is available via [RPM Fusion](https://rpmfusion.org/):
-
-```bash
-sudo dnf install \
-  https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm
-sudo dnf install ffmpeg ffmpeg-devel alsa-lib-devel
-```
-
-#### Linux (Arch)
-
-Arch ships FFmpeg 8+ in the official repos:
-
-```bash
-sudo pacman -S ffmpeg alsa-lib
-```
-
-#### macOS
-```bash
-brew install ffmpeg
-```
-
-### Building
-
-Requires Go 1.23+:
-
-```bash
-go build -o reels .
-```
-
 ## Usage
 
 ```bash
-./reels
+reels
 ```
+
+### Flags
+- `--headed` - Run browser in headed mode (visible browser window)
+- `--login` - Open browser window to log in to Instagram
 
 ### Controls
 - `j` / `↓` - Next reel
 - `k` / `↑` - Previous reel
 - `Space` - Pause/resume
 - `l` - Like/unlike
+- `c` - Toggle Navbar
+- `m` - Mute
 - `q` - Quit
+
+## Installation
+
+### Homebrew (macOS ARM64 / Linux)
+
+```bash
+brew tap njyeung/reels
+brew install reels
+reels
+```
+
+This installs a pre-built binary with FFmpeg handled automatically.
+
+### AUR (Arch Linux)
+
+```bash
+yay -S reels-bin
+reels
+```
+
+### Pre-built Binaries
+
+Download the latest release from [GitHub Releases](https://github.com/njyeung/reels/releases):
+
+| Platform | Binary |
+|----------|--------|
+| Linux (x86_64) | `reels-linux-amd64` |
+| macOS (Apple Silicon) | `reels-darwin-arm64` |
+
+**Note:** Pre-built binaries require FFmpeg 8+ to be installed on your system.
+
+### Building from Source
+
+Requires Go 1.23+ and FFmpeg 8+ development libraries.
+
+```bash
+git clone https://github.com/njyeung/reels.git
+cd reels
+go build -o reels .
+```
