@@ -14,7 +14,7 @@ func (m Model) viewLogin() string {
 		// Headed mode: user is logging in via browser
 		if m.loginSuccess {
 			title = titleStyle.Render("Login successful!")
-			instructions = "Tell Instagram to save your password for next time, then restart the app without --login."
+			instructions = importantStyle.Render("IMPORTANT") + "\nTell Instagram to " + importantStyle.Render("save your login info") + " for next time\nThen restart the app without --login."
 		} else {
 			title = titleStyle.Render("Manual login")
 			instructions = "Please log in to Instagram in the browser window."

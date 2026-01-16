@@ -23,4 +23,10 @@ var (
 			Foreground(lipgloss.Color("33"))
 	likeCountStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("245"))
+
+	importantStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("226")).
+			Background(lipgloss.Color("52")).
+			Padding(0, 1)
 )

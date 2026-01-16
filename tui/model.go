@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"io"
+	"runtime"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -68,6 +69,10 @@ type Config struct {
 func NewModel(userDataDir, cacheDir, configDir string, output io.Writer, flags Config) Model {
 	playerHeight := 480
 	playerWidth := 270
+	if runtime.GOOS == "darwin" { // retina displays scale 2x the pixels
+		playerHeight *= 2
+		playerWidth *= 2
+	}
 
 	s := spinner.New()
 	s.Spinner = spinner.Dot
@@ -87,7 +92,7 @@ func NewModel(userDataDir, cacheDir, configDir string, output io.Writer, flags C
 		videoWidthPx:  playerWidth,
 		videoHeightPx: playerHeight,
 		flags:         flags,
-		showNavbar: b.GetNavbar(),
+		showNavbar:    b.GetNavbar(),
 	}
 }
 
