@@ -27,6 +27,7 @@ type ChromeBackend struct {
 
 // Backend defines the interface between frontend and backend
 type Backend interface {
+
 	// Start initializes the browser (does not navigate yet)
 	// If headless is false, the browser opens visibly for manual login
 	Start(headless bool) error
@@ -52,11 +53,6 @@ type Backend interface {
 	// ToggleNavbar toggles navbar visibility and persists the state.
 	// Returns true if navbar should be shown, false if hidden.
 	ToggleNavbar() (bool, error)
-
-	// GetNavbar returns the persisted navbar visibility state.
-	// Returns true if navbar should be shown, false if hidden.
-	// Defaults to true (show navbar) if no setting exists.
-	GetNavbar() bool
 
 	// SyncTo scrolls browser to match the given index
 	// This is async-friendly - call it in background after optimistic UI update

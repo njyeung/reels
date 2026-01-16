@@ -6,11 +6,11 @@ import (
 	"image"
 	_ "image/jpeg"
 	"os"
-	"runtime"
 	"sync"
 	"time"
 
 	"github.com/asticode/go-astiav"
+	"github.com/njyeung/reels/backend"
 )
 
 type playSession struct {
@@ -297,10 +297,7 @@ func loadOverlay(pfpPath string) *Overlay {
 	srcW, srcH := bounds.Dx(), bounds.Dy()
 
 	// target pfp size
-	profilePicSize := 32
-	if runtime.GOOS == "darwin" { // retina displays
-		profilePicSize *= 2
-	}
+	profilePicSize := 32 * backend.Config.RetinaScale
 
 	// Calculate target dimensions maintaining aspect ratio
 	dstW, dstH := profilePicSize, profilePicSize

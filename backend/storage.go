@@ -1,20 +1,26 @@
 package backend
 
 import (
+	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
+	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
 
-type settings struct {
-	ShowNavbar bool `json:"show_navbar"`
+type Settings struct {
+	ShowNavbar  bool
+	RetinaScale int
 }
+
+var Config Settings
 
 var (
 	cacheMu  sync.Mutex
@@ -52,11 +58,9 @@ func (b *ChromeBackend) initStorage() error {
 	}
 
 	// write default settings if settings file doesn't exist
-	settingsPath := filepath.Join(b.configDir, "settings.json")
+	settingsPath := filepath.Join(b.configDir, "reels.conf")
 	if _, err := os.Stat(settingsPath); os.IsNotExist(err) {
-		defaultSettings := settings{ShowNavbar: true}
-		data, _ := json.Marshal(defaultSettings)
-		os.WriteFile(settingsPath, data, 0644)
+		writeConf(settingsPath, defaultSettings())
 	}
 
 	return nil
@@ -80,41 +84,74 @@ func add(filepath string) error {
 	return nil
 }
 
-func (b *ChromeBackend) loadSettings(path string) settings {
-	// default settings if settings file doesn't exist
-	s := settings{ShowNavbar: true}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return s
+func defaultSettings() Settings {
+	s := Settings{
+		ShowNavbar:  true,
+		RetinaScale: 1,
 	}
-	json.Unmarshal(data, &s)
 
+	if goruntime.GOOS == "darwin" {
+		s.RetinaScale = 2
+	}
 	return s
+}
+
+// LoadSettings loads default settings on error
+func LoadSettings(configDir string) {
+	s := defaultSettings()
+
+	path := filepath.Join(configDir, "reels.conf")
+	conf := parseConf(path)
+
+	if v, ok := conf["show_navbar"]; ok {
+		s.ShowNavbar = v == "true"
+	}
+	if v, ok := conf["retina_scale"]; ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			s.RetinaScale = n
+		}
+	}
+
+	Config = s
+}
+
+func writeConf(path string, s Settings) error {
+	var b strings.Builder
+	b.WriteString("# insta reels TUI config\n\n")
+	b.WriteString(fmt.Sprintf("show_navbar = %t\n", s.ShowNavbar))
+	b.WriteString(fmt.Sprintf("retina_scale = %d\n", s.RetinaScale))
+	return os.WriteFile(path, []byte(b.String()), 0644)
+}
+
+func parseConf(path string) map[string]string {
+	result := make(map[string]string)
+	file, err := os.Open(path)
+	if err != nil {
+		return result
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if k, v, ok := strings.Cut(line, "="); ok {
+			result[strings.TrimSpace(k)] = strings.TrimSpace(v)
+		}
+	}
+	return result
 }
 
 func (b *ChromeBackend) ToggleNavbar() (bool, error) {
 	settingsMu.Lock()
 	defer settingsMu.Unlock()
 
-	path := filepath.Join(b.configDir, "settings.json")
-	s := b.loadSettings(path)
-	s.ShowNavbar = !s.ShowNavbar
+	Config.ShowNavbar = !Config.ShowNavbar
 
-	data, err := json.Marshal(s)
-	if err != nil {
-		return s.ShowNavbar, err
-	}
-
-	return s.ShowNavbar, os.WriteFile(path, data, 0666)
-}
-
-func (b *ChromeBackend) GetNavbar() bool {
-	settingsMu.RLock()
-	defer settingsMu.RUnlock()
-
-	path := filepath.Join(b.configDir, "settings.json")
-	return b.loadSettings(path).ShowNavbar
+	path := filepath.Join(b.configDir, "reels.conf")
+	return Config.ShowNavbar, writeConf(path, Config)
 }
 
 // Download downloads a reel video and profile picture to the cache directory
