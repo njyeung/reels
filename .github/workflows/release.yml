@@ -46,13 +46,13 @@ jobs:
 
       - name: Install dependencies
         run: |
-          brew tap homebrew-ffmpeg/ffmpeg
-          brew install homebrew-ffmpeg/ffmpeg/ffmpeg --with-jpeg-xl
-          echo "PKG_CONFIG_PATH=$(brew --prefix ffmpeg)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
-          echo "LDFLAGS=-L$(brew --prefix ffmpeg)/lib" >> $GITHUB_ENV
-          echo "CFLAGS=-I$(brew --prefix ffmpeg)/include" >> $GITHUB_ENV
-          echo "CGO_LDFLAGS=-L$(brew --prefix ffmpeg)/lib" >> $GITHUB_ENV
-          echo "CGO_CFLAGS=-I$(brew --prefix ffmpeg)/include" >> $GITHUB_ENV
+          brew update
+          brew install ffmpeg-full
+          echo "PKG_CONFIG_PATH=$(brew --prefix ffmpeg-full)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
+          echo "LDFLAGS=-L$(brew --prefix ffmpeg-full)/lib" >> $GITHUB_ENV
+          echo "CFLAGS=-I$(brew --prefix ffmpeg-full)/include" >> $GITHUB_ENV
+          echo "CGO_LDFLAGS=-L$(brew --prefix ffmpeg-full)/lib" >> $GITHUB_ENV
+          echo "CGO_CFLAGS=-I$(brew --prefix ffmpeg-full)/include" >> $GITHUB_ENV
 
       - name: Build
         env:
