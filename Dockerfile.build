@@ -21,22 +21,33 @@ RUN apt-get update && apt-get install -y \
     texinfo \
     wget \
     zlib1g-dev \
+    libjxl-dev \
+    libwebp-dev \
+    libaom-dev \
+    libdav1d-dev \
+    libsvtav1enc-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Build FFmpeg 7.1 from source
+# Build FFmpeg 8.0.1 from source with full codec support
 WORKDIR /tmp
-RUN wget https://ffmpeg.org/releases/ffmpeg-7.1.tar.xz && \
-    tar xf ffmpeg-7.1.tar.xz && \
-    cd ffmpeg-7.1 && \
+RUN wget https://ffmpeg.org/releases/ffmpeg-8.0.1.tar.xz && \
+    tar xf ffmpeg-8.0.1.tar.xz && \
+    cd ffmpeg-8.0.1 && \
     ./configure \
         --prefix=/usr/local \
         --enable-gpl \
+        --enable-version3 \
         --enable-libx264 \
         --enable-libx265 \
         --enable-libvpx \
         --enable-libmp3lame \
         --enable-libopus \
         --enable-libvorbis \
+        --enable-libjxl \
+        --enable-libwebp \
+        --enable-libaom \
+        --enable-libdav1d \
+        --enable-libsvtav1 \
         --enable-shared \
         --disable-static \
         --disable-doc \
@@ -44,7 +55,7 @@ RUN wget https://ffmpeg.org/releases/ffmpeg-7.1.tar.xz && \
     make -j$(nproc) && \
     make install && \
     ldconfig && \
-    cd / && rm -rf /tmp/ffmpeg-7.1*
+    cd / && rm -rf /tmp/ffmpeg-8.0.1*
 
 # Set up environment
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH

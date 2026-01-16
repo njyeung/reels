@@ -18,7 +18,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build Docker image with FFmpeg 7
+      - name: Build Docker image with FFmpeg 8
         run: |
           docker build -f Dockerfile.build -t reels-builder .
 
@@ -46,12 +46,12 @@ jobs:
 
       - name: Install dependencies
         run: |
-          brew install ffmpeg@7
-          echo "PKG_CONFIG_PATH=$(brew --prefix ffmpeg@7)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
-          echo "LDFLAGS=-L$(brew --prefix ffmpeg@7)/lib" >> $GITHUB_ENV
-          echo "CFLAGS=-I$(brew --prefix ffmpeg@7)/include" >> $GITHUB_ENV
-          echo "CGO_LDFLAGS=-L$(brew --prefix ffmpeg@7)/lib" >> $GITHUB_ENV
-          echo "CGO_CFLAGS=-I$(brew --prefix ffmpeg@7)/include" >> $GITHUB_ENV
+          brew install ffmpeg-full
+          echo "PKG_CONFIG_PATH=$(brew --prefix ffmpeg-full)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
+          echo "LDFLAGS=-L$(brew --prefix ffmpeg-full)/lib" >> $GITHUB_ENV
+          echo "CFLAGS=-I$(brew --prefix ffmpeg-full)/include" >> $GITHUB_ENV
+          echo "CGO_LDFLAGS=-L$(brew --prefix ffmpeg-full)/lib" >> $GITHUB_ENV
+          echo "CGO_CFLAGS=-I$(brew --prefix ffmpeg-full)/include" >> $GITHUB_ENV
 
       - name: Build
         env:
