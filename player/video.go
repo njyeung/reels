@@ -24,7 +24,6 @@ type VideoDecoder struct {
 
 	srcWidth  int
 	srcHeight int
-	srcPixFmt astiav.PixelFormat // Source pixel format for sws context
 	dstWidth  int
 	dstHeight int
 
@@ -86,7 +85,6 @@ func NewVideoDecoder(codecParams *astiav.CodecParameters, timeBase astiav.Ration
 		timeBase:  timeBase,
 		srcWidth:  codecParams.Width(),
 		srcHeight: codecParams.Height(),
-		srcPixFmt: codecParams.PixelFormat(),
 		dstWidth:  codecParams.Width(),
 		dstHeight: codecParams.Height(),
 	}
@@ -162,19 +160,20 @@ func (v *VideoDecoder) SetSize(width, height int) error {
 		v.swsCtx = nil
 	}
 
-	return v.initSwsContext()
+	// Don't initialize sws context here - wait until we have a frame
+	// so we know the actual pixel format (especially for hardware decoding)
+	return nil
 }
 
-func (v *VideoDecoder) initSwsContext() error {
+func (v *VideoDecoder) initSwsContext(srcPixFmt astiav.PixelFormat) error {
 	if v.dstWidth == 0 || v.dstHeight == 0 {
 		return nil
 	}
 
 	// Create scaling context: source format -> RGB24 at target size
-	// For hardware frames, we use the software frame's format after transfer
 	var err error
 	v.swsCtx, err = astiav.CreateSoftwareScaleContext(
-		v.srcWidth, v.srcHeight, v.srcPixFmt,
+		v.srcWidth, v.srcHeight, srcPixFmt,
 		v.dstWidth, v.dstHeight, astiav.PixelFormatRgb24,
 		astiav.NewSoftwareScaleContextFlags(astiav.SoftwareScaleContextFlagBilinear),
 	)
@@ -232,16 +231,11 @@ func (v *VideoDecoder) DecodePacket(pkt *astiav.Packet) (*Frame, error) {
 			return nil, fmt.Errorf("failed to transfer hardware frame: %w", err)
 		}
 		frameToScale = v.swFrame
-
-		// Update source pixel format if this is the first frame
-		if v.swsCtx == nil {
-			v.srcPixFmt = v.swFrame.PixelFormat()
-		}
 	}
 
-	// Initialize sws context if needed
+	// Initialize sws context if needed (using actual frame's pixel format)
 	if v.swsCtx == nil {
-		if err := v.initSwsContext(); err != nil {
+		if err := v.initSwsContext(frameToScale.PixelFormat()); err != nil {
 			v.frame.Unref()
 			if v.swFrame != nil {
 				v.swFrame.Unref()
