@@ -160,8 +160,6 @@ func (v *VideoDecoder) SetSize(width, height int) error {
 		v.swsCtx = nil
 	}
 
-	// Don't initialize sws context here - wait until we have a frame
-	// so we know the actual pixel format (especially for hardware decoding)
 	return nil
 }
 
@@ -233,7 +231,7 @@ func (v *VideoDecoder) DecodePacket(pkt *astiav.Packet) (*Frame, error) {
 		frameToScale = v.swFrame
 	}
 
-	// Initialize sws context if needed (using actual frame's pixel format)
+	// Initialize sws context if needed
 	if v.swsCtx == nil {
 		if err := v.initSwsContext(frameToScale.PixelFormat()); err != nil {
 			v.frame.Unref()

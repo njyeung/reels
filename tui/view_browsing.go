@@ -32,12 +32,18 @@ func (m Model) viewBrowsing() string {
 	pfpPadding := strings.Repeat(" ", 5)
 	topPad := max(int(math.Round(float64(m.height-videoHeightChars)/2.0))-1, 0)
 
+	// Calculate lines available for caption area
+	// Layout: topPad + status(1) + video(videoHeightChars) + separator(1) + username(2) + caption + navbar(4 if shown)
+	fixedLines := topPad + 1 + videoHeightChars + 1 + 2 + 4
+
+	maxCaptionLines := m.height - fixedLines
+	if maxCaptionLines < 1 {
+		maxCaptionLines = 1
+	}
+
 	b.WriteString(strings.Repeat("\n", max(topPad-1, 0)))
 
-	// Status line
-	// spinner during loading
-	var statusLine string
-
+	// Status line - heart, like count, play/pause, mute icons
 	// Heart and play/pause icons
 	// positioned on the right side of video
 	heartIcon := "🤍"
@@ -59,16 +65,17 @@ func (m Model) viewBrowsing() string {
 		muteIcon = "M"
 	}
 
-	statusLine = padding + heartIcon + " " + likeCount + "   " + playPauseIcon + "   " + muteIcon
+	// Build status content without padding first
+	statusContent := heartIcon + " " + likeCount + "   " + playPauseIcon + "   " + muteIcon
+	contentWidth := runewidth.StringWidth(statusContent)
 
-	if runewidth.StringWidth(statusLine) < videoWidthChars {
-		currLen := runewidth.StringWidth(statusLine)
-		statusLine = statusLine + strings.Repeat(" ", videoWidthChars-currLen)
+	if contentWidth < videoWidthChars {
+		statusContent = statusContent + strings.Repeat(" ", videoWidthChars-contentWidth)
 		if m.status == "Loading" || m.status == "Starting browser" {
-			statusLine = statusLine + m.spinner.View()
+			statusContent = statusContent + m.spinner.View()
 		}
 	}
-	b.WriteString(statusLine + "\n")
+	b.WriteString(padding + statusContent + "\n")
 
 	b.WriteString(strings.Repeat("\n", videoHeightChars))
 
@@ -109,6 +116,12 @@ func (m Model) viewBrowsing() string {
 				captionLines = []string{caption}
 			}
 		}
+
+		// Truncate caption to available space
+		// (when displaying full caption)
+		if len(captionLines) > maxCaptionLines {
+			captionLines = captionLines[:maxCaptionLines]
+		}
 		for _, line := range captionLines {
 			b.WriteString(padding + captionStyle.Render(line) + "\n")
 		}
@@ -129,19 +142,7 @@ func (m Model) viewBrowsing() string {
 
 	}
 
-	// Center the output vertically, truncating equally from top and bottom
-	// This keeps the UI aligned with the centered video player
-	result := strings.TrimSuffix(b.String(), "\n")
-	lines := strings.Split(result, "\n")
-	if len(lines) > m.height {
-		excess := len(lines) - m.height
-		trimTop := int(math.Round(float64(excess) / 2.0))
-		trimBottom := excess - trimTop
-		lines = lines[trimTop : len(lines)-trimBottom]
-		result = strings.Join(lines, "\n")
-	}
-
-	return result
+	return strings.TrimSuffix(b.String(), "\n")
 }
 
 // formatLikeCount formats like count with K/M suffixes
