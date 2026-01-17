@@ -30,12 +30,12 @@ func main() {
 	flag.Parse()
 
 	// Set up directories based on OS.
-	// Linux: 	~/.local/share/reels
-	// 			 ~/.cache/reels,
-	// 			~/.config/reels
+	// Linux: 	~/.local/share/reels/
+	// 			 ~/.cache/reels/,
+	// 			~/.config/reels/
 	//
-	// macOS: 	~/Library/Application Support/reels
-	// 			~/Library/Caches/reels
+	// macOS: 	~/Library/Application Support/reels/
+	// 			~/Library/Caches/reels/
 	homeDir, _ := os.UserHomeDir()
 	var userDataDir, cacheDir, configDir string
 

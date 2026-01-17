@@ -18,6 +18,8 @@ import (
 type Settings struct {
 	ShowNavbar  bool
 	RetinaScale int
+	ReelWidth   int
+	ReelHeight  int
 }
 
 var Config Settings
@@ -88,6 +90,8 @@ func defaultSettings() Settings {
 	s := Settings{
 		ShowNavbar:  true,
 		RetinaScale: 1,
+		ReelWidth:   270,
+		ReelHeight:  480,
 	}
 
 	if goruntime.GOOS == "darwin" {
@@ -96,7 +100,7 @@ func defaultSettings() Settings {
 	return s
 }
 
-// LoadSettings loads default settings on error
+// LoadSettings loads reels.conf from configDir into Config. Loads default settings on error
 func LoadSettings(configDir string) {
 	s := defaultSettings()
 
@@ -104,11 +108,21 @@ func LoadSettings(configDir string) {
 	conf := parseConf(path)
 
 	if v, ok := conf["show_navbar"]; ok {
-		s.ShowNavbar = v == "true"
+		s.ShowNavbar = (v == "true")
 	}
 	if v, ok := conf["retina_scale"]; ok {
 		if n, err := strconv.Atoi(v); err == nil {
 			s.RetinaScale = n
+		}
+	}
+	if v, ok := conf["reel_width"]; ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			s.ReelWidth = n
+		}
+	}
+	if v, ok := conf["reel_height"]; ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			s.ReelHeight = n
 		}
 	}
 

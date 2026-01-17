@@ -67,8 +67,8 @@ type Config struct {
 // NewModel creates a new TUI model
 func NewModel(userDataDir, cacheDir, configDir string, output io.Writer, flags Config) Model {
 	backend.LoadSettings(configDir)
-	playerHeight := 480 * backend.Config.RetinaScale
-	playerWidth := 270 * backend.Config.RetinaScale
+	playerHeight := backend.Config.ReelHeight * backend.Config.RetinaScale
+	playerWidth := backend.Config.ReelWidth * backend.Config.RetinaScale
 
 	s := spinner.New()
 	s.Spinner = spinner.Dot
