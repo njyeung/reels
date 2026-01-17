@@ -1,5 +1,3 @@
-# reels
-
 TUI for Instagram Reels. Doomscrollbrainrotmaxxing in the terminal.
 
 ## Prerequisites
@@ -63,7 +61,7 @@ Download the latest release from [GitHub Releases](https://github.com/njyeung/re
 
 ### Building from Source
 
-Requires Go 1.23+ and FFmpeg 8+ development libraries.
+Requires Go 1.25+ and FFmpeg 8+ development libraries.
 
 ```bash
 git clone https://github.com/njyeung/reels.git
