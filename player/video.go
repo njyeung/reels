@@ -2,6 +2,8 @@ package player
 
 import (
 	"fmt"
+	"runtime"
+	"slices"
 	"sync"
 
 	"github.com/asticode/go-astiav"
@@ -12,10 +14,17 @@ type VideoDecoder struct {
 	codecCtx *astiav.CodecContext
 	swsCtx   *astiav.SoftwareScaleContext
 	frame    *astiav.Frame
+	swFrame  *astiav.Frame // For transferring hardware frames to software
 	rgbFrame *astiav.Frame
+
+	// Hardware acceleration
+	hwDeviceCtx *astiav.HardwareDeviceContext
+	hwPixFmt    astiav.PixelFormat
+	useHardware bool
 
 	srcWidth  int
 	srcHeight int
+	srcPixFmt astiav.PixelFormat // Source pixel format for sws context
 	dstWidth  int
 	dstHeight int
 
@@ -25,12 +34,59 @@ type VideoDecoder struct {
 	closed bool
 }
 
+// getPreferredHardwareTypes returns hardware device types to try, in order of preference
+func getPreferredHardwareTypes() []string {
+	switch runtime.GOOS {
+	case "darwin":
+		return []string{"videotoolbox"}
+	case "linux":
+		return []string{"cuda", "vaapi", "vdpau"}
+	case "windows":
+		return []string{"d3d11va", "dxva2", "cuda"}
+	default:
+		return nil
+	}
+}
+
+// tryInitHardware attempts to initialize hardware decoding for the given codec
+// Returns the hardware device context and pixel format if successful, nil otherwise
+func tryInitHardware(codec *astiav.Codec) (*astiav.HardwareDeviceContext, astiav.PixelFormat) {
+	preferred := getPreferredHardwareTypes()
+	if len(preferred) == 0 {
+		return nil, 0
+	}
+
+	// Get hardware configs supported by this codec
+	configs := codec.HardwareConfigs()
+	for _, config := range configs {
+		hwType := config.HardwareDeviceType()
+		hwTypeName := hwType.String()
+
+		// Check if this hardware type is in our preferred list
+		if !slices.Contains(preferred, hwTypeName) {
+			continue
+		}
+
+		// Try to create the hardware device context
+		hwDeviceCtx, err := astiav.CreateHardwareDeviceContext(hwType, "", nil, 0)
+		if err != nil {
+			continue
+		}
+
+		// Success - return this hardware context
+		return hwDeviceCtx, config.PixelFormat()
+	}
+
+	return nil, 0
+}
+
 // NewVideoDecoder creates a video decoder from codec parameters
 func NewVideoDecoder(codecParams *astiav.CodecParameters, timeBase astiav.Rational) (*VideoDecoder, error) {
 	v := &VideoDecoder{
 		timeBase:  timeBase,
 		srcWidth:  codecParams.Width(),
 		srcHeight: codecParams.Height(),
+		srcPixFmt: codecParams.PixelFormat(),
 		dstWidth:  codecParams.Width(),
 		dstHeight: codecParams.Height(),
 	}
@@ -41,9 +97,18 @@ func NewVideoDecoder(codecParams *astiav.CodecParameters, timeBase astiav.Ration
 		return nil, fmt.Errorf("video codec not found: %s", codecParams.CodecID())
 	}
 
+	// Try to initialize hardware decoding
+	hwDeviceCtx, hwPixFmt := tryInitHardware(codec)
+	if hwDeviceCtx != nil {
+		v.hwDeviceCtx = hwDeviceCtx
+		v.hwPixFmt = hwPixFmt
+		v.useHardware = true
+	}
+
 	// Allocate codec context
 	v.codecCtx = astiav.AllocCodecContext(codec)
 	if v.codecCtx == nil {
+		v.Close()
 		return nil, fmt.Errorf("failed to allocate video codec context")
 	}
 
@@ -51,6 +116,11 @@ func NewVideoDecoder(codecParams *astiav.CodecParameters, timeBase astiav.Ration
 	if err := codecParams.ToCodecContext(v.codecCtx); err != nil {
 		v.Close()
 		return nil, fmt.Errorf("failed to copy video codec params: %w", err)
+	}
+
+	// Set up hardware device context if available
+	if v.useHardware {
+		v.codecCtx.SetHardwareDeviceContext(v.hwDeviceCtx)
 	}
 
 	// Open codec
@@ -62,8 +132,16 @@ func NewVideoDecoder(codecParams *astiav.CodecParameters, timeBase astiav.Ration
 	// Allocate frames
 	v.frame = astiav.AllocFrame()
 	v.rgbFrame = astiav.AllocFrame()
+	if v.useHardware {
+		v.swFrame = astiav.AllocFrame() // For GPU -> CPU transfer
+	}
 
 	return v, nil
+}
+
+// IsHardwareAccelerated returns true if hardware decoding is being used
+func (v *VideoDecoder) IsHardwareAccelerated() bool {
+	return v.useHardware
 }
 
 // SetSize sets the output dimensions for scaling
@@ -93,9 +171,10 @@ func (v *VideoDecoder) initSwsContext() error {
 	}
 
 	// Create scaling context: source format -> RGB24 at target size
+	// For hardware frames, we use the software frame's format after transfer
 	var err error
 	v.swsCtx, err = astiav.CreateSoftwareScaleContext(
-		v.srcWidth, v.srcHeight, v.codecCtx.PixelFormat(),
+		v.srcWidth, v.srcHeight, v.srcPixFmt,
 		v.dstWidth, v.dstHeight, astiav.PixelFormatRgb24,
 		astiav.NewSoftwareScaleContextFlags(astiav.SoftwareScaleContextFlagBilinear),
 	)
@@ -143,16 +222,39 @@ func (v *VideoDecoder) DecodePacket(pkt *astiav.Packet) (*Frame, error) {
 	// Calculate duration from packet duration
 	var duration = float64(pkt.Duration()) * float64(v.timeBase.Num()) / float64(v.timeBase.Den())
 
+	// Get the frame to scale - either directly or after GPU->CPU transfer
+	frameToScale := v.frame
+
+	if v.useHardware && v.frame.PixelFormat() == v.hwPixFmt {
+		// Transfer frame from GPU to CPU
+		if err := v.frame.TransferHardwareData(v.swFrame); err != nil {
+			v.frame.Unref()
+			return nil, fmt.Errorf("failed to transfer hardware frame: %w", err)
+		}
+		frameToScale = v.swFrame
+
+		// Update source pixel format if this is the first frame
+		if v.swsCtx == nil {
+			v.srcPixFmt = v.swFrame.PixelFormat()
+		}
+	}
+
 	// Initialize sws context if needed
 	if v.swsCtx == nil {
 		if err := v.initSwsContext(); err != nil {
 			v.frame.Unref()
+			if v.swFrame != nil {
+				v.swFrame.Unref()
+			}
 			return nil, err
 		}
 	}
 
-	if err := v.swsCtx.ScaleFrame(v.frame, v.rgbFrame); err != nil {
+	if err := v.swsCtx.ScaleFrame(frameToScale, v.rgbFrame); err != nil {
 		v.frame.Unref()
+		if v.swFrame != nil {
+			v.swFrame.Unref()
+		}
 		return nil, fmt.Errorf("failed to scale frame: %w", err)
 	}
 
@@ -160,6 +262,9 @@ func (v *VideoDecoder) DecodePacket(pkt *astiav.Packet) (*Frame, error) {
 	rgbBytes, err := data.Bytes(1)
 	if err != nil {
 		v.frame.Unref()
+		if v.swFrame != nil {
+			v.swFrame.Unref()
+		}
 		return nil, fmt.Errorf("failed to get RGB bytes: %w", err)
 	}
 
@@ -168,6 +273,9 @@ func (v *VideoDecoder) DecodePacket(pkt *astiav.Packet) (*Frame, error) {
 	copy(rgb, rgbBytes)
 
 	v.frame.Unref()
+	if v.swFrame != nil {
+		v.swFrame.Unref()
+	}
 
 	return &Frame{
 		RGB:      rgb,
@@ -197,6 +305,10 @@ func (v *VideoDecoder) Close() {
 		v.frame.Free()
 		v.frame = nil
 	}
+	if v.swFrame != nil {
+		v.swFrame.Free()
+		v.swFrame = nil
+	}
 	if v.rgbFrame != nil {
 		v.rgbFrame.Free()
 		v.rgbFrame = nil
@@ -208,5 +320,9 @@ func (v *VideoDecoder) Close() {
 	if v.codecCtx != nil {
 		v.codecCtx.Free()
 		v.codecCtx = nil
+	}
+	if v.hwDeviceCtx != nil {
+		v.hwDeviceCtx.Free()
+		v.hwDeviceCtx = nil
 	}
 }

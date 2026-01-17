@@ -81,7 +81,7 @@ func (m Model) viewBrowsing() string {
 		// Verified badge + username
 		var userLine string
 		if m.currentReel.IsVerified {
-			userLine = pfpPadding + usernameStyle.Render("@"+m.currentReel.Username) + verifiedStyle.Render("✓")
+			userLine = pfpPadding + usernameStyle.Render("@"+m.currentReel.Username) + " " + verifiedStyle.Render("✓")
 		} else {
 			userLine = pfpPadding + usernameStyle.Render("@"+m.currentReel.Username)
 		}
