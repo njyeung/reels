@@ -70,3 +70,10 @@ git clone https://github.com/njyeung/reels.git
 cd reels
 go build -o reels .
 ```
+
+## TODO
+
+- Support for comments sections
+- Sharing (to friends and grabbing link)
+- Optimize performance (gpu decoding, shared memory w/ kitty instead of base64 encoding every frame)
+- syncing bugs with browser 
