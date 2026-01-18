@@ -78,7 +78,7 @@ go build -o reels .
 
 ### Settings
 
-The config file `reels.conf` is located at:
+The config file is located at:
 - **macOS**: `~/Library/Application Support/reels/reels.conf`
 - **Linux**: `~/.config/reels/reels.conf`
 
@@ -87,8 +87,6 @@ A default config is created on first run:
 ```
 show_navbar = true
 retina_scale = 2    # 2 on macOS, 1 on Linux by default
-
-# Bounding box for the reel (does not stretch aspect ratios)
 reel_width = 270  
 reel_height = 480
 ```
