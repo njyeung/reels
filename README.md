@@ -34,7 +34,7 @@ reels
 
 ## Installation
 
-### Homebrew (macOS ARM64 / Linux)
+### Homebrew (macOS ARM64 / Linux x86_64)
 
 ```bash
 brew tap njyeung/reels
@@ -42,7 +42,7 @@ brew install reels
 reels
 ```
 
-### AUR (Arch Linux)
+### AUR (Arch Linux x86_64)
 
 ```bash
 sudo pacman -Syu ffmpeg # make sure you're on ffmpeg n8.0
