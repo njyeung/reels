@@ -76,6 +76,16 @@ cd reels
 go build -o reels .
 ```
 
+### Settings
+
+The reels.conf has configurable settings
+```
+Linux: ~/.config/reels/
+```
+```
+macOS: ~/Library/Application Support/reels/
+```
+
 ## TODO
 
 - Support for comments sections
