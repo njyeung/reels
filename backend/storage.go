@@ -134,6 +134,7 @@ func writeConf(path string, s Settings) error {
 	b.WriteString("# insta reels TUI config\n\n")
 	b.WriteString(fmt.Sprintf("show_navbar = %t\n", s.ShowNavbar))
 	b.WriteString(fmt.Sprintf("retina_scale = %d\n", s.RetinaScale))
+	b.WriteString("# reels will be scales within this bounding box")
 	b.WriteString(fmt.Sprintf("reel_width = %d\n", s.ReelWidth))
 	b.WriteString(fmt.Sprintf("reel_height = %d\n", s.ReelHeight))
 	return os.WriteFile(path, []byte(b.String()), 0644)
