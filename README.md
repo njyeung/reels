@@ -76,15 +76,14 @@ cd reels
 go build -o reels .
 ```
 
-### Settings
+## Settings
 
-The config file is located at:
 - **macOS**: `~/Library/Application Support/reels/reels.conf`
 - **Linux**: `~/.config/reels/reels.conf`
 
-A default config is created on first run:
-
 ```
+# Default config (created on first run)
+
 show_navbar = true
 retina_scale = 2    # 2 on macOS, 1 on Linux by default
 reel_width = 270  
