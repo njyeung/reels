@@ -1,6 +1,9 @@
 TUI for Instagram Reels. Doomscrollbrainrotmaxxing in the terminal.
 
-![Screenshot of the app](Screenshot.png)
+<p align="center">
+  <img src="Screenshot.png" width="45%" />
+  <img src="Screenshot.png" width="45%" />
+</p>
 
 ## Prerequisites
 
