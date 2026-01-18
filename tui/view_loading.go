@@ -15,7 +15,7 @@ func (m Model) viewLoading() string {
 
 func renderLoadingScreen(width, height int) string {
 	logo := []string{
-		" ____  _____  _____  _      ___",
+		"____  _____  _____  _      ___",
 		"|  _ \\| ____|| ____|| |   / ___|",
 		"| |_) |  _|  |  _|  | |   \\ \\__ ",
 		"|  _ <| |___ | |___ | |__  ___ \\",

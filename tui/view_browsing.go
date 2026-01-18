@@ -9,16 +9,14 @@ import (
 	"github.com/njyeung/reels/player"
 )
 
-// Video dimensions from player package
-const (
-	videoWidthChars  = player.VideoWidthChars
-	videoHeightChars = player.VideoHeightChars
-)
-
 func (m Model) viewBrowsing() string {
 	if m.width == 0 || m.height == 0 {
 		return "Loading..."
 	}
+
+	// Video dimensions from player package (computed at startup)
+	videoWidthChars := player.VideoWidthChars
+	videoHeightChars := player.VideoHeightChars
 
 	var b strings.Builder
 
@@ -33,8 +31,8 @@ func (m Model) viewBrowsing() string {
 	topPad := max(int(math.Round(float64(m.height-videoHeightChars)/2.0))-1, 0)
 
 	// Calculate lines available for caption area
-	// Layout: topPad + status(1) + video(videoHeightChars) + separator(1) + username(2) + caption + navbar(4 if shown)
-	fixedLines := topPad + 1 + videoHeightChars + 1 + 2 + 4
+	// Layout: topPad + status(1) + video(videoHeightChars) + separator(1) + username(2) + caption
+	fixedLines := topPad + 1 + videoHeightChars + 1 + 2
 
 	maxCaptionLines := m.height - fixedLines
 	if maxCaptionLines < 1 {
@@ -100,18 +98,12 @@ func (m Model) viewBrowsing() string {
 
 		if !m.showNavbar {
 			for _, line := range strings.Split(m.currentReel.Caption, "\n") {
-				runes := []rune(line)
-				for len(runes) > maxCaptionLen {
-					captionLines = append(captionLines, string(runes[:maxCaptionLen]))
-					runes = runes[maxCaptionLen:]
-				}
-				captionLines = append(captionLines, string(runes))
+				captionLines = append(captionLines, wrapByWidth(line, maxCaptionLen)...)
 			}
 		} else {
 			caption := strings.ReplaceAll(m.currentReel.Caption, "\n", " ")
-			runes := []rune(caption)
-			if len(runes) > maxCaptionLen {
-				captionLines = []string{string(runes[:maxCaptionLen-3]) + "..."}
+			if runewidth.StringWidth(caption) > maxCaptionLen {
+				captionLines = []string{truncateByWidth(caption, maxCaptionLen-3) + "..."}
 			} else {
 				captionLines = []string{caption}
 			}
@@ -154,4 +146,42 @@ func formatLikeCount(count int) string {
 		return fmt.Sprintf("%.1fK", float64(count)/1000)
 	}
 	return fmt.Sprintf("%d", count)
+}
+
+// wrapByWidth wraps text to fit within maxWidth display columns
+func wrapByWidth(text string, maxWidth int) []string {
+	var lines []string
+	var currentLine strings.Builder
+	currentWidth := 0
+
+	for _, r := range text {
+		rw := runewidth.RuneWidth(r)
+		if currentWidth+rw > maxWidth {
+			lines = append(lines, currentLine.String())
+			currentLine.Reset()
+			currentWidth = 0
+		}
+		currentLine.WriteRune(r)
+		currentWidth += rw
+	}
+	if currentLine.Len() > 0 {
+		lines = append(lines, currentLine.String())
+	}
+	return lines
+}
+
+// truncateByWidth truncates text to fit within maxWidth display columns
+func truncateByWidth(text string, maxWidth int) string {
+	var result strings.Builder
+	currentWidth := 0
+
+	for _, r := range text {
+		rw := runewidth.RuneWidth(r)
+		if currentWidth+rw > maxWidth {
+			break
+		}
+		result.WriteRune(r)
+		currentWidth += rw
+	}
+	return result.String()
 }

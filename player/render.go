@@ -6,16 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"os"
 	"sync"
-
-	"golang.org/x/sys/unix"
-)
-
-// Video dimensions in terminal characters (shared with TUI)
-const (
-	VideoWidthChars  = 32
-	VideoHeightChars = 28
 )
 
 // KittyRenderer renders frames using Kitty's graphics protocol
@@ -97,15 +88,6 @@ func (r *KittyRenderer) CenterVideo(videoWidth, videoHeight int) {
 			r.cellRow = 1
 		}
 	}
-}
-
-// GetTerminalSize returns terminal dimensions (cols, rows, widthPx, heightPx)
-func GetTerminalSize() (cols, rows, widthPx, heightPx int, err error) {
-	ws, err := unix.IoctlGetWinsize(int(os.Stdout.Fd()), unix.TIOCGWINSZ)
-	if err != nil {
-		return 0, 0, 0, 0, err
-	}
-	return int(ws.Col), int(ws.Row), int(ws.Xpixel), int(ws.Ypixel), nil
 }
 
 // RenderFrame renders an RGB frame using Kitty graphics protocol
@@ -196,7 +178,7 @@ func (r *KittyRenderer) RenderFrame(rgb []byte, width, height int) error {
 // RenderProfilePic renders a profile picture at an offset from the video
 func (r *KittyRenderer) RenderProfilePic(rgba []byte, width int, height int) error {
 	const (
-		offsetCols = -15
+		offsetCols = 1
 		offsetRows = 2 // rows below the video
 	)
 
@@ -212,9 +194,10 @@ func (r *KittyRenderer) RenderProfilePic(rgba []byte, width int, height int) err
 	if r.cellRow > 0 && r.cellCol > 0 {
 		// Video top row
 		videoTop := max(int(math.Round(float64(r.termRows-VideoHeightChars)/2.0)-1), 0)
-		// Profile pic goes below video
+		// Profile pic goes below video, ont he left
 		row := videoTop + VideoHeightChars + offsetRows
-		col := r.termCols/2 + offsetCols
+		col := (r.termCols-VideoWidthChars)/2 + offsetCols
+
 		if row < 1 {
 			row = 1
 		}

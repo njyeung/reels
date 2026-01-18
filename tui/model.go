@@ -70,6 +70,8 @@ func NewModel(userDataDir, cacheDir, configDir string, output io.Writer, flags C
 	playerHeight := backend.Config.ReelHeight * backend.Config.RetinaScale
 	playerWidth := backend.Config.ReelWidth * backend.Config.RetinaScale
 
+	player.ComputeVideoCharacterDimensions(playerWidth, playerHeight)
+
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
@@ -196,8 +198,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.WindowSizeMsg:
+		// when the terminal is resized
 		m.width = msg.Width
 		m.height = msg.Height
+
+		// recompute video row and col size for tui layout
+		player.ComputeVideoCharacterDimensions(m.videoWidthPx, m.videoHeightPx)
+
+		// recenter the video in the new window
 		m.player.SetSize(m.videoWidthPx, m.videoHeightPx)
 
 	case spinner.TickMsg:
