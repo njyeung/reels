@@ -1,5 +1,7 @@
 TUI for Instagram Reels. Doomscrollbrainrotmaxxing in the terminal.
 
+![Screenshot of the app](Screenshot.png)
+
 ## Prerequisites
 
 ### Terminal
