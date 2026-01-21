@@ -104,16 +104,18 @@ type MusicInfo struct {
 
 // Reel represents a single Instagram reel with metadata
 type Reel struct {
-	PK            string
-	Code          string
-	VideoURL      string
-	ProfilePicUrl string
-	Username      string
-	Caption       string
-	Liked         bool
-	LikeCount     int
-	IsVerified    bool
-	Music         *MusicInfo
+	PK               string
+	Code             string
+	VideoURL         string
+	ProfilePicUrl    string
+	Username         string
+	Caption          string
+	Liked            bool
+	LikeCount        int
+	IsVerified       bool
+	CommentCount     int
+	CommentsDisabled bool
+	Music            *MusicInfo
 }
 
 // ReelInfo includes the reel data plus its position in the feed

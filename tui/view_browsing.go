@@ -41,16 +41,17 @@ func (m Model) viewBrowsing() string {
 
 	b.WriteString(strings.Repeat("\n", max(topPad-1, 0)))
 
-	// Status line - heart, like count, play/pause, mute icons
-	// Heart and play/pause icons
+	// Status line - heart, like count, comment count, play/pause, mute icons
 	// positioned on the right side of video
 	heartIcon := "🤍"
 	likeCount := ""
+	commentCount := ""
 	if m.currentReel != nil {
 		if m.currentReel.Liked {
 			heartIcon = "❤️"
 		}
 		likeCount = formatLikeCount(m.currentReel.LikeCount)
+		commentCount = formatLikeCount(m.currentReel.CommentCount)
 	}
 
 	playPauseIcon := "  "
@@ -64,7 +65,7 @@ func (m Model) viewBrowsing() string {
 	}
 
 	// Build status content without padding first
-	statusContent := heartIcon + " " + likeCount + "   " + playPauseIcon + "   " + muteIcon
+	statusContent := heartIcon + " " + likeCount + "   💬 " + commentCount + "   " + playPauseIcon + "   " + muteIcon
 	contentWidth := runewidth.StringWidth(statusContent)
 
 	if contentWidth < videoWidthChars {
@@ -121,46 +122,95 @@ func (m Model) viewBrowsing() string {
 			b.WriteString("\n")
 		}
 
-		// caption
-		var captionLines []string
-		maxCaptionLen := videoWidthChars
+		// Comments view (replaces caption and navbar when open)
+		if m.commentsOpen && len(m.comments) > 0 {
+			// Header
+			header := commentHeaderStyle.Render(fmt.Sprintf("Comments (%d)", len(m.comments)))
+			b.WriteString(padding + header + "\n\n")
 
-		if !m.showNavbar {
-			for _, line := range strings.Split(m.currentReel.Caption, "\n") {
-				captionLines = append(captionLines, wrapByWidth(line, maxCaptionLen)...)
+			// Calculate how many comments we can show
+			// Reserve 2 lines for header and 1 for hint
+			availableLines := maxCaptionLines - 3
+			if availableLines < 1 {
+				availableLines = 1
 			}
+
+			// Render comments starting from scroll position
+			linesUsed := 0
+			for i := m.commentScroll; i < len(m.comments) && linesUsed < availableLines; i++ {
+				comment := m.comments[i]
+
+				// Username with verified badge
+				userPart := commentUsernameStyle.Render("@" + comment.Username)
+				if comment.IsVerified {
+					userPart += " " + verifiedStyle.Render("✓")
+				}
+
+				// Wrap comment text
+				commentLines := wrapByWidth(comment.Text, videoWidthChars-2)
+
+				// Check if we have room for at least username + first line
+				if linesUsed+1 > availableLines {
+					break
+				}
+
+				// Write username
+				b.WriteString(padding + userPart + "\n")
+				linesUsed++
+
+				// Write comment text lines
+				for _, line := range commentLines {
+					if linesUsed >= availableLines {
+						break
+					}
+					b.WriteString(padding + "  " + commentTextStyle.Render(line) + "\n")
+					linesUsed++
+				}
+			}
+
+			// Hint line
+			hint := navStyle.Render("j/k: scroll  c: close")
+			b.WriteString("\n" + padding + hint + "\n")
 		} else {
-			caption := strings.ReplaceAll(m.currentReel.Caption, "\n", " ")
-			if runewidth.StringWidth(caption) > maxCaptionLen {
-				captionLines = []string{truncateByWidth(caption, maxCaptionLen-3) + "..."}
-			} else {
-				captionLines = []string{caption}
-			}
-		}
+			// Normal caption view
+			var captionLines []string
+			maxCaptionLen := videoWidthChars
 
-		// Truncate caption to available space
-		// (when displaying full caption)
-		if len(captionLines) > maxCaptionLines {
-			captionLines = captionLines[:maxCaptionLines]
-		}
-		for _, line := range captionLines {
-			b.WriteString(padding + captionStyle.Render(line) + "\n")
+			if !m.showNavbar {
+				for _, line := range strings.Split(m.currentReel.Caption, "\n") {
+					captionLines = append(captionLines, wrapByWidth(line, maxCaptionLen)...)
+				}
+			} else {
+				caption := strings.ReplaceAll(m.currentReel.Caption, "\n", " ")
+				if runewidth.StringWidth(caption) > maxCaptionLen {
+					captionLines = []string{truncateByWidth(caption, maxCaptionLen-3) + "..."}
+				} else {
+					captionLines = []string{caption}
+				}
+			}
+
+			// Truncate caption to available space
+			if len(captionLines) > maxCaptionLines {
+				captionLines = captionLines[:maxCaptionLines]
+			}
+			for _, line := range captionLines {
+				b.WriteString(padding + captionStyle.Render(line) + "\n")
+			}
+
+			// navbar (only when comments not open)
+			if m.showNavbar {
+				b.WriteString("\n")
+
+				nav1 := navStyle.Render("k: prev  j: next  m: mute  c: comments")
+				nav2 := navStyle.Render("space: pause  l: like  q: quit")
+				nav3 := navStyle.Render("e: expand captions / hide navbar")
+				b.WriteString(padding + nav1 + "\n")
+				b.WriteString(padding + nav2 + "\n")
+				b.WriteString(padding + nav3 + "\n")
+			}
 		}
 	} else {
 		b.WriteString(padding + m.spinner.View() + " " + m.status + "\n\n")
-	}
-
-	// navbar
-	if m.showNavbar {
-		b.WriteString("\n")
-
-		nav1 := navStyle.Render("k: prev  j: next  m: mute")
-		nav2 := navStyle.Render("space: pause  l: like  q: quit")
-		nav3 := navStyle.Render("c: expand captions / hide navbar")
-		b.WriteString(padding + nav1 + "\n")
-		b.WriteString(padding + nav2 + "\n")
-		b.WriteString(padding + nav3 + "\n")
-
 	}
 
 	return strings.TrimSuffix(b.String(), "\n")

@@ -55,6 +55,11 @@ type Model struct {
 
 	showNavbar bool
 
+	// Comments state
+	commentsOpen  bool
+	comments      []backend.Comment
+	commentScroll int
+
 	flags Config
 
 	loginSuccess bool
@@ -251,8 +256,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case backendEventMsg:
-		if msg.Type == backend.EventReelsCaptured {
+		switch msg.Type {
+		case backend.EventReelsCaptured:
 			m.status = fmt.Sprintf("Captured %d reels", m.backend.GetTotal())
+		case backend.EventCommentsCaptured:
+			// Only accept comments if they belong to the current reel
+			if m.currentReel != nil && m.backend.GetCommentsReelPK() == m.currentReel.PK {
+				m.comments = m.backend.GetComments()
+				m.commentsOpen = true
+				m.commentScroll = 0
+			}
 		}
 		return m, m.listenForEvents
 
@@ -289,11 +302,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "j", "down":
+		// If comments open, scroll down in comments
+		if m.commentsOpen {
+			if m.commentScroll < len(m.comments)-1 {
+				m.commentScroll++
+			}
+			return m, nil
+		}
+		// Otherwise navigate to next reel
 		if m.currentReel != nil {
 			nextIndex := m.currentReel.Index + 1
 			if nextIndex <= m.backend.GetTotal() {
 				m.player.Stop()
 				m.status = "Loading"
+				m.comments = nil
+				m.commentsOpen = false
 				if info, err := m.backend.GetReel(nextIndex); err == nil {
 					m.currentReel = info
 				}
@@ -303,11 +326,21 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "k", "up":
+		// If comments open, scroll up in comments
+		if m.commentsOpen {
+			if m.commentScroll > 0 {
+				m.commentScroll--
+			}
+			return m, nil
+		}
+		// Otherwise navigate to previous reel
 		if m.currentReel != nil {
 			prevIndex := m.currentReel.Index - 1
 			if prevIndex >= 1 {
 				m.player.Stop()
 				m.status = "Loading"
+				m.comments = nil
+				m.commentsOpen = false
 				if info, err := m.backend.GetReel(prevIndex); err == nil {
 					m.currentReel = info
 				}
@@ -315,12 +348,13 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, m.startPlayback(prevIndex)
 			}
 		}
+
 	case "m":
 		if m.currentReel != nil {
 			m.player.Mute()
-
 			return m, nil
 		}
+
 	case " ":
 		m.player.Pause()
 		if m.player.IsPaused() {
@@ -334,12 +368,28 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.currentReel.Liked = !m.currentReel.Liked
 			go m.backend.ToggleLike()
 		}
+
 	case "c":
+		// Toggle comments
+		if m.commentsOpen {
+			m.commentsOpen = false
+			go m.backend.CloseComments()
+		} else if m.currentReel != nil && !m.currentReel.CommentsDisabled {
+			// If we already have comments cached for this reel, just show them
+			if len(m.comments) > 0 {
+				m.commentsOpen = true
+				m.commentScroll = 0
+			} else {
+				go m.backend.OpenComments()
+				// commentsOpen will be set when EventCommentsCaptured arrives
+			}
+		}
+
+	case "e":
 		showNavbar, err := m.backend.ToggleNavbar()
 		if err != nil {
 			// do nothing since this is only a minor failure
 		}
-
 		m.showNavbar = showNavbar
 	}
 

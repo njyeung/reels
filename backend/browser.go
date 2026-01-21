@@ -263,6 +263,9 @@ func (b *ChromeBackend) GetTotal() int {
 
 // SyncTo scrolls browser to match the given index
 func (b *ChromeBackend) SyncTo(index int) error {
+	// Close comments before scrolling (arrow keys don't trigger Instagram's auto-close)
+	b.CloseComments()
+
 	b.syncMu.Lock()
 	// if we see that there is an ongoing SyncTo call
 	// we need to cancel it and start our new SyncTo.
@@ -446,19 +449,58 @@ func (b *ChromeBackend) ToggleLike() (bool, error) {
 	return true, nil
 }
 
-// OpenComments clicks the comments button for the current reel
+// OpenComments opens the comments panel for the current reel
 func (b *ChromeBackend) OpenComments() {
-	// Get the current reel's PK and store it before clicking
+	// Store the current reel's PK before opening
 	pk, err := b.getCurrentPK()
 	if err != nil {
 		return
 	}
-
 	b.commentsMu.Lock()
 	b.currentCommentsReelPK = pk
 	b.commentsMu.Unlock()
 
-	// Find and mark the comments button for the visible video
+	b.clickCommentsButton()
+}
+
+// CloseComments closes the comments panel and clears state
+func (b *ChromeBackend) CloseComments() {
+	b.commentsMu.Lock()
+	b.currentCommentsReelPK = ""
+	b.currentComments = nil
+	b.commentsMu.Unlock()
+
+	// Find and click the Close button
+	js := `
+		(() => {
+			// Clear old markers first
+			document.querySelectorAll('[data-reels-close-btn]').forEach(el => {
+				el.removeAttribute('data-reels-close-btn');
+			});
+
+			const svg = document.querySelector('svg[aria-label="Close"]');
+			if (svg) {
+				const btn = svg.closest('[role="button"]') || svg.parentElement;
+				if (btn) {
+					btn.setAttribute('data-reels-close-btn', 'true');
+					return true;
+				}
+			}
+			return false;
+		})()
+	`
+	var found bool
+	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &found)); err != nil || !found {
+		return
+	}
+
+	chromedp.Run(b.ctx,
+		chromedp.Click(`[data-reels-close-btn="true"]`, chromedp.ByQuery),
+	)
+}
+
+// clickCommentsButton finds and clicks the comments button for the visible video
+func (b *ChromeBackend) clickCommentsButton() {
 	js := `
 		(() => {
 			// Clear old markers first
@@ -495,36 +537,9 @@ func (b *ChromeBackend) OpenComments() {
 		return
 	}
 
-	// Click the comments button
 	chromedp.Run(b.ctx,
 		chromedp.Click(`[data-reels-comment-btn="true"]`, chromedp.ByQuery),
 	)
-}
-
-// CloseComments closes the comments panel and clears state
-func (b *ChromeBackend) CloseComments() {
-	b.commentsMu.Lock()
-	b.currentCommentsReelPK = ""
-	b.currentComments = nil
-	b.commentsMu.Unlock()
-
-	// Click outside the comments panel to close it (click on the video area)
-	js := `
-		(() => {
-			const videos = document.querySelectorAll('video[playsinline]');
-			for (const video of videos) {
-				const rect = video.getBoundingClientRect();
-				const viewportHeight = window.innerHeight;
-				const videoCenter = rect.top + rect.height / 2;
-				if (videoCenter > 0 && videoCenter < viewportHeight) {
-					video.click();
-					return true;
-				}
-			}
-			return false;
-		})()
-	`
-	chromedp.Run(b.ctx, chromedp.Evaluate(js, nil))
 }
 
 // GetComments returns the current comments
