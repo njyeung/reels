@@ -40,11 +40,13 @@ type reelResponse struct {
 			Edges []struct {
 				Node struct {
 					Media struct {
-						PK            string `json:"pk"`
-						Code          string `json:"code"`
-						HasLiked      bool   `json:"has_liked"`
-						LikeCount     int    `json:"like_count"`
-						VideoVersions []struct {
+						PK               string `json:"pk"`
+						Code             string `json:"code"`
+						HasLiked         bool   `json:"has_liked"`
+						CommentsDisabled bool   `json:"comments_disabled"`
+						LikeCount        int    `json:"like_count"`
+						CommentCount     int    `json:"comment_count"`
+						VideoVersions    []struct {
 							URL   string `json:"url"`
 							Width int    `json:"width"`
 						} `json:"video_versions"`
@@ -131,15 +133,17 @@ func (b *ChromeBackend) processReelResponse(body string) {
 		}
 
 		reel := Reel{
-			PK:            media.PK,
-			Code:          media.Code,
-			VideoURL:      videoURL,
-			ProfilePicUrl: media.User.ProfilePicUrl,
-			Username:      media.User.Username,
-			Caption:       caption,
-			Liked:         media.HasLiked,
-			LikeCount:     media.LikeCount,
-			IsVerified:    media.User.IsVerified,
+			PK:               media.PK,
+			Code:             media.Code,
+			VideoURL:         videoURL,
+			ProfilePicUrl:    media.User.ProfilePicUrl,
+			Username:         media.User.Username,
+			Caption:          caption,
+			Liked:            media.HasLiked,
+			LikeCount:        media.LikeCount,
+			CommentCount:     media.CommentCount,
+			IsVerified:       media.User.IsVerified,
+			CommentsDisabled: media.CommentsDisabled,
 		}
 		b.orderedReels = append(b.orderedReels, reel)
 		newCount++

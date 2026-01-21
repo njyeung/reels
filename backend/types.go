@@ -97,15 +97,17 @@ const (
 
 // Reel represents a single Instagram reel with metadata
 type Reel struct {
-	PK            string
-	Code          string
-	VideoURL      string
-	ProfilePicUrl string
-	Username      string
-	Caption       string
-	Liked         bool
-	LikeCount     int
-	IsVerified    bool
+	PK               string
+	Code             string
+	VideoURL         string
+	ProfilePicUrl    string
+	Username         string
+	Caption          string
+	Liked            bool
+	LikeCount        int
+	CommentCount     int
+	IsVerified       bool
+	CommentsDisabled bool
 }
 
 // ReelInfo includes the reel data plus its position in the feed
