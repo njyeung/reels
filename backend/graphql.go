@@ -10,8 +10,31 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-// graphQLResponse represents the xdt_api__v1__clips__home__connection_v2 GraphQL response structure
-type graphQLResponse struct {
+// commentsResponse represents the xdt_api__v1__media__media_id__comments__connection GraphQL response structure
+type commentsResponse struct {
+	Data struct {
+		Connection struct {
+			Edges []struct {
+				Node struct {
+					PK                string `json:"pk"`
+					CreatedAt         int64  `json:"created_at"`
+					ChildCommentCount int    `json:"child_comment_count"`
+					User              struct {
+						IsVerified    bool   `json:"is_verified"`
+						ProfilePicUrl string `json:"profile_pic_url"`
+						Username      string `json:"username"`
+					} `json:"user"`
+					HasLikedComment  bool   `json:"has_liked_comment"`
+					Text             string `json:"text"`
+					CommentLikeCount int    `json:"comment_like_count"`
+				} `json:"node"`
+			} `json:"edges"`
+		} `json:"xdt_api__v1__media__media_id__comments__connection"`
+	} `json:"data"`
+}
+
+// reelResponse represents the xdt_api__v1__clips__home__connection_v2 GraphQL response structure
+type reelResponse struct {
 	Data struct {
 		Connection struct {
 			Edges []struct {
@@ -50,9 +73,42 @@ type graphQLResponse struct {
 	} `json:"data"`
 }
 
-// processGraphQLResponse extracts reels from a GraphQL response
-func (b *ChromeBackend) processGraphQLResponse(body string) {
-	var resp graphQLResponse
+// processCommentsResponse extracts comments from a GraphQL response
+func (b *ChromeBackend) processCommentsResponse(body string) {
+	var resp commentsResponse
+	if err := json.Unmarshal([]byte(body), &resp); err != nil {
+		return
+	}
+
+	b.commentsMu.Lock()
+	defer b.commentsMu.Unlock()
+
+	var comments []Comment
+	for _, edge := range resp.Data.Connection.Edges {
+		node := edge.Node
+
+		comment := Comment{
+			PK:                node.PK,
+			CreatedAt:         node.CreatedAt,
+			ChildCommentCount: node.ChildCommentCount,
+			HasLikedComment:   node.HasLikedComment,
+			CommentLikeCount:  node.CommentLikeCount,
+			Text:              node.Text,
+
+			ProfilePicUrl: node.User.ProfilePicUrl,
+			Username:      node.User.Username,
+			IsVerified:    node.User.IsVerified,
+		}
+		comments = append(comments, comment)
+	}
+
+	b.currentComments = comments
+	b.events <- Event{Type: EventCommentsCaptured, Message: fmt.Sprintf("%d comments captured", len(comments)), Count: len(comments)}
+}
+
+// processReelResponse extracts reels from a GraphQL response
+func (b *ChromeBackend) processReelResponse(body string) {
+	var resp reelResponse
 	if err := json.Unmarshal([]byte(body), &resp); err != nil {
 		return
 	}
@@ -133,7 +189,9 @@ func (b *ChromeBackend) processResponse(e *fetch.EventRequestPaused) {
 	if err == nil {
 		bodyStr := string(body)
 		if strings.Contains(bodyStr, "xdt_api__v1__clips__home__connection_v2") {
-			b.processGraphQLResponse(bodyStr)
+			b.processReelResponse(bodyStr)
+		} else if strings.Contains(bodyStr, "xdt_api__v1__media__media_id__comments__connection") {
+			b.processCommentsResponse(bodyStr)
 		}
 	}
 

@@ -15,6 +15,10 @@ type ChromeBackend struct {
 	orderedReels []Reel
 	seenPKs      map[string]bool
 
+	commentsMu            sync.RWMutex
+	currentComments       []Comment
+	currentCommentsReelPK string // which reel these comments belong to
+
 	syncMu     sync.Mutex
 	syncCancel context.CancelFunc
 
@@ -60,6 +64,18 @@ type Backend interface {
 
 	// ToggleLike likes/unlikes the current reel
 	ToggleLike() (bool, error)
+
+	// GetComments returns the current comments
+	GetComments() []Comment
+
+	// GetCommentsReelPK returns which reel the current comments belong to
+	GetCommentsReelPK() string
+
+	// OpenComments opens the current reel's comment section
+	OpenComments()
+
+	// CloseComments closes the current reel's comment section
+	CloseComments()
 
 	// Download downloads a reel video and profile picture to the cache directory
 	Download(index int) (videoPath string, pfpPath string, err error)
@@ -107,11 +123,24 @@ type ReelInfo struct {
 	Reel
 }
 
+type Comment struct {
+	PK                string // this is a pointer to the reel PK
+	CreatedAt         int64
+	ChildCommentCount int
+	ProfilePicUrl     string
+	Username          string
+	IsVerified        bool
+	HasLikedComment   bool
+	Text              string
+	CommentLikeCount  int
+}
+
 // EventType represents different backend events
 type EventType int
 
 const (
 	EventReelsCaptured EventType = iota
+	EventCommentsCaptured
 	EventSyncComplete
 	EventError
 )

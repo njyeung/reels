@@ -445,3 +445,98 @@ func (b *ChromeBackend) ToggleLike() (bool, error) {
 
 	return true, nil
 }
+
+// OpenComments clicks the comments button for the current reel
+func (b *ChromeBackend) OpenComments() {
+	// Get the current reel's PK and store it before clicking
+	pk, err := b.getCurrentPK()
+	if err != nil {
+		return
+	}
+
+	b.commentsMu.Lock()
+	b.currentCommentsReelPK = pk
+	b.commentsMu.Unlock()
+
+	// Find and mark the comments button for the visible video
+	js := `
+		(() => {
+			// Clear old markers first
+			document.querySelectorAll('[data-reels-comment-btn]').forEach(el => {
+				el.removeAttribute('data-reels-comment-btn');
+			});
+
+			const videos = document.querySelectorAll('video[playsinline]');
+			for (const video of videos) {
+				const rect = video.getBoundingClientRect();
+				const viewportHeight = window.innerHeight;
+				const videoCenter = rect.top + rect.height / 2;
+				if (videoCenter > 0 && videoCenter < viewportHeight) {
+					let parent = video.parentElement;
+					for (let i = 0; i < 15; i++) {
+						if (!parent) break;
+						const svg = parent.querySelector('svg[aria-label="Comment"]');
+						if (svg) {
+							const btn = svg.closest('[role="button"]');
+							if (btn) {
+								btn.setAttribute('data-reels-comment-btn', 'true');
+								return true;
+							}
+						}
+						parent = parent.parentElement;
+					}
+				}
+			}
+			return false;
+		})()
+	`
+	var found bool
+	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &found)); err != nil || !found {
+		return
+	}
+
+	// Click the comments button
+	chromedp.Run(b.ctx,
+		chromedp.Click(`[data-reels-comment-btn="true"]`, chromedp.ByQuery),
+	)
+}
+
+// CloseComments closes the comments panel and clears state
+func (b *ChromeBackend) CloseComments() {
+	b.commentsMu.Lock()
+	b.currentCommentsReelPK = ""
+	b.currentComments = nil
+	b.commentsMu.Unlock()
+
+	// Click outside the comments panel to close it (click on the video area)
+	js := `
+		(() => {
+			const videos = document.querySelectorAll('video[playsinline]');
+			for (const video of videos) {
+				const rect = video.getBoundingClientRect();
+				const viewportHeight = window.innerHeight;
+				const videoCenter = rect.top + rect.height / 2;
+				if (videoCenter > 0 && videoCenter < viewportHeight) {
+					video.click();
+					return true;
+				}
+			}
+			return false;
+		})()
+	`
+	chromedp.Run(b.ctx, chromedp.Evaluate(js, nil))
+}
+
+// GetComments returns the current comments
+func (b *ChromeBackend) GetComments() []Comment {
+	b.commentsMu.RLock()
+	defer b.commentsMu.RUnlock()
+	return b.currentComments
+}
+
+// GetCommentsReelPK returns which reel the current comments belong to
+func (b *ChromeBackend) GetCommentsReelPK() string {
+	b.commentsMu.RLock()
+	defer b.commentsMu.RUnlock()
+	return b.currentCommentsReelPK
+}
