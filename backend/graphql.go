@@ -30,6 +30,16 @@ type graphQLResponse struct {
 							IsVerified    bool   `json:"is_verified"`
 							ProfilePicUrl string `json:"profile_pic_url"`
 						} `json:"user"`
+						ClipsMetadata struct {
+							MusicInfo *struct {
+								MusicAssetInfo struct {
+									Title                    string `json:"title"`
+									DisplayArtist            string `json:"display_artist"`
+									CoverArtworkThumbnailUri string `json:"cover_artwork_thumbnail_uri"`
+									IsExplicit               bool   `json:"is_explicit"`
+								} `json:"music_asset_info"`
+							} `json:"music_info"`
+						} `json:"clips_metadata"`
 						Caption *struct {
 							Text string `json:"text"`
 						} `json:"caption"`

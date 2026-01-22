@@ -79,6 +79,10 @@ const (
 	CacheSize = 10
 )
 
+type Music struct {
+	Title string
+}
+
 // Reel represents a single Instagram reel with metadata
 type Reel struct {
 	PK            string
