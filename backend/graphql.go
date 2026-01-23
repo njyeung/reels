@@ -84,6 +84,16 @@ func (b *ChromeBackend) processGraphQLResponse(body string) {
 			caption = media.Caption.Text
 		}
 
+		var music *MusicInfo
+		if media.ClipsMetadata.MusicInfo != nil {
+			info := media.ClipsMetadata.MusicInfo.MusicAssetInfo
+			music = &MusicInfo{
+				Title:      info.Title,
+				Artist:     info.DisplayArtist,
+				IsExplicit: info.IsExplicit,
+			}
+		}
+
 		reel := Reel{
 			PK:            media.PK,
 			Code:          media.Code,
@@ -94,6 +104,7 @@ func (b *ChromeBackend) processGraphQLResponse(body string) {
 			Liked:         media.HasLiked,
 			LikeCount:     media.LikeCount,
 			IsVerified:    media.User.IsVerified,
+			Music:         music,
 		}
 		b.orderedReels = append(b.orderedReels, reel)
 		newCount++

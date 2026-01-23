@@ -91,7 +91,35 @@ func (m Model) viewBrowsing() string {
 		} else {
 			userLine = pfpPadding + usernameStyle.Render("@"+m.currentReel.Username)
 		}
-		b.WriteString(padding + userLine + "\n\n")
+		b.WriteString(padding + userLine + "\n")
+
+		// Music info (if available)
+		if m.currentReel.Music != nil {
+			explicit := ""
+			if m.currentReel.Music.IsExplicit {
+				explicit = " [E]"
+			}
+			musicText := m.currentReel.Music.Title + " - " + m.currentReel.Music.Artist + explicit
+			maxMusicWidth := videoWidthChars - runewidth.StringWidth(pfpPadding)
+
+			// Marquee scroll if text is too long
+			if runewidth.StringWidth(musicText) > maxMusicWidth {
+				scrollText := musicText + "       " + musicText
+				scrollRunes := []rune(scrollText)
+				textLen := len([]rune(musicText)) + 7
+
+				// Calculate scroll position (loop back)
+				offset := m.musicScrollOffset % textLen
+
+				// Extract visible portion
+				musicText = truncateByWidth(string(scrollRunes[offset:]), maxMusicWidth)
+			}
+
+			musicLine := pfpPadding + musicStyle.Render(musicText)
+			b.WriteString(padding + musicLine + "\n")
+		} else {
+			b.WriteString("\n")
+		}
 
 		// caption
 		var captionLines []string

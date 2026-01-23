@@ -79,8 +79,11 @@ const (
 	CacheSize = 10
 )
 
-type Music struct {
-	Title string
+// MusicInfo contains song metadata when a reel has music
+type MusicInfo struct {
+	Title      string
+	Artist     string
+	IsExplicit bool
 }
 
 // Reel represents a single Instagram reel with metadata
@@ -94,6 +97,7 @@ type Reel struct {
 	Liked         bool
 	LikeCount     int
 	IsVerified    bool
+	Music         *MusicInfo
 }
 
 // ReelInfo includes the reel data plus its position in the feed

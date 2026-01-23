@@ -23,6 +23,7 @@ type (
 	backendEventMsg  backend.Event
 	videoErrorMsg    struct{ err error }
 	videoReadyMsg    struct{ index int }
+	musicTickMsg     struct{}
 )
 
 // State represents the app state
@@ -57,6 +58,9 @@ type Model struct {
 	flags Config
 
 	loginSuccess bool
+
+	// Music marquee scroll offset (in runes)
+	musicScrollOffset int
 }
 
 type Config struct {
@@ -179,6 +183,12 @@ func (m Model) prefetch(index int) {
 	}
 }
 
+func (m Model) musicTick() tea.Cmd {
+	return tea.Tick(300*time.Millisecond, func(t time.Time) tea.Msg {
+		return musicTickMsg{}
+	})
+}
+
 // Update handles messages
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -249,7 +259,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case reelLoadedMsg:
 		m.currentReel = msg.info
 		m.status = ""
-		return m, m.startPlayback(msg.info.Index)
+		m.musicScrollOffset = 0
+		return m, tea.Batch(m.startPlayback(msg.info.Index), m.musicTick())
+
+	case musicTickMsg:
+		// Only scroll if we have music and it needs scrolling
+		if m.currentReel != nil && m.currentReel.Music != nil {
+			m.musicScrollOffset++
+		}
+		return m, m.musicTick()
 
 	case reelErrorMsg:
 		m.status = fmt.Sprintf("Error: %v", msg.err)
