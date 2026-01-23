@@ -125,7 +125,7 @@ func (b *ChromeBackend) NavigateToReels() error {
 		if err := b.scrollDown(); err != nil {
 			return err
 		}
-		time.Sleep(time.Duration(500+rand.Intn(500)) * time.Millisecond)
+		time.Sleep(time.Duration(1500+rand.Intn(500)) * time.Millisecond)
 	}
 	return fmt.Errorf("could not complete initial sync")
 }
@@ -309,6 +309,24 @@ func (b *ChromeBackend) SyncTo(index int) error {
 		default: // fall through
 		}
 
+		// verify current position before scrolling
+		pk, err := b.getCurrentPK()
+		if err == nil && pk == targetPK {
+			return nil
+		}
+
+		// Update currentIndex from fresh PK read
+		if err == nil {
+			b.reelsMu.RLock()
+			for idx, r := range b.orderedReels {
+				if r.PK == pk {
+					currentIndex = idx + 1
+					break
+				}
+			}
+			b.reelsMu.RUnlock()
+		}
+
 		if currentIndex < index {
 			if err := b.scrollDown(); err != nil {
 				return err
@@ -317,25 +335,15 @@ func (b *ChromeBackend) SyncTo(index int) error {
 			if err := b.scrollUp(); err != nil {
 				return err
 			}
-		}
-
-		time.Sleep(time.Duration(500+rand.Intn(300)) * time.Millisecond) // wait for react
-
-		// Check if we landed on target
-		pk, err := b.getCurrentPK()
-		if err == nil && pk == targetPK {
-			return nil
-		}
-
-		// Update current index estimate
-		b.reelsMu.RLock()
-		for i, r := range b.orderedReels {
-			if r.PK == pk {
-				currentIndex = i + 1
-				break
+		} else {
+			// currentIndex == index but PK doesn't match target
+			// This shouldn't happen, but scroll down to try to recover
+			if err := b.scrollDown(); err != nil {
+				return err
 			}
 		}
-		b.reelsMu.RUnlock()
+
+		time.Sleep(time.Duration(1500+rand.Intn(500)) * time.Millisecond) // wait for react
 	}
 
 	return fmt.Errorf("failed to sync to index %d after %d scrolls", index, MaxRetries)
