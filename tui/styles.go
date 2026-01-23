@@ -21,6 +21,9 @@ var (
 			Foreground(lipgloss.Color("205"))
 	verifiedStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("33"))
+	musicStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("213")).
+			Italic(true)
 	importantStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("226")).
