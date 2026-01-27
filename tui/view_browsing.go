@@ -146,8 +146,8 @@ func (m Model) viewBrowsing() string {
 					userPart += " " + verifiedStyle.Render("✓")
 				}
 
-				// Wrap comment text
-				commentLines := wrapByWidth(comment.Text, videoWidthChars-2)
+				// Wrap comment text (replace newlines to avoid layout breakage)
+				commentLines := wrapByWidth(strings.ReplaceAll(comment.Text, "\n", " "), videoWidthChars-2)
 
 				// Check if we have room for at least username + first line
 				if linesUsed+1 > availableLines {
@@ -203,7 +203,7 @@ func (m Model) viewBrowsing() string {
 
 				nav1 := navStyle.Render("k: prev  j: next  m: mute  c: comments")
 				nav2 := navStyle.Render("space: pause  l: like  q: quit")
-				nav3 := navStyle.Render("e: expand captions / hide navbar")
+				nav3 := navStyle.Render("+/-: resize  e: expand captions")
 				b.WriteString(padding + nav1 + "\n")
 				b.WriteString(padding + nav2 + "\n")
 				b.WriteString(padding + nav3 + "\n")

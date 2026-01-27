@@ -58,6 +58,9 @@ type Backend interface {
 	// Returns true if navbar should be shown, false if hidden.
 	ToggleNavbar() (bool, error)
 
+	// SetReelSize updates the reel bounding box dimensions and persists to disk.
+	SetReelSize(width, height int) error
+
 	// SyncTo scrolls browser to match the given index
 	// This is async-friendly - call it in background after optimistic UI update
 	SyncTo(index int) error

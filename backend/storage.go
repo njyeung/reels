@@ -161,6 +161,18 @@ func parseConf(path string) map[string]string {
 	return result
 }
 
+// SetReelSize updates the reel bounding box dimensions and persists to disk.
+func (b *ChromeBackend) SetReelSize(width, height int) error {
+	settingsMu.Lock()
+	defer settingsMu.Unlock()
+
+	Config.ReelWidth = width
+	Config.ReelHeight = height
+
+	path := filepath.Join(b.configDir, "reels.conf")
+	return writeConf(path, Config)
+}
+
 func (b *ChromeBackend) ToggleNavbar() (bool, error) {
 	settingsMu.Lock()
 	defer settingsMu.Unlock()

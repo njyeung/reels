@@ -12,6 +12,8 @@ import (
 	"github.com/njyeung/reels/player"
 )
 
+const reelSizeStep = 30
+
 // Messages
 type (
 	backendReadyMsg  struct{}
@@ -78,7 +80,6 @@ func NewModel(userDataDir, cacheDir, configDir string, output io.Writer, flags C
 	backend.LoadSettings(configDir)
 	playerHeight := backend.Config.ReelHeight * backend.Config.RetinaScale
 	playerWidth := backend.Config.ReelWidth * backend.Config.RetinaScale
-
 	player.ComputeVideoCharacterDimensions(playerWidth, playerHeight)
 
 	s := spinner.New()
@@ -391,9 +392,33 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// do nothing since this is only a minor failure
 		}
 		m.showNavbar = showNavbar
+
+	case "+", "=":
+		m.resizeReel(reelSizeStep)
+
+	case "-", "_":
+		m.resizeReel(-reelSizeStep)
 	}
 
 	return m, nil
+}
+
+// resizeReel adjusts the reel bounding box by delta pixels (width), deriving height from 9:16 ratio.
+func (m *Model) resizeReel(delta int) {
+	newW := backend.Config.ReelWidth + delta
+	newH := backend.Config.ReelHeight + delta*16/9
+	if newW < reelSizeStep || newH < reelSizeStep {
+		return
+	}
+
+	if err := m.backend.SetReelSize(newW, newH); err != nil {
+		return
+	}
+
+	m.videoWidthPx = newW * backend.Config.RetinaScale
+	m.videoHeightPx = newH * backend.Config.RetinaScale
+	player.ComputeVideoCharacterDimensions(m.videoWidthPx, m.videoHeightPx)
+	m.player.SetSize(m.videoWidthPx, m.videoHeightPx)
 }
 
 // View renders the UI
