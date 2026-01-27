@@ -78,6 +78,7 @@ type Config struct {
 // NewModel creates a new TUI model
 func NewModel(userDataDir, cacheDir, configDir string, output io.Writer, flags Config) Model {
 	backend.LoadSettings(configDir)
+
 	playerHeight := backend.Config.ReelHeight * backend.Config.RetinaScale
 	playerWidth := backend.Config.ReelWidth * backend.Config.RetinaScale
 	player.ComputeVideoCharacterDimensions(playerWidth, playerHeight)
@@ -213,8 +214,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateBrowsing(msg)
 		}
 
+	case tea.MouseMsg: // intercept scrolling and do nothing
+		return m, nil
+
 	case tea.WindowSizeMsg:
-		// when the terminal is resized
 		m.width = msg.Width
 		m.height = msg.Height
 
