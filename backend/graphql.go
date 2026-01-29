@@ -82,9 +82,6 @@ func (b *ChromeBackend) processCommentsResponse(body string) {
 		return
 	}
 
-	b.commentsMu.Lock()
-	defer b.commentsMu.Unlock()
-
 	var comments []Comment
 	for _, edge := range resp.Data.Connection.Edges {
 		node := edge.Node
@@ -104,7 +101,7 @@ func (b *ChromeBackend) processCommentsResponse(body string) {
 		comments = append(comments, comment)
 	}
 
-	b.currentComments = comments
+	b.comments.SetComments(comments)
 	b.events <- Event{Type: EventCommentsCaptured, Message: fmt.Sprintf("%d comments captured", len(comments)), Count: len(comments)}
 }
 

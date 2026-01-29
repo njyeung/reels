@@ -15,9 +15,8 @@ type ChromeBackend struct {
 	orderedReels []Reel
 	seenPKs      map[string]bool
 
-	commentsMu            sync.RWMutex
-	currentComments       []Comment
-	currentCommentsReelPK string // which reel these comments belong to
+	// comments encapsulates all comment-related state
+	comments *CommentsState
 
 	syncMu     sync.Mutex
 	syncCancel context.CancelFunc

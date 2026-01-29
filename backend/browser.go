@@ -26,6 +26,7 @@ func NewChromeBackend(userDataDir, cacheDir, configDir string) *ChromeBackend {
 	backend := ChromeBackend{
 		orderedReels: make([]Reel, 0),
 		seenPKs:      make(map[string]bool),
+		comments:     NewCommentsState(),
 		events:       make(chan Event, 100),
 		userDataDir:  userDataDir,
 		cacheDir:     cacheDir,
@@ -456,19 +457,14 @@ func (b *ChromeBackend) OpenComments() {
 	if err != nil {
 		return
 	}
-	b.commentsMu.Lock()
-	b.currentCommentsReelPK = pk
-	b.commentsMu.Unlock()
+	b.comments.Open(pk)
 
 	b.clickCommentsButton()
 }
 
 // CloseComments closes the comments panel and clears state
 func (b *ChromeBackend) CloseComments() {
-	b.commentsMu.Lock()
-	b.currentCommentsReelPK = ""
-	b.currentComments = nil
-	b.commentsMu.Unlock()
+	b.comments.Close()
 
 	// Find and click the Close button
 	js := `
@@ -544,14 +540,10 @@ func (b *ChromeBackend) clickCommentsButton() {
 
 // GetComments returns the current comments
 func (b *ChromeBackend) GetComments() []Comment {
-	b.commentsMu.RLock()
-	defer b.commentsMu.RUnlock()
-	return b.currentComments
+	return b.comments.GetComments()
 }
 
 // GetCommentsReelPK returns which reel the current comments belong to
 func (b *ChromeBackend) GetCommentsReelPK() string {
-	b.commentsMu.RLock()
-	defer b.commentsMu.RUnlock()
-	return b.currentCommentsReelPK
+	return b.comments.GetReelPK()
 }

@@ -123,54 +123,8 @@ func (m Model) viewBrowsing() string {
 		}
 
 		// Comments view (replaces caption and navbar when open)
-		if m.commentsOpen && len(m.comments) > 0 {
-			// Header
-			header := commentHeaderStyle.Render(fmt.Sprintf("Comments (%d)", len(m.comments)))
-			b.WriteString(padding + header + "\n\n")
-
-			// Calculate how many comments we can show
-			// Reserve 2 lines for header and 1 for hint
-			availableLines := maxCaptionLines - 3
-			if availableLines < 1 {
-				availableLines = 1
-			}
-
-			// Render comments starting from scroll position
-			linesUsed := 0
-			for i := m.commentScroll; i < len(m.comments) && linesUsed < availableLines; i++ {
-				comment := m.comments[i]
-
-				// Username with verified badge
-				userPart := commentUsernameStyle.Render("@" + comment.Username)
-				if comment.IsVerified {
-					userPart += " " + verifiedStyle.Render("✓")
-				}
-
-				// Wrap comment text (replace newlines to avoid layout breakage)
-				commentLines := wrapByWidth(strings.ReplaceAll(comment.Text, "\n", " "), videoWidthChars-2)
-
-				// Check if we have room for at least username + first line
-				if linesUsed+1 > availableLines {
-					break
-				}
-
-				// Write username
-				b.WriteString(padding + userPart + "\n")
-				linesUsed++
-
-				// Write comment text lines
-				for _, line := range commentLines {
-					if linesUsed >= availableLines {
-						break
-					}
-					b.WriteString(padding + "  " + commentTextStyle.Render(line) + "\n")
-					linesUsed++
-				}
-			}
-
-			// Hint line
-			hint := navStyle.Render("j/k: scroll  c: close")
-			b.WriteString("\n" + padding + hint + "\n")
+		if m.comments.IsOpen() {
+			b.WriteString(m.comments.View(videoWidthChars, maxCaptionLines, padding))
 		} else {
 			// Normal caption view
 			var captionLines []string
