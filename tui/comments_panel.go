@@ -30,16 +30,6 @@ func (cp *CommentsPanel) IsOpen() bool {
 	return cp.isOpen
 }
 
-// GetReelPK returns which reel's comments are being displayed
-func (cp *CommentsPanel) GetReelPK() string {
-	return cp.reelPK
-}
-
-// BelongsTo returns true if the displayed comments belong to the given reel
-func (cp *CommentsPanel) BelongsTo(reelPK string) bool {
-	return cp.reelPK == reelPK
-}
-
 // Open opens the comments panel for the given reel
 func (cp *CommentsPanel) Open(reelPK string) {
 	cp.isOpen = true
@@ -114,10 +104,9 @@ func (cp *CommentsPanel) View(width, height int, padding string) string {
 	header := commentHeaderStyle.Render(fmt.Sprintf("Comments (%d)", len(cp.comments)))
 	b.WriteString(padding + header + "\n\n")
 
-	// Reserve 2 lines for header and 1 for hint
-	availableLines := height - 3
+	availableLines := height - 2
 	if availableLines < 1 {
-		availableLines = 1
+		availableLines = 0
 	}
 
 	// Render comments starting from scroll position

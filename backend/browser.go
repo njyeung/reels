@@ -26,7 +26,7 @@ func NewChromeBackend(userDataDir, cacheDir, configDir string) *ChromeBackend {
 	backend := ChromeBackend{
 		orderedReels: make([]Reel, 0),
 		seenPKs:      make(map[string]bool),
-		comments:     NewCommentsState(),
+		comments:     &CommentsState{isOpen: false, reelPK: "", comments: make([]Comment, 0)},
 		events:       make(chan Event, 100),
 		userDataDir:  userDataDir,
 		cacheDir:     cacheDir,
