@@ -76,8 +76,11 @@ type Backend interface {
 	// OpenComments opens the current reel's comment section
 	OpenComments()
 
-	// CloseComments closes the current reel's comment section
+	// CloseComments closes the comments panel UI (preserves cache)
 	CloseComments()
+
+	// ClearComments closes the comments panel and clears the cache
+	ClearComments()
 
 	// Download downloads a reel video and profile picture to the cache directory
 	Download(index int) (videoPath string, pfpPath string, err error)
