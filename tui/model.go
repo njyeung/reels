@@ -263,9 +263,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case backend.EventReelsCaptured:
 			m.status = fmt.Sprintf("Captured %d reels", m.backend.GetTotal())
 		case backend.EventCommentsCaptured:
-			// Only accept comments if they belong to the current reel
+			// Refresh currentReel to get the newly persisted comments
 			if m.currentReel != nil {
-				m.comments.SetComments(m.currentReel.PK, m.backend.GetComments())
+				if info, err := m.backend.GetReel(m.currentReel.Index); err == nil {
+					m.currentReel = info
+					m.comments.SetComments(info.PK, info.Comments)
+				}
 			}
 		}
 		return m, m.listenForEvents
@@ -377,15 +380,13 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Open comments for current reel
 			m.comments.Open(m.currentReel.PK)
 
-			// Check if backend already has cached comments for this reel
-			// (e.g., from a previous open/close cycle)
-			if m.backend.GetCommentsReelPK() == m.currentReel.PK && len(m.backend.GetComments()) > 0 {
-				// Use cached comments immediately
-				m.comments.SetComments(m.currentReel.PK, m.backend.GetComments())
+			// Use cached comments if available
+			if m.currentReel.Comments != nil {
+				m.comments.SetComments(m.currentReel.PK, m.currentReel.Comments)
 			}
 
+			// Always open in browser (for Instagram's algorithm)
 			go m.backend.OpenComments()
-			// If not cached, comments will be set when EventCommentsCaptured arrives
 		}
 
 	case "e":

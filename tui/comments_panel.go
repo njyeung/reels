@@ -104,7 +104,8 @@ func (cp *CommentsPanel) View(width, height int, padding string) string {
 	header := commentHeaderStyle.Render(fmt.Sprintf("Comments (%d)", len(cp.comments)))
 	b.WriteString(padding + header + "\n\n")
 
-	availableLines := height - 2
+	// magic number galore
+	availableLines := height - 2 - 1
 	if availableLines < 1 {
 		availableLines = 0
 	}

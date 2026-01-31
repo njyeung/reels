@@ -67,10 +67,7 @@ type Backend interface {
 	// ToggleLike likes/unlikes the current reel
 	ToggleLike() (bool, error)
 
-	// GetComments returns the current comments
-	GetComments() []Comment
-
-	// GetCommentsReelPK returns which reel the current comments belong to
+	// GetCommentsReelPK returns which reel we're fetching comments for
 	GetCommentsReelPK() string
 
 	// OpenComments opens the current reel's comment section
@@ -121,6 +118,7 @@ type Reel struct {
 	CommentCount     int
 	CommentsDisabled bool
 	Music            *MusicInfo
+	Comments         []Comment // cached comments (nil = not fetched yet)
 }
 
 // ReelInfo includes the reel data plus its position in the feed

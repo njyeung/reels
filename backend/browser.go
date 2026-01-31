@@ -26,7 +26,7 @@ func NewChromeBackend(userDataDir, cacheDir, configDir string) *ChromeBackend {
 	backend := ChromeBackend{
 		orderedReels: make([]Reel, 0),
 		seenPKs:      make(map[string]bool),
-		comments:     &CommentsState{reelPK: "", comments: make([]Comment, 0)},
+		comments:     &CommentsState{},
 		events:       make(chan Event, 100),
 		userDataDir:  userDataDir,
 		cacheDir:     cacheDir,
@@ -253,6 +253,19 @@ func (b *ChromeBackend) GetReel(index int) (*ReelInfo, error) {
 		Total: len(b.orderedReels),
 		Reel:  reel,
 	}, nil
+}
+
+// SetReelComments persists comments to a reel by PK
+func (b *ChromeBackend) SetReelComments(pk string, comments []Comment) {
+	b.reelsMu.Lock()
+	defer b.reelsMu.Unlock()
+
+	for i := range b.orderedReels {
+		if b.orderedReels[i].PK == pk {
+			b.orderedReels[i].Comments = comments
+			return
+		}
+	}
 }
 
 // GetTotal returns total number of captured reels
@@ -545,12 +558,7 @@ func (b *ChromeBackend) clickCommentsButton() {
 	)
 }
 
-// GetComments returns the current comments
-func (b *ChromeBackend) GetComments() []Comment {
-	return b.comments.GetComments()
-}
-
-// GetCommentsReelPK returns which reel the current comments belong to
+// GetCommentsReelPK returns which reel we're fetching comments for
 func (b *ChromeBackend) GetCommentsReelPK() string {
 	return b.comments.GetReelPK()
 }
