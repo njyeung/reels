@@ -26,7 +26,7 @@ func NewChromeBackend(userDataDir, cacheDir, configDir string) *ChromeBackend {
 	backend := ChromeBackend{
 		orderedReels: make([]Reel, 0),
 		seenPKs:      make(map[string]bool),
-		comments:     &CommentsState{isOpen: false, reelPK: "", comments: make([]Comment, 0)},
+		comments:     &CommentsState{},
 		events:       make(chan Event, 100),
 		userDataDir:  userDataDir,
 		cacheDir:     cacheDir,
@@ -255,6 +255,19 @@ func (b *ChromeBackend) GetReel(index int) (*ReelInfo, error) {
 	}, nil
 }
 
+// SetReelComments persists comments to a reel by PK
+func (b *ChromeBackend) SetReelComments(pk string, comments []Comment) {
+	b.reelsMu.Lock()
+	defer b.reelsMu.Unlock()
+
+	for i := range b.orderedReels {
+		if b.orderedReels[i].PK == pk {
+			b.orderedReels[i].Comments = comments
+			return
+		}
+	}
+}
+
 // GetTotal returns total number of captured reels
 func (b *ChromeBackend) GetTotal() int {
 	b.reelsMu.RLock()
@@ -264,8 +277,8 @@ func (b *ChromeBackend) GetTotal() int {
 
 // SyncTo scrolls browser to match the given index
 func (b *ChromeBackend) SyncTo(index int) error {
-	// Close comments before scrolling (arrow keys don't trigger Instagram's auto-close)
-	b.CloseComments()
+	// Close and clear comments before scrolling (arrow keys don't trigger Instagram's auto-close)
+	b.ClearComments()
 
 	b.syncMu.Lock()
 	// if we see that there is an ongoing SyncTo call
@@ -462,14 +475,21 @@ func (b *ChromeBackend) OpenComments() {
 	b.clickCommentsButton()
 }
 
-// CloseComments closes the comments panel and clears state
+// CloseComments closes the comments panel UI (preserves cache for quick reopen)
 func (b *ChromeBackend) CloseComments() {
-	b.comments.Close()
+	b.clickCloseButton()
+}
 
-	// Find and click the Close button
+// ClearComments closes the comments panel and clears the cache
+func (b *ChromeBackend) ClearComments() {
+	b.comments.Clear()
+	b.clickCloseButton()
+}
+
+// clickCloseButton finds and clicks the Close button in the browser
+func (b *ChromeBackend) clickCloseButton() {
 	js := `
 		(() => {
-			// Clear old markers first
 			document.querySelectorAll('[data-reels-close-btn]').forEach(el => {
 				el.removeAttribute('data-reels-close-btn');
 			});
@@ -538,12 +558,7 @@ func (b *ChromeBackend) clickCommentsButton() {
 	)
 }
 
-// GetComments returns the current comments
-func (b *ChromeBackend) GetComments() []Comment {
-	return b.comments.GetComments()
-}
-
-// GetCommentsReelPK returns which reel the current comments belong to
+// GetCommentsReelPK returns which reel we're fetching comments for
 func (b *ChromeBackend) GetCommentsReelPK() string {
 	return b.comments.GetReelPK()
 }

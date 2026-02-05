@@ -34,8 +34,11 @@ reels
 - `k` / `↑` - Previous reel
 - `Space` - Pause/resume
 - `l` - Like/unlike
-- `c` - Toggle Navbar
+- `e` - Toggle Navbar
+- `c` - Toggle Comments
 - `m` - Mute
+- `-` - Shrink Video
+- `=` - Enlarge Video
 - `q` - Quit
 
 ## Installation

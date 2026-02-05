@@ -101,7 +101,11 @@ func (b *ChromeBackend) processCommentsResponse(body string) {
 		comments = append(comments, comment)
 	}
 
-	b.comments.SetComments(comments)
+	// Persist to the reel
+	if pk := b.comments.GetReelPK(); pk != "" {
+		b.SetReelComments(pk, comments)
+	}
+
 	b.events <- Event{Type: EventCommentsCaptured, Message: fmt.Sprintf("%d comments captured", len(comments)), Count: len(comments)}
 }
 
