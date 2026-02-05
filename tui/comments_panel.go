@@ -101,7 +101,7 @@ func (cp *CommentsPanel) View(width, height int, padding string) string {
 	var b strings.Builder
 
 	// Header
-	header := commentHeaderStyle.Render(fmt.Sprintf("Comments (%d)", len(cp.comments)))
+	header := titleStyle.Render(fmt.Sprintf("Comments (%d)", len(cp.comments)))
 	b.WriteString(padding + header + "\n\n")
 
 	availableLines := height - 2
@@ -115,7 +115,7 @@ func (cp *CommentsPanel) View(width, height int, padding string) string {
 		comment := cp.comments[i]
 
 		// Username with verified badge
-		userPart := commentUsernameStyle.Render("@" + comment.Username)
+		userPart := usernameStyle.Render("@" + comment.Username)
 		if comment.IsVerified {
 			userPart += " " + verifiedStyle.Render("✓")
 		}

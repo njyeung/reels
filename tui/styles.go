@@ -25,12 +25,6 @@ var (
 			Foreground(lipgloss.Color("226")).
 			Background(lipgloss.Color("52")).
 			Padding(0, 1)
-	commentUsernameStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("212"))
 	commentTextStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("252"))
-	commentHeaderStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("205"))
 )
