@@ -57,6 +57,7 @@ func main() {
 	p := tea.NewProgram(
 		tui.NewModel(userDataDir, cacheDir, configDir, syncOut, tui.Config{LoginMode: *loginFlag, HeadedMode: *headedFlag}),
 		tea.WithAltScreen(),
+		tea.WithMouseCellMotion(),
 		tea.WithOutput(syncOut),
 	)
 
