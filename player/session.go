@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/asticode/go-astiav"
-	"github.com/njyeung/reels/backend"
 )
 
 type playSession struct {
@@ -28,6 +27,8 @@ type playSession struct {
 }
 
 type Overlay struct {
+	mu               sync.Mutex
+	srcImage         image.Image
 	profilePic       []byte
 	profilePicWidth  int
 	profilePicHeight int
@@ -43,6 +44,7 @@ type sessionConfig struct {
 	height   int
 	renderer *KittyRenderer
 	muted    bool
+	volume   float64
 }
 
 func newPlaySession(url string, pfpPath string, cfg sessionConfig) (*playSession, error) {
@@ -69,8 +71,11 @@ func newPlaySession(url string, pfpPath string, cfg sessionConfig) (*playSession
 		audio, err = NewAudioPlayer(demuxer.AudioCodecParameters())
 		if err != nil {
 			audio = nil
-		} else if cfg.muted {
-			audio.Mute()
+		} else {
+			audio.SetVolume(cfg.volume)
+			if cfg.muted {
+				audio.Mute()
+			}
 		}
 	}
 
@@ -252,7 +257,10 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 		}
 
 		if s.overlay != nil {
-			if err := s.renderer.RenderProfilePic(s.overlay.profilePic, s.overlay.profilePicWidth, s.overlay.profilePicHeight); err != nil {
+			s.overlay.mu.Lock()
+			pic, w, h := s.overlay.profilePic, s.overlay.profilePicWidth, s.overlay.profilePicHeight
+			s.overlay.mu.Unlock()
+			if err := s.renderer.RenderProfilePic(pic, w, h); err != nil {
 				return fmt.Errorf("profile pic render error: %w", err)
 			}
 		}
@@ -276,7 +284,7 @@ func fitSize(srcW, srcH, maxW, maxH int) (int, int) {
 	return int(float64(maxH) * srcAspect), maxH
 }
 
-// loadOverlay loads a profile picture from disk, downsamples it, and converts to RGBA bytes with circular mask.
+// loadOverlay loads a profile picture from disk and scales it for display.
 // Returns nil if the path is empty or loading fails.
 func loadOverlay(pfpPath string) *Overlay {
 	if pfpPath == "" {
@@ -293,11 +301,26 @@ func loadOverlay(pfpPath string) *Overlay {
 		return nil
 	}
 
-	bounds := img.Bounds()
+	o := &Overlay{srcImage: img}
+	o.ResizeOverlay()
+	return o
+}
+
+// ResizeOverlay re-scales the profile picture from the stored source image based on current terminal cell height.
+func (o *Overlay) ResizeOverlay() {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+
+	bounds := o.srcImage.Bounds()
 	srcW, srcH := bounds.Dx(), bounds.Dy()
 
-	// target pfp size
-	profilePicSize := 32 * backend.Config.RetinaScale
+	// target pfp size: 2 character cells tall so it fits the username + music lines
+	_, rows, _, termH, err := GetTerminalSize()
+	if err != nil || rows == 0 || termH == 0 {
+		return
+	}
+	cellH := termH / rows
+	profilePicSize := 2 * cellH
 
 	// Calculate target dimensions maintaining aspect ratio
 	dstW, dstH := profilePicSize, profilePicSize
@@ -351,10 +374,10 @@ func loadOverlay(pfpPath string) *Overlay {
 			}
 
 			// Sample four corners
-			r00, g00, b00, _ := img.At(bounds.Min.X+x0, bounds.Min.Y+y0).RGBA()
-			r10, g10, b10, _ := img.At(bounds.Min.X+x1, bounds.Min.Y+y0).RGBA()
-			r01, g01, b01, _ := img.At(bounds.Min.X+x0, bounds.Min.Y+y1).RGBA()
-			r11, g11, b11, _ := img.At(bounds.Min.X+x1, bounds.Min.Y+y1).RGBA()
+			r00, g00, b00, _ := o.srcImage.At(bounds.Min.X+x0, bounds.Min.Y+y0).RGBA()
+			r10, g10, b10, _ := o.srcImage.At(bounds.Min.X+x1, bounds.Min.Y+y0).RGBA()
+			r01, g01, b01, _ := o.srcImage.At(bounds.Min.X+x0, bounds.Min.Y+y1).RGBA()
+			r11, g11, b11, _ := o.srcImage.At(bounds.Min.X+x1, bounds.Min.Y+y1).RGBA()
 
 			// bilinear interpolation
 			r := (1-xFrac)*(1-yFrac)*float64(r00) + xFrac*(1-yFrac)*float64(r10) + (1-xFrac)*yFrac*float64(r01) + xFrac*yFrac*float64(r11)
@@ -391,9 +414,7 @@ func loadOverlay(pfpPath string) *Overlay {
 		}
 	}
 
-	return &Overlay{
-		profilePic:       rgba,
-		profilePicWidth:  dstW,
-		profilePicHeight: dstH,
-	}
+	o.profilePic = rgba
+	o.profilePicWidth = dstW
+	o.profilePicHeight = dstH
 }

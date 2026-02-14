@@ -19,6 +19,7 @@ type AVPlayer struct {
 	playing atomic.Bool
 	paused  atomic.Bool
 	muted   atomic.Bool
+	volume  atomic.Value // float64, 0.0–1.0
 
 	playMu   sync.Mutex
 	configMu sync.Mutex
@@ -41,6 +42,7 @@ func (p *AVPlayer) sessionConfig() sessionConfig {
 		height:   p.height,
 		renderer: p.renderer,
 		muted:    p.muted.Load(),
+		volume:   p.volume.Load().(float64),
 	}
 }
 
@@ -72,9 +74,11 @@ func (p *AVPlayer) withSession(fn func(*playSession)) {
 
 // NewAVPlayer creates a new FFmpeg-based player
 func NewAVPlayer() *AVPlayer {
-	return &AVPlayer{
+	p := &AVPlayer{
 		output: os.Stdout,
 	}
+	p.volume.Store(float64(1))
+	return p
 }
 
 // SetOutput sets the writer for video frames
@@ -113,6 +117,10 @@ func (p *AVPlayer) SetSize(width, height int) {
 				s.renderer.SetTerminalSize(cols, rows, termW, termH)
 				s.renderer.CenterVideo(dstW, dstH)
 			}
+		}
+
+		if s.overlay != nil {
+			s.overlay.ResizeOverlay()
 		}
 	})
 }
@@ -167,6 +175,21 @@ func (p *AVPlayer) Mute() {
 			s.audio.Mute()
 		}
 	})
+}
+
+// SetVolume sets the volume (0.0–1.0)
+func (p *AVPlayer) SetVolume(vol float64) {
+	p.volume.Store(vol)
+	p.withSession(func(s *playSession) {
+		if s.audio != nil {
+			s.audio.SetVolume(vol)
+		}
+	})
+}
+
+// Volume returns the current volume
+func (p *AVPlayer) Volume() float64 {
+	return p.volume.Load().(float64)
 }
 
 // Pause toggles pause state

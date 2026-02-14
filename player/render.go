@@ -13,11 +13,10 @@ import (
 type KittyRenderer struct {
 	mu sync.Mutex
 
-	out       io.Writer
-	imageID   int
-	lastW     int
-	lastH     int
-	supported bool
+	out     io.Writer
+	imageID int
+	lastW   int
+	lastH   int
 
 	// Cell position for placement (1-indexed row/col)
 	cellRow int
@@ -249,13 +248,7 @@ func (r *KittyRenderer) Clear() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.supported {
-		// Delete the image by ID
-		_, err := fmt.Fprintf(r.out, "\x1b_Ga=d,d=i,i=%d\x1b\\", r.imageID)
-		return err
-	}
-
-	// Fallback: just clear screen
-	_, err := r.out.Write([]byte("\x1b[2J\x1b[H"))
+	// Delete the image by ID
+	_, err := fmt.Fprintf(r.out, "\x1b_Ga=d,d=i,i=%d\x1b\\", r.imageID)
 	return err
 }

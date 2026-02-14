@@ -57,6 +57,9 @@ type Backend interface {
 	// Returns true if navbar should be shown, false if hidden.
 	ToggleNavbar() (bool, error)
 
+	// SetVolume updates volume and persists to disk
+	SetVolume(vol float64) error
+
 	// SetReelSize updates the reel bounding box dimensions and persists to disk.
 	SetReelSize(width, height int) error
 

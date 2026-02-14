@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"io"
+	"slices"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -77,8 +78,10 @@ type Config struct {
 func NewModel(userDataDir, cacheDir, configDir string, output io.Writer, flags Config) Model {
 	backend.LoadSettings(configDir)
 
-	playerHeight := backend.Config.ReelHeight * backend.Config.RetinaScale
-	playerWidth := backend.Config.ReelWidth * backend.Config.RetinaScale
+	settings := backend.GetSettings()
+
+	playerHeight := settings.ReelHeight * settings.RetinaScale
+	playerWidth := settings.ReelWidth * settings.RetinaScale
 	player.ComputeVideoCharacterDimensions(playerWidth, playerHeight)
 
 	s := spinner.New()
@@ -87,6 +90,7 @@ func NewModel(userDataDir, cacheDir, configDir string, output io.Writer, flags C
 
 	p := player.NewAVPlayer()
 	p.SetSize(playerWidth, playerHeight) // Set initial size before any playback can start
+	p.SetVolume(settings.Volume)
 
 	b := backend.NewChromeBackend(userDataDir, cacheDir, configDir)
 
@@ -100,7 +104,7 @@ func NewModel(userDataDir, cacheDir, configDir string, output io.Writer, flags C
 		videoHeightPx: playerHeight,
 		comments:      NewCommentsPanel(),
 		flags:         flags,
-		showNavbar:    backend.Config.ShowNavbar,
+		showNavbar:    settings.ShowNavbar,
 	}
 }
 
@@ -199,8 +203,8 @@ func (m Model) musicTick() tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "q", "ctrl+c":
+		key := msg.String()
+		if slices.Contains(backend.GetSettings().KeysQuit, key) {
 			m.player.Stop()
 			m.player.Close()
 			if m.backend != nil {
@@ -304,8 +308,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "j", "down":
+
+	config := backend.GetSettings()
+	key := msg.String()
+
+	switch {
+	case slices.Contains(config.KeysNext, key):
 		// If comments open, scroll down in comments
 		if m.comments.IsOpen() {
 			m.comments.Scroll(1)
@@ -326,7 +334,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case "k", "up":
+	case slices.Contains(config.KeysPrevious, key):
 		// If comments open, scroll up in comments
 		if m.comments.IsOpen() {
 			m.comments.Scroll(-1)
@@ -347,13 +355,13 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case "m":
+	case slices.Contains(config.KeysMute, key):
 		if m.currentReel != nil {
 			m.player.Mute()
 			return m, nil
 		}
 
-	case " ":
+	case slices.Contains(config.KeysPause, key):
 		m.player.Pause()
 		if m.player.IsPaused() {
 			m.status = "Paused"
@@ -361,13 +369,13 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.status = ""
 		}
 
-	case "l":
+	case slices.Contains(config.KeysLike, key):
 		if m.currentReel != nil {
 			m.currentReel.Liked = !m.currentReel.Liked
 			go m.backend.ToggleLike()
 		}
 
-	case "c":
+	case slices.Contains(config.KeysComments, key):
 		// Toggle comments
 		if m.comments.IsOpen() {
 			m.resizeReel(reelSizeStep * 2)
@@ -389,18 +397,28 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			go m.backend.OpenComments()
 		}
 
-	case "e":
+	case slices.Contains(config.KeysNavbar, key):
 		showNavbar, err := m.backend.ToggleNavbar()
 		if err != nil {
 			// do nothing since this is only a minor failure
 		}
 		m.showNavbar = showNavbar
 
-	case "+", "=":
+	case slices.Contains(config.KeysReelSizeInc, key):
 		m.resizeReel(reelSizeStep)
 
-	case "-", "_":
+	case slices.Contains(config.KeysReelSizeDec, key):
 		m.resizeReel(-reelSizeStep)
+
+	case slices.Contains(config.KeysVolUp, key):
+		vol := min(m.player.Volume()+0.1, 1.0)
+		m.player.SetVolume(vol)
+		go m.backend.SetVolume(vol)
+
+	case slices.Contains(config.KeysVolDown, key):
+		vol := max(m.player.Volume()-0.1, 0.0)
+		m.player.SetVolume(vol)
+		go m.backend.SetVolume(vol)
 	}
 
 	return m, nil
@@ -408,8 +426,9 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // resizeReel adjusts the reel bounding box by delta pixels (width), deriving height from 9:16 ratio.
 func (m *Model) resizeReel(delta int) {
-	newW := backend.Config.ReelWidth + delta
-	newH := backend.Config.ReelHeight + delta*16/9
+	settings := backend.GetSettings()
+	newW := settings.ReelWidth + delta
+	newH := settings.ReelHeight + delta*16/9
 	if newW < reelSizeStep || newH < reelSizeStep {
 		return
 	}
@@ -418,8 +437,8 @@ func (m *Model) resizeReel(delta int) {
 		return
 	}
 
-	m.videoWidthPx = newW * backend.Config.RetinaScale
-	m.videoHeightPx = newH * backend.Config.RetinaScale
+	m.videoWidthPx = newW * settings.RetinaScale
+	m.videoHeightPx = newH * settings.RetinaScale
 	player.ComputeVideoCharacterDimensions(m.videoWidthPx, m.videoHeightPx)
 	m.player.SetSize(m.videoWidthPx, m.videoHeightPx)
 }

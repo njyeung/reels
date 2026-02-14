@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/mattn/go-runewidth"
+	"github.com/njyeung/reels/backend"
 	"github.com/njyeung/reels/player"
 )
 
@@ -155,9 +156,10 @@ func (m Model) viewBrowsing() string {
 			if m.showNavbar {
 				b.WriteString("\n")
 
-				nav1 := navStyle.Render("k: prev  j: next  m: mute  c: comments")
-				nav2 := navStyle.Render("space: pause  l: like  q: quit")
-				nav3 := navStyle.Render("+/-: resize  e: expand captions")
+				config := backend.GetSettings()
+				nav1 := navStyle.Render(displayKeys(config.KeysPrevious) + ": prev  " + displayKeys(config.KeysNext) + ": next  " + displayKeys(config.KeysMute) + ": mute  " + displayKeys(config.KeysComments) + ": comments")
+				nav2 := navStyle.Render(displayKeys(config.KeysPause) + ": pause  " + displayKeys(config.KeysLike) + ": like  " + displayKeys(config.KeysQuit) + ": quit")
+				nav3 := navStyle.Render(displayKeys(config.KeysReelSizeInc) + "/" + displayKeys(config.KeysReelSizeDec) + ": resize  " + displayKeys(config.KeysNavbar) + ": expand captions")
 				b.WriteString(padding + nav1 + "\n")
 				b.WriteString(padding + nav2 + "\n")
 				b.WriteString(padding + nav3 + "\n")
@@ -168,6 +170,20 @@ func (m Model) viewBrowsing() string {
 	}
 
 	return strings.TrimSuffix(b.String(), "\n")
+}
+
+// displayKeys formats a keybind slice for the navbar
+// ["[", "-"] -> "[, -"
+func displayKeys(keys []string) string {
+	display := make([]string, len(keys))
+	for i, k := range keys {
+		if v, ok := backend.KeyToConf[k]; ok {
+			display[i] = v
+		} else {
+			display[i] = k
+		}
+	}
+	return strings.Join(display, ", ")
 }
 
 // formatLikeCount formats like count with K/M suffixes

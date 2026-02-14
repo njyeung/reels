@@ -30,6 +30,7 @@ type AudioPlayer struct {
 	playing atomic.Bool
 	paused  atomic.Bool
 	muted   atomic.Bool
+	volume  atomic.Value // float64, 0.0–1.0
 
 	// Beep streamer
 	streamer *audioStreamer
@@ -65,6 +66,8 @@ func (s *audioStreamer) Stream(samples [][2]float64) (n int, ok bool) {
 	}
 
 	muted := s.player.muted.Load()
+	volume := s.player.volume.Load().(float64)
+	volume = volume * volume // since volume is (0.0 - 1.0), this scales the volume exponentially for human hearing
 
 	// sampleBuf (raw bytes from FFmpeg):
 	// ┌────┬────┬────┬────┬────┬────┬────┬────┬─...
@@ -101,8 +104,8 @@ func (s *audioStreamer) Stream(samples [][2]float64) (n int, ok bool) {
 			const MAX_INT_16 = int16(32767)
 			left := int16(s.player.sampleBuf[0]) | int16(s.player.sampleBuf[1])<<8
 			right := int16(s.player.sampleBuf[2]) | int16(s.player.sampleBuf[3])<<8
-			samples[i][0] = float64(left) / float64(MAX_INT_16)
-			samples[i][1] = float64(right) / float64(MAX_INT_16)
+			samples[i][0] = float64(left) / float64(MAX_INT_16) * volume
+			samples[i][1] = float64(right) / float64(MAX_INT_16) * volume
 		}
 
 		// consume
@@ -260,6 +263,11 @@ func (a *AudioPlayer) BufferSize() int {
 	a.buffMu.Lock()
 	defer a.buffMu.Unlock()
 	return len(a.sampleBuf)
+}
+
+// SetVolume sets the playback volume (0.0–1.0)
+func (a *AudioPlayer) SetVolume(vol float64) {
+	a.volume.Store(vol)
 }
 
 // Mute toggles mute state
