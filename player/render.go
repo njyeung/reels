@@ -277,7 +277,7 @@ func (r *KittyRenderer) ClearTerminal() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Delete the image by ID
-	_, err := fmt.Fprintf(r.out, "\x1b_Ga=d,d=i,i=%d\x1b\\", r.imageID)
+	// Delete all kitty images from the terminal
+	_, err := fmt.Fprint(r.out, "\x1b_Ga=d,d=a,q=2\x1b\\")
 	return err
 }
