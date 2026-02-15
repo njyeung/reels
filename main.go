@@ -18,12 +18,6 @@ type SyncFile struct {
 	*os.File
 }
 
-func (sf *SyncFile) Write(p []byte) (n int, err error) {
-	sf.mu.Lock()
-	defer sf.mu.Unlock()
-	return sf.File.Write(p)
-}
-
 func main() {
 	loginFlag := flag.Bool("login", false, "Open browser in headed mode for manual Instagram login")
 	headedFlag := flag.Bool("headed", false, "Run browser in headed (visible) mode")

@@ -15,6 +15,7 @@ type AVPlayer struct {
 	output io.Writer
 	width  int
 	height int
+	useShm bool
 
 	playing atomic.Bool
 	paused  atomic.Bool
@@ -43,6 +44,7 @@ func (p *AVPlayer) sessionConfig() sessionConfig {
 		renderer: p.renderer,
 		muted:    p.muted.Load(),
 		volume:   p.volume.Load().(float64),
+		useShm:   p.useShm,
 	}
 }
 
@@ -177,6 +179,13 @@ func (p *AVPlayer) Mute() {
 	})
 }
 
+// SetUseShm enables or disables shared memory transmission for rendering.
+func (p *AVPlayer) SetUseShm(useShm bool) {
+	p.configMu.Lock()
+	defer p.configMu.Unlock()
+	p.useShm = useShm
+}
+
 // SetVolume sets the volume (0.0–1.0)
 func (p *AVPlayer) SetVolume(vol float64) {
 	p.volume.Store(vol)
@@ -218,7 +227,8 @@ func (p *AVPlayer) cleanup() {
 		s.stop()
 	})
 	if p.renderer != nil {
-		p.renderer.Clear()
+		p.renderer.ClearTerminal()
+		p.renderer.CleanupSHM()
 		p.renderer = nil
 	}
 }

@@ -45,6 +45,7 @@ type sessionConfig struct {
 	renderer *KittyRenderer
 	muted    bool
 	volume   float64
+	useShm   bool
 }
 
 func newPlaySession(url string, pfpPath string, cfg sessionConfig) (*playSession, error) {
@@ -85,6 +86,7 @@ func newPlaySession(url string, pfpPath string, cfg sessionConfig) (*playSession
 			renderer.SetTerminalSize(cols, rows, termW, termH)
 			renderer.CenterVideo(dstW, dstH)
 		}
+		renderer.SetUseShm(cfg.useShm)
 	}
 
 	overlay := loadOverlay(pfpPath)

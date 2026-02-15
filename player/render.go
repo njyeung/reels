@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -27,6 +29,10 @@ type KittyRenderer struct {
 	termRows     int
 	termWidthPx  int
 	termHeightPx int
+
+	// Shared memory transmission (Linux only)
+	useShm   bool // true when /dev/shm is available; checked once at construction
+	shmIndex int  // monotonically increasing counter for unique shm names
 }
 
 // NewKittyRenderer creates a new Kitty graphics renderer
@@ -36,6 +42,13 @@ func NewKittyRenderer(out io.Writer) *KittyRenderer {
 		imageID: 1,
 	}
 	return r
+}
+
+// SetUseShm enables or disables shared memory transmission for rendering.
+func (r *KittyRenderer) SetUseShm(useShm bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.useShm = useShm
 }
 
 // SetOutput changes the output writer
@@ -116,48 +129,13 @@ func (r *KittyRenderer) RenderFrame(rgb []byte, width, height int) error {
 		buf.WriteString("\x1b[H")
 	}
 
-	// Encode RGB as base64
-	encoded := base64.StdEncoding.EncodeToString(rgb)
-
-	// Kitty graphics protocol:
-	// ESC_G<key>=<value>,...;<base64 data>ESC\
-	//
-	// Keys:
-	//   a=T - action: transmit and display
-	//   f=24 - format: 24-bit RGB
-	//   s=W - width in pixels
-	//   v=H - height in pixels
-	//   i=ID - image ID for updates
-	//   q=2 - quiet mode (suppress responses)
-
-	// Split data into chunks (max 4096 bytes per chunk)
-	const chunkSize = 4096
-
-	// First chunk includes the header
-	first := true
-
-	for len(encoded) > 0 {
-		chunk := encoded
-		more := 0
-
-		if len(chunk) > chunkSize {
-			chunk = encoded[:chunkSize]
-			encoded = encoded[chunkSize:]
-			more = 1
-		} else {
-			encoded = ""
+	// Transmit image data via shared memory or direct base64
+	if r.useShm {
+		if err := r.writeImageShm(&buf, rgb, 24, width, height, r.imageID); err != nil {
+			r.writeImageDirect(&buf, rgb, 24, width, height, r.imageID)
 		}
-
-		if first {
-			// First chunk: include all parameters
-			// m=1 means more chunks follow, m=0 means last chunk
-			fmt.Fprintf(&buf, "\x1b_Ga=T,f=24,s=%d,v=%d,i=%d,q=2,m=%d;%s\x1b\\",
-				width, height, r.imageID, more, chunk)
-			first = false
-		} else {
-			// Continuation chunks
-			fmt.Fprintf(&buf, "\x1b_Gm=%d;%s\x1b\\", more, chunk)
-		}
+	} else {
+		r.writeImageDirect(&buf, rgb, 24, width, height, r.imageID)
 	}
 
 	r.lastW = width
@@ -208,8 +186,27 @@ func (r *KittyRenderer) RenderProfilePic(rgba []byte, width int, height int) err
 		buf.WriteString("\x1b[H")
 	}
 
-	// Encode RGBA as base64
-	encoded := base64.StdEncoding.EncodeToString(rgba)
+	// Transmit image data via shared memory or direct base64
+	pfpID := r.imageID + 100
+	if r.useShm {
+		if err := r.writeImageShm(&buf, rgba, 32, width, height, pfpID); err != nil {
+			r.writeImageDirect(&buf, rgba, 32, width, height, pfpID)
+		}
+	} else {
+		r.writeImageDirect(&buf, rgba, 32, width, height, pfpID)
+	}
+
+	// Restore cursor position
+	buf.WriteString("\x1b8")
+
+	_, err := r.out.Write(buf.Bytes())
+	return err
+}
+
+// writeImageDirect encodes pixel data as base64 and writes it in chunks using direct transmission (t=d).
+// format is 24 (RGB) or 32 (RGBA). id is the kitty image ID.
+func (r *KittyRenderer) writeImageDirect(buf *bytes.Buffer, data []byte, format, width, height, id int) {
+	encoded := base64.StdEncoding.EncodeToString(data)
 
 	const chunkSize = 4096
 	first := true
@@ -227,24 +224,56 @@ func (r *KittyRenderer) RenderProfilePic(rgba []byte, width int, height int) err
 		}
 
 		if first {
-			// f=32 for RGBA format
-			// r.imageID + 100 since r.imageID is our video frame's ID.
-			fmt.Fprintf(&buf, "\x1b_Ga=T,f=32,s=%d,v=%d,i=%d,q=2,m=%d;%s\x1b\\", width, height, r.imageID+100, more, chunk)
+			fmt.Fprintf(buf, "\x1b_Ga=T,f=%d,s=%d,v=%d,i=%d,q=2,m=%d;%s\x1b\\",
+				format, width, height, id, more, chunk)
 			first = false
 		} else {
-			fmt.Fprintf(&buf, "\x1b_Gm=%d;%s\x1b\\", more, chunk)
+			fmt.Fprintf(buf, "\x1b_Gm=%d;%s\x1b\\", more, chunk)
 		}
 	}
+}
 
-	// Restore cursor position
-	buf.WriteString("\x1b8")
+// writeImageShm writes pixel data to a POSIX shared memory file and emits a t=s escape sequence.
+// Falls back to writeImageDirect on error via the caller.
+func (r *KittyRenderer) writeImageShm(buf *bytes.Buffer, data []byte, format, width, height, id int) error {
+	name := fmt.Sprintf("/kitty-reels-%d-%d", id, r.shmIndex)
+	r.shmIndex++
 
-	_, err := r.out.Write(buf.Bytes())
-	return err
+	path := "/dev/shm" + name
+
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(data)
+	if err2 := f.Close(); err == nil {
+		err = err2
+	}
+	if err != nil {
+		return err
+	}
+
+	// Payload is the base64-encoded shm name, not the pixel data
+	encodedName := base64.StdEncoding.EncodeToString([]byte(name))
+	fmt.Fprintf(buf, "\x1b_Ga=T,f=%d,s=%d,v=%d,i=%d,t=s,q=2;%s\x1b\\",
+		format, width, height, id, encodedName)
+
+	return nil
+}
+
+// Cleanup removes any lingering shared memory files on shutdown.
+func (r *KittyRenderer) CleanupSHM() {
+	if !r.useShm {
+		return
+	}
+	matches, _ := filepath.Glob("/dev/shm/kitty-reels-*")
+	for _, m := range matches {
+		os.Remove(m)
+	}
 }
 
 // Clear clears the video area
-func (r *KittyRenderer) Clear() error {
+func (r *KittyRenderer) ClearTerminal() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 

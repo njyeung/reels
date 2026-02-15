@@ -91,6 +91,7 @@ func NewModel(userDataDir, cacheDir, configDir string, output io.Writer, flags C
 	p := player.NewAVPlayer()
 	p.SetSize(playerWidth, playerHeight) // Set initial size before any playback can start
 	p.SetVolume(settings.Volume)
+	p.SetUseShm(player.ShmSupported())
 
 	b := backend.NewChromeBackend(userDataDir, cacheDir, configDir)
 
