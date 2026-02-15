@@ -4,3 +4,6 @@
 [submodule "reels-bin"]
 	path = reels-bin
 	url = ssh://aur@aur.archlinux.org/reels-bin.git
+[submodule "npm-package"]
+	path = reels-npm-package
+	url = git@github.com:njyeung/reels-npm-package.git
