@@ -19,6 +19,9 @@ You need a terminal that supports the **Kitty graphics protocol**:
 ### Browser
 Chrome, Chromium, or Brave must be installed. The app uses headless browser automation to interact with Instagram.
 
+### FFmpeg
+FFmpeg 8+ must be installed on your system. Homebrew installs it automatically. Arch users should ensure ffmpeg is up to date (`sudo pacman -Syu ffmpeg`).
+
 ## Usage
 
 ```bash
@@ -30,18 +33,29 @@ reels
 - `--login` - Open browser window to log in to Instagram
 
 ### Controls
-- `j` / `↓` - Next reel
-- `k` / `↑` - Previous reel
+- `j` - Next reel (scroll comments when open)
+- `k` - Previous reel (scroll comments when open)
 - `Space` - Pause/resume
 - `l` - Like/unlike
 - `e` - Toggle Navbar
 - `c` - Toggle Comments
 - `m` - Mute
-- `-` - Shrink Video
+- `]` - Volume up
+- `[` - Volume down
 - `=` - Enlarge Video
+- `-` - Shrink Video
 - `q` - Quit
 
+All keybinds are configurable in `reels.conf`. Each action supports multiple binds.
+
 ## Installation
+
+### npm (macOS ARM64 / Linux x86_64)
+
+```bash
+npm install -g reels-tui
+reels
+```
 
 ### Homebrew (macOS ARM64 / Linux x86_64)
 
@@ -90,13 +104,28 @@ go build -o reels .
 
 show_navbar = true
 retina_scale = 2    # 2 on macOS, 1 on Linux by default
-reel_width = 270  
+reel_width = 270
 reel_height = 480
+volume = 1
+
+# Configurable keybinds (multiple binds per action supported)
+key_next = j
+key_previous = k
+key_pause = space
+key_mute = m
+key_like = l
+key_comments = c
+key_navbar = e
+key_vol_up = ]
+key_vol_down = [
+key_reel_size_inc = =
+key_reel_size_dec = -
+key_quit = q
+key_quit = ctrl+c
 ```
 
 ## TODO
 
-- Support for comments sections
 - Sharing (to friends and copying reel link)
-- Optimize performance (gpu decoding, shared memory w/ kitty instead of base64 encoding every frame)
-- syncing bugs with browser 
+- GPU decoding
+- Syncing bugs with browser
