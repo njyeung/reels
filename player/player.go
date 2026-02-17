@@ -117,7 +117,8 @@ func (p *AVPlayer) SetSize(width, height int) {
 		if s.renderer != nil {
 			if cols, rows, termW, termH, err := GetTerminalSize(); err == nil && cols > 0 && rows > 0 {
 				s.renderer.SetTerminalSize(cols, rows, termW, termH)
-				s.renderer.CenterVideo(dstW, dstH)
+				s.videoRow, s.videoCol = videoCenterPosition(cols, rows)
+				s.pfpRow, s.pfpCol = profilePicPosition(cols, rows)
 			}
 		}
 

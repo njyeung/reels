@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	_ "image/jpeg"
+	"math"
 	"os"
 	"sync"
 	"time"
@@ -18,6 +19,10 @@ type playSession struct {
 	video    *VideoDecoder
 	renderer *KittyRenderer
 	overlay  *Overlay
+
+	// Cell positions for image placement (1-indexed)
+	videoRow, videoCol int
+	pfpRow, pfpCol     int
 
 	audioPktCh chan *audioPacket
 	videoPktCh chan *astiav.Packet
@@ -81,10 +86,13 @@ func newPlaySession(url string, pfpPath string, cfg sessionConfig) (*playSession
 	}
 
 	renderer := cfg.renderer
+
+	var videoRow, videoCol, pfpRow, pfpCol int
 	if renderer != nil {
 		if cols, rows, termW, termH, err := GetTerminalSize(); err == nil && cols > 0 && rows > 0 {
 			renderer.SetTerminalSize(cols, rows, termW, termH)
-			renderer.CenterVideo(dstW, dstH)
+			videoRow, videoCol = videoCenterPosition(cols, rows)
+			pfpRow, pfpCol = profilePicPosition(cols, rows)
 		}
 		renderer.SetUseShm(cfg.useShm)
 	}
@@ -97,6 +105,10 @@ func newPlaySession(url string, pfpPath string, cfg sessionConfig) (*playSession
 		video:      video,
 		renderer:   renderer,
 		overlay:    overlay,
+		videoRow:   videoRow,
+		videoCol:   videoCol,
+		pfpRow:     pfpRow,
+		pfpCol:     pfpCol,
 		stopCh:     make(chan struct{}),
 		videoPktCh: make(chan *astiav.Packet, 30),
 	}
@@ -254,7 +266,7 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 			}
 		}
 
-		if err := s.renderer.RenderFrame(frame.RGB, frame.Width, frame.Height); err != nil {
+		if err := s.renderer.RenderImage(frame.RGB, 24, frame.Width, frame.Height, VideoImageID, s.videoRow, s.videoCol, true); err != nil {
 			return fmt.Errorf("render error: %w", err)
 		}
 
@@ -262,7 +274,7 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 			s.overlay.mu.Lock()
 			pic, w, h := s.overlay.profilePic, s.overlay.profilePicWidth, s.overlay.profilePicHeight
 			s.overlay.mu.Unlock()
-			if err := s.renderer.RenderProfilePic(pic, w, h); err != nil {
+			if err := s.renderer.RenderImage(pic, 32, w, h, PfpImageID, s.pfpRow, s.pfpCol, false); err != nil {
 				return fmt.Errorf("profile pic render error: %w", err)
 			}
 		}
@@ -284,6 +296,39 @@ func fitSize(srcW, srcH, maxW, maxH int) (int, int) {
 		return maxW, int(float64(maxW) / srcAspect)
 	}
 	return int(float64(maxH) * srcAspect), maxH
+}
+
+// videoCenterPosition computes the 1-indexed (row, col) to center the video in the terminal.
+// Uses the pre-computed VideoWidthChars and VideoHeightChars from terminal.go.
+func videoCenterPosition(termCols, termRows int) (row, col int) {
+	col = (termCols-VideoWidthChars)/2 + 1
+	row = (termRows-VideoHeightChars)/2 + 1
+	if col < 1 {
+		col = 1
+	}
+	if row < 1 {
+		row = 1
+	}
+	return row, col
+}
+
+// profilePicPosition computes the 1-indexed (row, col) for the profile picture.
+// It is placed below the video, offset to the left.
+func profilePicPosition(termCols, termRows int) (row, col int) {
+	const (
+		offsetCols = 1
+		offsetRows = 2 // rows below the video
+	)
+	videoTop := max(int(math.Round(float64(termRows-VideoHeightChars)/2.0)-1), 0)
+	row = videoTop + VideoHeightChars + offsetRows
+	col = (termCols-VideoWidthChars)/2 + offsetCols
+	if row < 1 {
+		row = 1
+	}
+	if col < 1 {
+		col = 1
+	}
+	return row, col
 }
 
 // loadOverlay loads a profile picture from disk and scales it for display.

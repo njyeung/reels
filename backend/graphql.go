@@ -27,6 +27,13 @@ type commentsResponse struct {
 					HasLikedComment  bool   `json:"has_liked_comment"`
 					Text             string `json:"text"`
 					CommentLikeCount int    `json:"comment_like_count"`
+					GiphyMediaInfo   struct {
+						FirstPartyCdnProxiedImages struct {
+							FixedHeight struct {
+								Url string `json:"url"`
+							} `json:"fixed_height"`
+						} `json:"first_party_cdn_proxied_images"`
+					} `json:"giphy_media_info"`
 				} `json:"node"`
 			} `json:"edges"`
 		} `json:"xdt_api__v1__media__media_id__comments__connection"`
@@ -97,6 +104,8 @@ func (b *ChromeBackend) processCommentsResponse(body string) {
 			ProfilePicUrl: node.User.ProfilePicUrl,
 			Username:      node.User.Username,
 			IsVerified:    node.User.IsVerified,
+
+			GifUrl: node.GiphyMediaInfo.FirstPartyCdnProxiedImages.FixedHeight.Url,
 		}
 		comments = append(comments, comment)
 	}

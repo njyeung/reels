@@ -49,11 +49,14 @@ type Clock interface {
 
 // Renderer handles terminal graphics output
 type Renderer interface {
-	// RenderFrame renders an RGB frame to the terminal
-	RenderFrame(rgb []byte, width, height int) error
+	// RenderImage renders image data at a cell position with a Kitty image ID
+	RenderImage(data []byte, format, width, height, id, row, col int, sync bool) error
 
-	// Clear clears the video area
-	Clear() error
+	// DeleteImage removes a specific Kitty image by ID
+	DeleteImage(id int) error
+
+	// ClearTerminal deletes all kitty images from the terminal
+	ClearTerminal() error
 }
 
 // Frame represents a decoded video frame
@@ -79,4 +82,8 @@ const (
 
 	// AudioSampleRate for resampling
 	AudioSampleRate = 44100
+
+	// Kitty image IDs
+	VideoImageID = 1
+	PfpImageID   = 101
 )

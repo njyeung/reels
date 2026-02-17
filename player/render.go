@@ -5,24 +5,16 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
 	"sync"
 )
 
-// KittyRenderer renders frames using Kitty's graphics protocol
+// KittyRenderer renders images using Kitty's graphics protocol
 type KittyRenderer struct {
 	mu sync.Mutex
 
-	out     io.Writer
-	imageID int
-	lastW   int
-	lastH   int
-
-	// Cell position for placement (1-indexed row/col)
-	cellRow int
-	cellCol int
+	out io.Writer
 
 	// Terminal dimensions in cells and pixels
 	termCols     int
@@ -37,11 +29,7 @@ type KittyRenderer struct {
 
 // NewKittyRenderer creates a new Kitty graphics renderer
 func NewKittyRenderer(out io.Writer) *KittyRenderer {
-	r := &KittyRenderer{
-		out:     out,
-		imageID: 1,
-	}
-	return r
+	return &KittyRenderer{out: out}
 }
 
 // SetUseShm enables or disables shared memory transmission for rendering.
@@ -68,138 +56,58 @@ func (r *KittyRenderer) SetTerminalSize(cols, rows, widthPx, heightPx int) {
 	r.termHeightPx = heightPx
 }
 
-// SetCellPosition sets the cell position for video placement (1-indexed)
-func (r *KittyRenderer) SetCellPosition(row, col int) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.cellRow = row
-	r.cellCol = col
-}
-
-// CenterVideo calculates and sets the cell position to center a video of the given pixel dimensions
-func (r *KittyRenderer) CenterVideo(videoWidth, videoHeight int) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.termCols > 0 && r.termRows > 0 && r.termWidthPx > 0 && r.termHeightPx > 0 {
-		// Calculate cell size in pixels
-		cellW := r.termWidthPx / r.termCols
-		cellH := r.termHeightPx / r.termRows
-
-		// Calculate video size in cells
-		videoCols := (videoWidth + cellW - 1) / cellW
-		videoRows := (videoHeight + cellH - 1) / cellH
-
-		// Center position (1-indexed for ANSI escape)
-		r.cellCol = (r.termCols-videoCols)/2 + 1
-		r.cellRow = (r.termRows-videoRows)/2 + 1
-
-		if r.cellCol < 1 {
-			r.cellCol = 1
-		}
-		if r.cellRow < 1 {
-			r.cellRow = 1
-		}
-	}
-}
-
-// RenderFrame renders an RGB frame using Kitty graphics protocol
-func (r *KittyRenderer) RenderFrame(rgb []byte, width, height int) error {
+// RenderImage renders image data at the given cell position with the given Kitty image ID.
+// format: 24 (RGB24) or 32 (RGBA). Deletes previous image with same ID.
+// If sync is true, wraps in synchronized update sequences (use for main video frame).
+func (r *KittyRenderer) RenderImage(data []byte, format, width, height, id, row, col int, sync bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Buffer the entire frame to write atomically
 	var buf bytes.Buffer
 
-	// Begin synchronized update
-	buf.WriteString("\x1b[?2026h")
+	if sync {
+		buf.WriteString("\x1b[?2026h")
+	}
 
 	// Save cursor position
 	buf.WriteString("\x1b7")
 
-	// Delete previous image first
-	if r.lastW > 0 {
-		fmt.Fprintf(&buf, "\x1b_Ga=d,d=i,i=%d,q=2\x1b\\", r.imageID)
-	}
+	// Delete previous image with this ID
+	fmt.Fprintf(&buf, "\x1b_Ga=d,d=i,i=%d,q=2\x1b\\", id)
 
 	// Move cursor to target cell position for image placement
-	if r.cellRow > 0 && r.cellCol > 0 {
-		fmt.Fprintf(&buf, "\x1b[%d;%dH", r.cellRow, r.cellCol)
-	} else {
-		// Default to top-left
-		buf.WriteString("\x1b[H")
-	}
-
-	// Transmit image data via shared memory or direct base64
-	if r.useShm {
-		if err := r.writeImageShm(&buf, rgb, 24, width, height, r.imageID); err != nil {
-			r.writeImageDirect(&buf, rgb, 24, width, height, r.imageID)
-		}
-	} else {
-		r.writeImageDirect(&buf, rgb, 24, width, height, r.imageID)
-	}
-
-	r.lastW = width
-	r.lastH = height
-
-	// Restore cursor position
-	buf.WriteString("\x1b8")
-
-	// End synchronized update
-	buf.WriteString("\x1b[?2026l")
-
-	// Write entire frame atomically
-	_, err := r.out.Write(buf.Bytes())
-	return err
-}
-
-// RenderProfilePic renders a profile picture at an offset from the video
-func (r *KittyRenderer) RenderProfilePic(rgba []byte, width int, height int) error {
-	const (
-		offsetCols = 1
-		offsetRows = 2 // rows below the video
-	)
-
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	var buf bytes.Buffer
-
-	// Save cursor position
-	buf.WriteString("\x1b7")
-
-	// Calculate position based on video position (matching TUI layout)
-	if r.cellRow > 0 && r.cellCol > 0 {
-		// Video top row
-		videoTop := max(int(math.Round(float64(r.termRows-VideoHeightChars)/2.0)-1), 0)
-		// Profile pic goes below video, ont he left
-		row := videoTop + VideoHeightChars + offsetRows
-		col := (r.termCols-VideoWidthChars)/2 + offsetCols
-
-		if row < 1 {
-			row = 1
-		}
-		if col < 1 {
-			col = 1
-		}
+	if row > 0 && col > 0 {
 		fmt.Fprintf(&buf, "\x1b[%d;%dH", row, col)
 	} else {
 		buf.WriteString("\x1b[H")
 	}
 
 	// Transmit image data via shared memory or direct base64
-	pfpID := r.imageID + 100
 	if r.useShm {
-		if err := r.writeImageShm(&buf, rgba, 32, width, height, pfpID); err != nil {
-			r.writeImageDirect(&buf, rgba, 32, width, height, pfpID)
+		if err := r.writeImageShm(&buf, data, format, width, height, id); err != nil {
+			r.writeImageDirect(&buf, data, format, width, height, id)
 		}
 	} else {
-		r.writeImageDirect(&buf, rgba, 32, width, height, pfpID)
+		r.writeImageDirect(&buf, data, format, width, height, id)
 	}
 
 	// Restore cursor position
 	buf.WriteString("\x1b8")
 
+	if sync {
+		buf.WriteString("\x1b[?2026l")
+	}
+
 	_, err := r.out.Write(buf.Bytes())
+	return err
+}
+
+// DeleteImage removes a specific Kitty image by ID.
+func (r *KittyRenderer) DeleteImage(id int) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	_, err := fmt.Fprintf(r.out, "\x1b_Ga=d,d=i,i=%d,q=2\x1b\\", id)
 	return err
 }
 
@@ -261,7 +169,7 @@ func (r *KittyRenderer) writeImageShm(buf *bytes.Buffer, data []byte, format, wi
 	return nil
 }
 
-// Cleanup removes any lingering shared memory files on shutdown.
+// CleanupSHM removes any lingering shared memory files on shutdown.
 func (r *KittyRenderer) CleanupSHM() {
 	if !r.useShm {
 		return
@@ -272,12 +180,11 @@ func (r *KittyRenderer) CleanupSHM() {
 	}
 }
 
-// Clear clears the video area
+// ClearTerminal deletes all kitty images from the terminal.
 func (r *KittyRenderer) ClearTerminal() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Delete all kitty images from the terminal
 	_, err := fmt.Fprint(r.out, "\x1b_Ga=d,d=a,q=2\x1b\\")
 	return err
 }

@@ -141,6 +141,7 @@ type Comment struct {
 	HasLikedComment   bool
 	Text              string
 	CommentLikeCount  int
+	GifUrl            string
 }
 
 // EventType represents different backend events
