@@ -27,6 +27,9 @@ type playSession struct {
 	audioPktCh chan *audioPacket
 	videoPktCh chan *astiav.Packet
 
+	gifsMu      sync.Mutex
+	visibleGifs []visibleGif
+
 	stopCh   chan struct{}
 	stopOnce sync.Once
 }
@@ -91,7 +94,7 @@ func newPlaySession(url string, pfpPath string, cfg sessionConfig) (*playSession
 	if renderer != nil {
 		if cols, rows, termW, termH, err := GetTerminalSize(); err == nil && cols > 0 && rows > 0 {
 			renderer.SetTerminalSize(cols, rows, termW, termH)
-			videoRow, videoCol = videoCenterPosition(cols, rows)
+			videoRow, videoCol = videoCenterPosition(dstW, dstH)
 			pfpRow, pfpCol = profilePicPosition(cols, rows)
 		}
 		renderer.SetUseShm(cfg.useShm)
@@ -266,10 +269,12 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 			}
 		}
 
+		// render video
 		if err := s.renderer.RenderImage(frame.RGB, 24, frame.Width, frame.Height, VideoImageID, s.videoRow, s.videoCol, true); err != nil {
 			return fmt.Errorf("render error: %w", err)
 		}
 
+		// render pfp
 		if s.overlay != nil {
 			s.overlay.mu.Lock()
 			pic, w, h := s.overlay.profilePic, s.overlay.profilePicWidth, s.overlay.profilePicHeight
@@ -278,6 +283,22 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 				return fmt.Errorf("profile pic render error: %w", err)
 			}
 		}
+
+		// render gifs
+		s.gifsMu.Lock()
+		now := time.Now()
+		for i := range s.visibleGifs {
+			g := &s.visibleGifs[i]
+			if len(g.anim.Frames) == 0 {
+				continue
+			}
+			if now.Sub(g.lastAdvance) >= g.anim.Delays[g.frameIndex] {
+				g.frameIndex = (g.frameIndex + 1) % len(g.anim.Frames)
+				g.lastAdvance = now
+			}
+			s.renderer.RenderImage(g.anim.Frames[g.frameIndex], 32, g.anim.Width, g.anim.Height, g.imageID, g.row, g.col, false)
+		}
+		s.gifsMu.Unlock()
 	}
 
 	return nil
@@ -299,10 +320,21 @@ func fitSize(srcW, srcH, maxW, maxH int) (int, int) {
 }
 
 // videoCenterPosition computes the 1-indexed (row, col) to center the video in the terminal.
-// Uses the pre-computed VideoWidthChars and VideoHeightChars from terminal.go.
-func videoCenterPosition(termCols, termRows int) (row, col int) {
-	col = (termCols-VideoWidthChars)/2 + 1
-	row = (termRows-VideoHeightChars)/2 + 1
+// Uses the actual video pixel dimensions so videos with non-standard aspect ratios are centered correctly.
+func videoCenterPosition(videoWidthPx, videoHeightPx int) (row, col int) {
+	cols, rows, termW, termH, err := GetTerminalSize()
+	if err != nil || cols == 0 || rows == 0 || termW == 0 || termH == 0 {
+		return 1, 1
+	}
+
+	cellW := termW / cols
+	cellH := termH / rows
+
+	videoCols := (videoWidthPx + cellW - 1) / cellW
+	videoRows := (videoHeightPx + cellH - 1) / cellH
+
+	col = (cols-videoCols)/2 + 1
+	row = (rows-videoRows)/2 + 1
 	if col < 1 {
 		col = 1
 	}
@@ -464,4 +496,60 @@ func (o *Overlay) ResizeOverlay() {
 	o.profilePic = rgba
 	o.profilePicWidth = dstW
 	o.profilePicHeight = dstH
+}
+
+func (s *playSession) setVisibleGifs(slots []GifSlot) {
+	s.gifsMu.Lock()
+	defer s.gifsMu.Unlock()
+
+	// Map existing animations to preserve frame state
+	prev := make(map[*GifAnimation]*visibleGif)
+	for i := range s.visibleGifs {
+		g := &s.visibleGifs[i]
+		prev[g.anim] = g
+	}
+
+	newGifs := make([]visibleGif, 0, len(slots))
+	usedIDs := make(map[int]bool)
+
+	for i, slot := range slots {
+		if slot.Anim == nil {
+			continue
+		}
+		id := GifImageID + i
+		usedIDs[id] = true
+
+		vg := visibleGif{
+			anim:    slot.Anim,
+			row:     slot.Row,
+			col:     slot.Col,
+			imageID: id,
+		}
+		if p, ok := prev[slot.Anim]; ok {
+			vg.frameIndex = p.frameIndex
+			vg.lastAdvance = p.lastAdvance
+		} else {
+			vg.lastAdvance = time.Now()
+		}
+		newGifs = append(newGifs, vg)
+	}
+
+	// Delete kitty images for GIFs no longer visible
+	for _, g := range s.visibleGifs {
+		if !usedIDs[g.imageID] {
+			s.renderer.DeleteImage(g.imageID)
+		}
+	}
+
+	s.visibleGifs = newGifs
+}
+
+func (s *playSession) clearGifs() {
+	s.gifsMu.Lock()
+	defer s.gifsMu.Unlock()
+
+	for _, g := range s.visibleGifs {
+		s.renderer.DeleteImage(g.imageID)
+	}
+	s.visibleGifs = nil
 }

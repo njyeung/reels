@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/chromedp/cdproto/fetch"
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
 
@@ -107,6 +110,40 @@ func (b *ChromeBackend) processCommentsResponse(body string) {
 
 			GifUrl: node.GiphyMediaInfo.FirstPartyCdnProxiedImages.FixedHeight.Url,
 		}
+
+		// Download GIF if present
+		if comment.GifUrl != "" {
+			gifFile := filepath.Join(b.cacheDir, fmt.Sprintf("gif_%s.gif", comment.PK))
+			var gifData []byte
+			err := chromedp.Run(b.ctx,
+				chromedp.ActionFunc(func(ctx context.Context) error {
+					js := fmt.Sprintf(`
+						(async () => {
+							const r = await fetch("%s");
+							const buf = await r.arrayBuffer();
+							return Array.from(new Uint8Array(buf));
+						})()
+					`, comment.GifUrl)
+					var arr []int
+					if err := chromedp.Evaluate(js, &arr, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
+						return p.WithAwaitPromise(true)
+					}).Do(ctx); err != nil {
+						return err
+					}
+					gifData = make([]byte, len(arr))
+					for j, v := range arr {
+						gifData[j] = byte(v)
+					}
+					return nil
+				}),
+			)
+			if err == nil {
+				if err := os.WriteFile(gifFile, gifData, 0644); err == nil {
+					comment.GifPath = gifFile
+				}
+			}
+		}
+
 		comments = append(comments, comment)
 	}
 

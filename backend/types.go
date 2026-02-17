@@ -142,6 +142,7 @@ type Comment struct {
 	Text              string
 	CommentLikeCount  int
 	GifUrl            string
+	GifPath           string // local path to downloaded GIF file
 }
 
 // EventType represents different backend events

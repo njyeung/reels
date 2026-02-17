@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"io"
+	"math"
 	"slices"
 	"time"
 
@@ -230,6 +231,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// recenter the video in the new window
 		m.player.SetSize(m.videoWidthPx, m.videoHeightPx)
+		m.updateCommentGifs()
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -273,6 +275,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if info, err := m.backend.GetReel(m.currentReel.Index); err == nil {
 					m.currentReel = info
 					m.comments.SetComments(info.PK, info.Comments)
+					m.updateCommentGifs()
 				}
 			}
 		}
@@ -318,6 +321,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// If comments open, scroll down in comments
 		if m.comments.IsOpen() {
 			m.comments.Scroll(1)
+			m.updateCommentGifs()
 			return m, nil
 		}
 		// Otherwise navigate to next reel
@@ -325,7 +329,10 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			nextIndex := m.currentReel.Index + 1
 			if nextIndex <= m.backend.GetTotal() {
 				m.player.Stop()
+
 				m.status = "Loading"
+
+				m.player.ClearGifs()
 				m.comments.Clear()
 				if info, err := m.backend.GetReel(nextIndex); err == nil {
 					m.currentReel = info
@@ -339,6 +346,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// If comments open, scroll up in comments
 		if m.comments.IsOpen() {
 			m.comments.Scroll(-1)
+			m.updateCommentGifs()
 			return m, nil
 		}
 		// Otherwise navigate to previous reel
@@ -346,7 +354,10 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			prevIndex := m.currentReel.Index - 1
 			if prevIndex >= 1 {
 				m.player.Stop()
+
 				m.status = "Loading"
+
+				m.player.ClearGifs()
 				m.comments.Clear()
 				if info, err := m.backend.GetReel(prevIndex); err == nil {
 					m.currentReel = info
@@ -382,6 +393,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.resizeReel(reelSizeStep * 2)
 
 			m.comments.Close()
+			m.player.ClearGifs()
 			go m.backend.CloseComments()
 		} else if m.currentReel != nil && !m.currentReel.CommentsDisabled {
 			m.resizeReel(-(reelSizeStep * 2))
@@ -392,6 +404,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Use cached comments if available
 			if m.currentReel.Comments != nil {
 				m.comments.SetComments(m.currentReel.PK, m.currentReel.Comments)
+				m.updateCommentGifs()
 			}
 
 			// Always open in browser (for Instagram's algorithm)
@@ -442,6 +455,40 @@ func (m *Model) resizeReel(delta int) {
 	m.videoHeightPx = newH * settings.RetinaScale
 	player.ComputeVideoCharacterDimensions(m.videoWidthPx, m.videoHeightPx)
 	m.player.SetSize(m.videoWidthPx, m.videoHeightPx)
+}
+
+// updateCommentGifs recomputes visible GIF slots and passes them to the player.
+// This fills in the blank spaces left behind by the View() for gif comments.
+func (m Model) updateCommentGifs() {
+	if !m.comments.IsOpen() {
+		m.player.ClearGifs()
+		return
+	}
+
+	videoHeightChars := player.VideoHeightChars
+	videoWidthChars := player.VideoWidthChars
+	topPad := max(int(math.Round(float64(m.height-videoHeightChars)/2.0))-1, 0)
+	fixedLines := topPad + 1 + videoHeightChars + 1 + 2
+	maxCaptionLines := m.height - fixedLines
+	if maxCaptionLines < 1 {
+		maxCaptionLines = 1
+	}
+
+	startCol := (m.width - videoWidthChars) / 2
+	if startCol < 0 {
+		startCol = 0
+	}
+
+	// Base row: top padding lines + status + video + separator + username + music
+	// Terminal rows are 1-indexed
+	commentsBaseRow := max(topPad-1, 0) + videoHeightChars + 4 + 1
+
+	slots := m.comments.VisibleGifSlots(videoWidthChars, maxCaptionLines, commentsBaseRow, startCol+1)
+	if len(slots) > 0 {
+		m.player.SetVisibleGifs(slots)
+	} else {
+		m.player.ClearGifs()
+	}
 }
 
 // View renders the UI

@@ -117,7 +117,7 @@ func (p *AVPlayer) SetSize(width, height int) {
 		if s.renderer != nil {
 			if cols, rows, termW, termH, err := GetTerminalSize(); err == nil && cols > 0 && rows > 0 {
 				s.renderer.SetTerminalSize(cols, rows, termW, termH)
-				s.videoRow, s.videoCol = videoCenterPosition(cols, rows)
+				s.videoRow, s.videoCol = videoCenterPosition(dstW, dstH)
 				s.pfpRow, s.pfpCol = profilePicPosition(cols, rows)
 			}
 		}
@@ -220,6 +220,31 @@ func (p *AVPlayer) IsPaused() bool {
 // IsMuted returns current mute state
 func (p *AVPlayer) IsMuted() bool {
 	return p.muted.Load()
+}
+
+// SetVisibleGifs updates which GIFs are displayed and their positions.
+func (p *AVPlayer) SetVisibleGifs(slots []GifSlot) {
+	p.withSession(func(s *playSession) {
+		s.setVisibleGifs(slots)
+	})
+}
+
+// ClearGifs removes all displayed GIFs.
+func (p *AVPlayer) ClearGifs() {
+	// Clear session's visible gifs so the render loop stops re-drawing them
+	p.withSession(func(s *playSession) {
+		s.clearGifs()
+	})
+
+	// Also delete directly via renderer in case there's no active session
+	p.configMu.Lock()
+	r := p.renderer
+	p.configMu.Unlock()
+	if r != nil {
+		for i := range 15 {
+			r.DeleteImage(GifImageID + i)
+		}
+	}
 }
 
 // cleanup releases all resources including renderer

@@ -86,4 +86,5 @@ const (
 	// Kitty image IDs
 	VideoImageID = 1
 	PfpImageID   = 101
+	GifImageID   = 200
 )

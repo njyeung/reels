@@ -5,7 +5,10 @@ import (
 	"strings"
 
 	"github.com/njyeung/reels/backend"
+	"github.com/njyeung/reels/player"
 )
+
+const gifCellHeight = 5
 
 // CommentsPanel encapsulates the comments UI state and rendering
 type CommentsPanel struct {
@@ -16,6 +19,9 @@ type CommentsPanel struct {
 
 	// Which reel these comments belong to
 	reelPK string
+
+	// GIF state
+	gifAnims map[string]*player.GifAnimation
 }
 
 // NewCommentsPanel creates a new CommentsPanel instance
@@ -39,6 +45,7 @@ func (cp *CommentsPanel) Open(reelPK string) {
 	// If reopening same reel, preserve cached comments
 	if cp.reelPK != reelPK {
 		cp.comments = make([]backend.Comment, 0)
+		cp.gifAnims = nil
 	}
 
 	cp.reelPK = reelPK
@@ -49,7 +56,7 @@ func (cp *CommentsPanel) Open(reelPK string) {
 func (cp *CommentsPanel) Close() {
 	cp.isOpen = false
 	cp.scroll = 0
-	// Note: we intentionally keep reelPK and comments
+	// Note: we intentionally keep reelPK, comments, and gifAnims
 	// so they can be restored if the user reopens for the same reel
 }
 
@@ -59,6 +66,7 @@ func (cp *CommentsPanel) Clear() {
 	cp.comments = make([]backend.Comment, 0)
 	cp.scroll = 0
 	cp.reelPK = ""
+	cp.gifAnims = nil
 }
 
 // SetComments sets the comments to display
@@ -70,7 +78,36 @@ func (cp *CommentsPanel) SetComments(reelPK string, comments []backend.Comment) 
 	}
 
 	cp.comments = comments
+	cp.loadGifs()
 	return true
+}
+
+// loadGifs loads GIF animations from disk for comments that have a GifPath
+func (cp *CommentsPanel) loadGifs() {
+	if cp.gifAnims == nil {
+		cp.gifAnims = make(map[string]*player.GifAnimation)
+	}
+
+	_, rows, _, termH, err := player.GetTerminalSize()
+	if err != nil || rows == 0 || termH == 0 {
+		return
+	}
+	cellH := termH / rows
+	gifHeightPx := gifCellHeight * cellH
+
+	for _, c := range cp.comments {
+		if c.GifPath == "" {
+			continue
+		}
+		if _, ok := cp.gifAnims[c.PK]; ok {
+			continue
+		}
+		anim, err := player.LoadGif(c.GifPath, gifHeightPx)
+		if err != nil {
+			continue
+		}
+		cp.gifAnims[c.PK] = anim
+	}
 }
 
 // Scroll moves the scroll position by the given delta
@@ -93,6 +130,8 @@ func (cp *CommentsPanel) Scroll(delta int) {
 // width: available width in characters
 // height: available height in lines
 // padding: left padding string for alignment
+//
+// Renders TUI text for the comments section. Reserves space for gifs, which are handled separately
 func (cp *CommentsPanel) View(width, height int, padding string) string {
 	if !cp.isOpen || len(cp.comments) == 0 {
 		return ""
@@ -121,11 +160,12 @@ func (cp *CommentsPanel) View(width, height int, padding string) string {
 			userPart += " " + verifiedStyle.Render("✓")
 		}
 
-		// Wrap comment text (replace newlines to avoid layout breakage)
-		commentLines := wrapByWidth(strings.ReplaceAll(comment.Text, "\n", " "), width-2)
-
-		// Check if we have room for at least username + first line
-		if linesUsed+1 > availableLines {
+		// For GIF comments, require room for username + full gifCellHeight
+		if _, ok := cp.gifAnims[comment.PK]; ok {
+			if linesUsed+1+gifCellHeight > availableLines {
+				break
+			}
+		} else if linesUsed+1 > availableLines {
 			break
 		}
 
@@ -133,13 +173,20 @@ func (cp *CommentsPanel) View(width, height int, padding string) string {
 		b.WriteString(padding + userPart + "\n")
 		linesUsed++
 
-		// Write comment text lines
-		for _, line := range commentLines {
-			if linesUsed >= availableLines {
-				break
+		// GIF comment: reserve blank lines for the animation
+		if _, ok := cp.gifAnims[comment.PK]; ok {
+			b.WriteString(strings.Repeat("\n", gifCellHeight))
+			linesUsed += gifCellHeight
+		} else {
+			// Write comment text lines
+			commentLines := wrapByWidth(strings.ReplaceAll(comment.Text, "\n", " "), width-2)
+			for _, line := range commentLines {
+				if linesUsed >= availableLines {
+					break
+				}
+				b.WriteString(padding + "  " + commentTextStyle.Render(line) + "\n")
+				linesUsed++
 			}
-			b.WriteString(padding + "  " + commentTextStyle.Render(line) + "\n")
-			linesUsed++
 		}
 	}
 
@@ -148,6 +195,64 @@ func (cp *CommentsPanel) View(width, height int, padding string) string {
 	b.WriteString("\n" + padding + hint + "\n")
 
 	return b.String()
+}
+
+// VisibleGifSlots computes GIF slots with absolute terminal cell positions.
+// This simulates the View() layout logic, then computes the row and col positions
+// for each gif that will fill in the blank space that View() leaves in for gif comments.
+func (cp *CommentsPanel) VisibleGifSlots(width, height, baseRow, baseCol int) []player.GifSlot {
+	if !cp.isOpen || len(cp.comments) == 0 || len(cp.gifAnims) == 0 {
+		return nil
+	}
+
+	availableLines := height - 2 - 1
+	if availableLines < 1 {
+		return nil
+	}
+
+	var slots []player.GifSlot
+	linesUsed := 0
+	currentRow := baseRow + 2 // +2 for header line + blank line
+
+	for i := cp.scroll; i < len(cp.comments) && linesUsed < availableLines; i++ {
+		comment := cp.comments[i]
+
+		// For GIF comments, require room for username + full gifCellHeight
+		if _, ok := cp.gifAnims[comment.PK]; ok {
+			if linesUsed+1+gifCellHeight > availableLines {
+				break
+			}
+		} else if linesUsed+1 > availableLines {
+			break
+		}
+
+		// Username takes 1 line
+		linesUsed++
+		currentRow++
+
+		if anim, ok := cp.gifAnims[comment.PK]; ok {
+			// GIF starts right under the username, indented 1 cell
+			slots = append(slots, player.GifSlot{
+				Anim: anim,
+				Row:  currentRow,
+				Col:  baseCol + 1,
+			})
+			linesUsed += gifCellHeight
+			currentRow += gifCellHeight
+		} else {
+			// Advance past text lines
+			commentLines := wrapByWidth(strings.ReplaceAll(comment.Text, "\n", " "), width-2)
+			for range commentLines {
+				if linesUsed >= availableLines {
+					break
+				}
+				linesUsed++
+				currentRow++
+			}
+		}
+	}
+
+	return slots
 }
 
 // CanAccept returns true if the panel can accept comments for the given reel
