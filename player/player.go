@@ -27,6 +27,9 @@ type AVPlayer struct {
 
 	sessionMu sync.Mutex
 	session   *playSession
+
+	gifSlotsMu sync.Mutex
+	gifSlots   []GifSlot
 }
 
 func (p *AVPlayer) sessionConfig() sessionConfig {
@@ -159,6 +162,14 @@ func (p *AVPlayer) playOnce(videoPath string, pfpPath string) error {
 		session.cleanup()
 	}()
 
+	// Restore GIF slots from previous loop iteration
+	p.gifSlotsMu.Lock()
+	slots := p.gifSlots
+	p.gifSlotsMu.Unlock()
+	if len(slots) > 0 {
+		session.setVisibleGifs(slots)
+	}
+
 	return session.run(p)
 }
 
@@ -224,6 +235,10 @@ func (p *AVPlayer) IsMuted() bool {
 
 // SetVisibleGifs updates which GIFs are displayed and their positions.
 func (p *AVPlayer) SetVisibleGifs(slots []GifSlot) {
+	p.gifSlotsMu.Lock()
+	p.gifSlots = slots
+	p.gifSlotsMu.Unlock()
+
 	p.withSession(func(s *playSession) {
 		s.setVisibleGifs(slots)
 	})
@@ -231,6 +246,10 @@ func (p *AVPlayer) SetVisibleGifs(slots []GifSlot) {
 
 // ClearGifs removes all displayed GIFs.
 func (p *AVPlayer) ClearGifs() {
+	p.gifSlotsMu.Lock()
+	p.gifSlots = nil
+	p.gifSlotsMu.Unlock()
+
 	// Clear session's visible gifs so the render loop stops re-drawing them
 	p.withSession(func(s *playSession) {
 		s.clearGifs()

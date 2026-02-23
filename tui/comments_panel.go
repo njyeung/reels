@@ -116,7 +116,7 @@ func (cp *CommentsPanel) Scroll(delta int) {
 	if newScroll < 0 {
 		newScroll = 0
 	}
-	maxScroll := len(cp.comments) - 1
+	maxScroll := len(cp.comments) - 2
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
@@ -144,7 +144,7 @@ func (cp *CommentsPanel) View(width, height int, padding string) string {
 	b.WriteString(padding + header + "\n\n")
 
 	// magic number galore
-	availableLines := height - 2 - 1
+	availableLines := height - 3
 	if availableLines < 1 {
 		availableLines = 0
 	}
@@ -190,10 +190,6 @@ func (cp *CommentsPanel) View(width, height int, padding string) string {
 		}
 	}
 
-	// Hint line
-	hint := navStyle.Render("j/k: scroll  c: close")
-	b.WriteString("\n" + padding + hint + "\n")
-
 	return b.String()
 }
 
@@ -205,7 +201,7 @@ func (cp *CommentsPanel) VisibleGifSlots(width, height, baseRow, baseCol int) []
 		return nil
 	}
 
-	availableLines := height - 2 - 1
+	availableLines := height - 3
 	if availableLines < 1 {
 		return nil
 	}

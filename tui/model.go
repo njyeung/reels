@@ -382,7 +382,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case slices.Contains(config.KeysLike, key):
-		if m.currentReel != nil {
+		if !m.comments.IsOpen() && m.currentReel != nil {
 			m.currentReel.Liked = !m.currentReel.Liked
 			go m.backend.ToggleLike()
 		}
@@ -390,13 +390,13 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case slices.Contains(config.KeysComments, key):
 		// Toggle comments
 		if m.comments.IsOpen() {
-			m.resizeReel(reelSizeStep * 2)
+			m.resizeReel(reelSizeStep * 4)
 
 			m.comments.Close()
 			m.player.ClearGifs()
 			go m.backend.CloseComments()
 		} else if m.currentReel != nil && !m.currentReel.CommentsDisabled {
-			m.resizeReel(-(reelSizeStep * 2))
+			m.resizeReel(-(reelSizeStep * 4))
 
 			// Open comments for current reel
 			m.comments.Open(m.currentReel.PK)

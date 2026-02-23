@@ -179,7 +179,9 @@ func (v *VideoDecoder) initSwsContext(srcPixFmt astiav.PixelFormat) error {
 		return fmt.Errorf("failed to create sws context: %w", err)
 	}
 
-	// Setup RGB frame
+	// Unref old frame data so AllocBuffer recomputes linesize for new dimensions
+	v.rgbFrame.Unref()
+
 	v.rgbFrame.SetWidth(v.dstWidth)
 	v.rgbFrame.SetHeight(v.dstHeight)
 	v.rgbFrame.SetPixelFormat(astiav.PixelFormatRgb24)

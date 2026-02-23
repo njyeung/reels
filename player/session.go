@@ -534,11 +534,9 @@ func (s *playSession) setVisibleGifs(slots []GifSlot) {
 		newGifs = append(newGifs, vg)
 	}
 
-	// Delete kitty images for GIFs no longer visible
+	// Delete all old kitty images (positions may have changed due to scrolling)
 	for _, g := range s.visibleGifs {
-		if !usedIDs[g.imageID] {
-			s.renderer.DeleteImage(g.imageID)
-		}
+		s.renderer.DeleteImage(g.imageID)
 	}
 
 	s.visibleGifs = newGifs
