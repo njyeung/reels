@@ -68,7 +68,16 @@ func (m Model) viewBrowsing() string {
 	// Build status content without padding first
 	// Calculate width of everything after the heart separately, since ❤️ (U+2764+FE0F)
 	// has a variation selector that runewidth miscounts as width 1 instead of 2
-	rest := " " + likeCount + "   💬 " + commentCount + "   " + playPauseIcon + "   " + muteIcon
+	shareIcon := ""
+	if m.currentReel != nil && m.currentReel.CanViewerReshare {
+		if !m.shareConfirmed {
+			shareIcon = "↗"
+		} else {
+			shareIcon = "✔"
+		}
+	}
+
+	rest := " " + likeCount + "   💬 " + commentCount + "   " + shareIcon + "   " + playPauseIcon + "   " + muteIcon
 	statusContent := heartIcon + rest
 	contentWidth := 2 + runewidth.StringWidth(rest)
 
@@ -161,7 +170,7 @@ func (m Model) viewBrowsing() string {
 
 				config := backend.GetSettings()
 				nav1 := navStyle.Render(displayKeys(config.KeysPrevious) + ": prev  " + displayKeys(config.KeysNext) + ": next  " + displayKeys(config.KeysMute) + ": mute  " + displayKeys(config.KeysComments) + ": comments")
-				nav2 := navStyle.Render(displayKeys(config.KeysPause) + ": pause  " + displayKeys(config.KeysLike) + ": like  " + displayKeys(config.KeysQuit) + ": quit")
+				nav2 := navStyle.Render(displayKeys(config.KeysPause) + ": pause  " + displayKeys(config.KeysLike) + ": like  " + displayKeys(config.KeysShare) + ": share  " + displayKeys(config.KeysQuit) + ": quit")
 				nav3 := navStyle.Render(displayKeys(config.KeysReelSizeInc) + "/" + displayKeys(config.KeysReelSizeDec) + ": resize  " + displayKeys(config.KeysNavbar) + ": expand captions")
 				b.WriteString(padding + nav1 + "\n")
 				b.WriteString(padding + nav2 + "\n")

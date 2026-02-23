@@ -78,6 +78,7 @@ type reelResponse struct {
 						Caption *struct {
 							Text string `json:"text"`
 						} `json:"caption"`
+						CanViewerReshare bool `json:"can_viewer_reshare"`
 					} `json:"media"`
 				} `json:"node"`
 			} `json:"edges"`
@@ -212,6 +213,7 @@ func (b *ChromeBackend) processReelResponse(body string) {
 			CommentCount:     media.CommentCount,
 			CommentsDisabled: media.CommentsDisabled,
 			Music:            music,
+			CanViewerReshare: media.CanViewerReshare,
 		}
 		b.orderedReels = append(b.orderedReels, reel)
 		newCount++

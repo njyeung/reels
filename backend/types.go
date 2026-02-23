@@ -121,6 +121,7 @@ type Reel struct {
 	CommentCount     int
 	CommentsDisabled bool
 	Music            *MusicInfo
+	CanViewerReshare bool
 	Comments         []Comment // cached comments (nil = not fetched yet)
 }
 

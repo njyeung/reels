@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"os/exec"
+	goruntime "runtime"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -13,8 +16,6 @@ import (
 	"github.com/njyeung/reels/backend"
 	"github.com/njyeung/reels/player"
 )
-
-const reelSizeStep = 30
 
 // Messages
 type (
@@ -28,6 +29,7 @@ type (
 	videoErrorMsg    struct{ err error }
 	videoReadyMsg    struct{ index int }
 	musicTickMsg     struct{}
+	shareResetMsg    struct{}
 )
 
 // State represents the app state
@@ -66,8 +68,10 @@ type Model struct {
 
 	loginSuccess bool
 
-	// Music marquee scroll offset (in runes)
 	musicScrollOffset int
+
+	// share button switches to a different emoji for 1s when clicked
+	shareConfirmed bool
 }
 
 type Config struct {
@@ -201,6 +205,12 @@ func (m Model) musicTick() tea.Cmd {
 	})
 }
 
+func (m Model) queueShareReset() tea.Cmd {
+	return tea.Tick(1*time.Second, func(t time.Time) tea.Msg {
+		return shareResetMsg{}
+	})
+}
+
 // Update handles messages
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -288,11 +298,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.startPlayback(msg.info.Index), m.musicTick())
 
 	case musicTickMsg:
-		// Only scroll if we have music and it needs scrolling
 		if m.currentReel != nil && m.currentReel.Music != nil {
 			m.musicScrollOffset++
 		}
 		return m, m.musicTick()
+
+	case shareResetMsg:
+		m.shareConfirmed = false
+		return m, nil
 
 	case reelErrorMsg:
 		m.status = fmt.Sprintf("Error: %v", msg.err)
@@ -390,13 +403,13 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case slices.Contains(config.KeysComments, key):
 		// Toggle comments
 		if m.comments.IsOpen() {
-			m.resizeReel(reelSizeStep * 4)
+			m.resizeReel(config.ReelSizeStep * 4)
 
 			m.comments.Close()
 			m.player.ClearGifs()
 			go m.backend.CloseComments()
 		} else if m.currentReel != nil && !m.currentReel.CommentsDisabled {
-			m.resizeReel(-(reelSizeStep * 4))
+			m.resizeReel(-(config.ReelSizeStep * 4))
 
 			// Open comments for current reel
 			m.comments.Open(m.currentReel.PK)
@@ -410,7 +423,14 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Always open in browser (for Instagram's algorithm)
 			go m.backend.OpenComments()
 		}
+	case slices.Contains(config.KeysShare, key):
+		if m.currentReel != nil && m.currentReel.CanViewerReshare {
+			url := fmt.Sprintf("https://instagram.com/reels/%s/", m.currentReel.Code)
+			go copyToClipboard(url)
 
+			m.shareConfirmed = true
+			return m, m.queueShareReset()
+		}
 	case slices.Contains(config.KeysNavbar, key):
 		showNavbar, err := m.backend.ToggleNavbar()
 		if err != nil {
@@ -419,10 +439,10 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showNavbar = showNavbar
 
 	case slices.Contains(config.KeysReelSizeInc, key):
-		m.resizeReel(reelSizeStep)
+		m.resizeReel(config.ReelSizeStep)
 
 	case slices.Contains(config.KeysReelSizeDec, key):
-		m.resizeReel(-reelSizeStep)
+		m.resizeReel(-config.ReelSizeStep)
 
 	case slices.Contains(config.KeysVolUp, key):
 		vol := min(m.player.Volume()+0.1, 1.0)
@@ -443,7 +463,7 @@ func (m *Model) resizeReel(delta int) {
 	settings := backend.GetSettings()
 	newW := settings.ReelWidth + delta
 	newH := settings.ReelHeight + delta*16/9
-	if newW < reelSizeStep || newH < reelSizeStep {
+	if newW < settings.ReelSizeStep || newH < settings.ReelSizeStep {
 		return
 	}
 
@@ -489,6 +509,22 @@ func (m Model) updateCommentGifs() {
 	} else {
 		m.player.ClearGifs()
 	}
+}
+
+func copyToClipboard(text string) {
+	var cmd *exec.Cmd
+	if goruntime.GOOS == "darwin" {
+		cmd = exec.Command("pbcopy")
+	} else {
+		// wl-copy for Wayland
+		if _, err := exec.LookPath("wl-copy"); err == nil {
+			cmd = exec.Command("wl-copy")
+		} else { // xclip for X11
+			cmd = exec.Command("xclip", "-selection", "clipboard")
+		}
+	}
+	cmd.Stdin = strings.NewReader(text)
+	cmd.Run()
 }
 
 // View renders the UI

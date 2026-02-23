@@ -18,9 +18,10 @@ import (
 type Settings struct {
 	ShowNavbar  bool
 	RetinaScale int
-	ReelWidth   int
-	ReelHeight  int
-	Volume      float64
+	ReelWidth    int
+	ReelHeight   int
+	ReelSizeStep int
+	Volume       float64
 
 	KeysNext        []string
 	KeysPrevious    []string
@@ -34,6 +35,7 @@ type Settings struct {
 	KeysVolUp       []string
 	KeysVolDown     []string
 	KeysQuit        []string
+	KeysShare       []string
 }
 
 var Config Settings
@@ -125,6 +127,7 @@ func defaultSettings() Settings {
 		RetinaScale:     1,
 		ReelWidth:       270,
 		ReelHeight:      480,
+		ReelSizeStep:    30,
 		Volume:          1,
 		KeysNext:        []string{"j"},
 		KeysPrevious:    []string{"k"},
@@ -137,6 +140,7 @@ func defaultSettings() Settings {
 		KeysVolDown:     []string{"["},
 		KeysReelSizeInc: []string{"="},
 		KeysReelSizeDec: []string{"-"},
+		KeysShare:       []string{"s"},
 		KeysQuit:        []string{"q", "ctrl+c"},
 	}
 
@@ -148,6 +152,7 @@ func defaultSettings() Settings {
 
 // LoadSettings loads reels.conf from configDir into Config. Loads default settings on error
 func LoadSettings(configDir string) {
+
 	loadKey := func(conf map[string][]string, name string, dest *[]string) {
 		if vals, ok := conf[name]; ok {
 			resolved := make([]string, len(vals))
@@ -185,6 +190,11 @@ func LoadSettings(configDir string) {
 			s.ReelHeight = n
 		}
 	}
+	if vals, ok := conf["reel_size_step"]; ok {
+		if n, err := strconv.Atoi(vals[len(vals)-1]); err == nil {
+			s.ReelSizeStep = n
+		}
+	}
 	if vals, ok := conf["volume"]; ok {
 		if n, err := strconv.ParseFloat(vals[len(vals)-1], 64); err == nil {
 			s.Volume = n
@@ -203,6 +213,7 @@ func LoadSettings(configDir string) {
 	loadKey(conf, "key_reel_size_inc", &s.KeysReelSizeInc)
 	loadKey(conf, "key_reel_size_dec", &s.KeysReelSizeDec)
 	loadKey(conf, "key_quit", &s.KeysQuit)
+	loadKey(conf, "key_share", &s.KeysShare)
 
 	Config = s
 }
@@ -226,6 +237,7 @@ func writeConf(path string, s Settings) error {
 	b.WriteString("# reels will be scales within this bounding box\n")
 	b.WriteString(fmt.Sprintf("reel_width = %d\n", s.ReelWidth))
 	b.WriteString(fmt.Sprintf("reel_height = %d\n", s.ReelHeight))
+	b.WriteString(fmt.Sprintf("reel_size_step = %d\n", s.ReelSizeStep))
 	b.WriteString(fmt.Sprintf("volume = %g\n", s.Volume))
 	b.WriteString("\n")
 	b.WriteString("# configurable keybinds\n")
@@ -240,6 +252,7 @@ func writeConf(path string, s Settings) error {
 	writeKeys(&b, "key_vol_down", s.KeysVolDown)
 	writeKeys(&b, "key_reel_size_inc", s.KeysReelSizeInc)
 	writeKeys(&b, "key_reel_size_dec", s.KeysReelSizeDec)
+	writeKeys(&b, "key_share", s.KeysShare)
 	writeKeys(&b, "key_quit", s.KeysQuit)
 
 	return os.WriteFile(path, []byte(b.String()), 0644)
