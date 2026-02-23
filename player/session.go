@@ -9,6 +9,7 @@ import (
 	"os"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/asticode/go-astiav"
 )
@@ -233,6 +234,7 @@ func (s *playSession) demuxLoop(p *AVPlayer) {
 
 // videoRenderLoop processes video packets and renders frames
 func (s *playSession) videoRenderLoop(p *AVPlayer) error {
+	var prevPfp []byte
 
 	for pkt := range s.videoPktCh {
 		if !p.playing.Load() {
@@ -258,6 +260,7 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 			continue
 		}
 
+		// sync to audio clock (skip frame if behind, wait if ahead)
 		if s.audio.IsPlaying() {
 			audioTime := s.audio.Time()
 			diff := frame.PTS - audioTime
@@ -279,8 +282,16 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 			s.overlay.mu.Lock()
 			pic, w, h := s.overlay.profilePic, s.overlay.profilePicWidth, s.overlay.profilePicHeight
 			s.overlay.mu.Unlock()
-			if err := s.renderer.RenderImage(pic, 32, w, h, PfpImageID, s.pfpRow, s.pfpCol, false); err != nil {
-				return fmt.Errorf("profile pic render error: %w", err)
+
+			// only render if the pfp is different
+			// underlying slice is changed when pfp bytes are changed,
+			// crackhead pointer comparison
+			shouldRender := len(pic) != len(prevPfp) || ((len(pic) > 0 && len(prevPfp) > 0) && (unsafe.Pointer(&pic[0]) != unsafe.Pointer(&prevPfp[0])))
+			if shouldRender {
+				if err := s.renderer.RenderImage(pic, 32, w, h, PfpImageID, s.pfpRow, s.pfpCol, false); err != nil {
+					return fmt.Errorf("profile pic render error: %w", err)
+				}
+				prevPfp = pic
 			}
 		}
 
