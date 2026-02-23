@@ -266,8 +266,24 @@ func (p *AVPlayer) ClearGifs() {
 	}
 }
 
-// cleanup releases all resources including renderer
-func (p *AVPlayer) cleanup() {
+// Close releases all resources.
+// Waits for the Play goroutine to finish before clearing terminal images,
+// preventing a race where frames render after cleanup.
+func (p *AVPlayer) Close() {
+	// Signal for the session to stop playing
+	p.Stop()
+
+	// Play() holds playMu for its entire duration.
+	// Acquiring it here blocks until the Play goroutine has fully exited, ie
+	// when the session has fully stopped.
+	//
+	// This prevents extra frames being drawn after ClearTerminal() is called.
+	p.playMu.Lock()
+	p.playMu.Unlock()
+
+	p.configMu.Lock()
+	defer p.configMu.Unlock()
+
 	p.withSession(func(s *playSession) {
 		s.stop()
 	})
@@ -276,13 +292,4 @@ func (p *AVPlayer) cleanup() {
 		p.renderer.CleanupSHM()
 		p.renderer = nil
 	}
-}
-
-// Close releases all resources
-func (p *AVPlayer) Close() {
-	p.Stop()
-	p.configMu.Lock()
-	defer p.configMu.Unlock()
-
-	p.cleanup()
 }

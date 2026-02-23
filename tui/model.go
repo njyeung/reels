@@ -217,12 +217,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		key := msg.String()
 		if slices.Contains(backend.GetSettings().KeysQuit, key) {
-			m.player.Stop()
 			m.player.Close()
 			if m.backend != nil {
 				m.backend.Stop()
 			}
-			return m, tea.Sequence(tea.ClearScreen, tea.Quit)
+			return m, tea.Quit
 		}
 
 		if m.state == stateBrowsing {
