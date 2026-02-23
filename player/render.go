@@ -179,12 +179,3 @@ func (r *KittyRenderer) CleanupSHM() {
 		os.Remove(m)
 	}
 }
-
-// ClearTerminal deletes all kitty images from the terminal.
-func (r *KittyRenderer) ClearTerminal() error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	_, err := fmt.Fprint(r.out, "\x1b_Ga=d,d=a,q=2\x1b\\")
-	return err
-}

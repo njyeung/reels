@@ -277,18 +277,15 @@ func (p *AVPlayer) Close() {
 	// Acquiring it here blocks until the Play goroutine has fully exited, ie
 	// when the session has fully stopped.
 	//
-	// This prevents extra frames being drawn after ClearTerminal() is called.
+	// This prevents the race condition where extra frames are
+	// being drawn right before the app exits.
 	p.playMu.Lock()
 	p.playMu.Unlock()
 
 	p.configMu.Lock()
 	defer p.configMu.Unlock()
 
-	p.withSession(func(s *playSession) {
-		s.stop()
-	})
 	if p.renderer != nil {
-		p.renderer.ClearTerminal()
 		p.renderer.CleanupSHM()
 		p.renderer = nil
 	}
