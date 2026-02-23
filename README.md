@@ -42,6 +42,7 @@ reels
 - `m` - Mute
 - `]` - Volume up
 - `[` - Volume down
+- `s` - Copy reel link to clipboard
 - `=` - Enlarge Video
 - `-` - Shrink Video
 - `q` - Quit
@@ -106,6 +107,7 @@ show_navbar = true
 retina_scale = 2    # 2 on macOS, 1 on Linux by default
 reel_width = 270
 reel_height = 480
+reel_size_step = 30
 volume = 1
 
 # Configurable keybinds (multiple binds per action supported)
@@ -120,12 +122,12 @@ key_vol_up = ]
 key_vol_down = [
 key_reel_size_inc = =
 key_reel_size_dec = -
+key_share = s
 key_quit = q
 key_quit = ctrl+c
 ```
 
 ## TODO
 
-- Sharing (to friends and copying reel link)
 - GPU decoding
 - Syncing bugs with browser
