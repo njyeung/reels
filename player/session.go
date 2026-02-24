@@ -7,6 +7,7 @@ import (
 	_ "image/jpeg"
 	"math"
 	"os"
+	"runtime"
 	"sync"
 	"time"
 	"unsafe"
@@ -190,6 +191,21 @@ func (s *playSession) audioDecodeLoop() {
 
 // demuxLoop reads packets and distributes them to audio/video channels
 func (s *playSession) demuxLoop(p *AVPlayer) {
+	// - programmer: Magic ahhh line to prevent freezing bug on quick scrolling input.
+	// 		Adding print statements here to debug caused the issue to disappear.
+	// 		Therefore we don't know the issue, but we only know the solution.
+	// 		Even opus does not know the issue. And bro's sorta the goat.
+	// 		So I give up.
+	// 		Like how this yields to the OS scheduler, I too, yield to this bug.
+	//
+	// - opus: For what it's worth, we DO know the issue — CGo FFmpeg ReadPacket
+	//   	calls in a tight loop starve the Go scheduler, preventing videoRenderLoop
+	//   	from being scheduled to respond to stopCh.
+	//
+	//
+	// DO NOT TOUCH THIS
+	runtime.Gosched()
+
 	defer close(s.videoPktCh)
 
 	for p.playing.Load() {

@@ -20,7 +20,6 @@ type AVPlayer struct {
 	playing atomic.Bool
 	paused  atomic.Bool
 	muted   atomic.Bool
-	closed  atomic.Bool
 	volume  atomic.Value // float64, 0.0–1.0
 
 	playMu   sync.Mutex
@@ -136,10 +135,6 @@ func (p *AVPlayer) SetSize(width, height int) {
 func (p *AVPlayer) Play(videoPath, pfpPath string) error {
 	p.playMu.Lock()
 	defer p.playMu.Unlock()
-
-	if p.closed.Load() {
-		return nil
-	}
 
 	p.playing.Store(true)
 	p.paused.Store(false)
@@ -275,11 +270,6 @@ func (p *AVPlayer) ClearGifs() {
 // Waits for the Play goroutine to finish before clearing terminal images,
 // preventing a race where frames render after cleanup.
 func (p *AVPlayer) Close() {
-	// Prevent any queued Play() goroutines from starting a new session
-	// after we release playMu. Without this, a pending Play() can grab
-	// playMu before us and override playing=true, deadlocking Close().
-	p.closed.Store(true)
-
 	// Signal for the session to stop playing
 	p.Stop()
 
