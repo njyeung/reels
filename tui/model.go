@@ -338,9 +338,9 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		// Otherwise navigate to next reel
 		if m.currentReel != nil && m.status != "Loading" {
-			nextIndex := m.currentReel.Index + 1
-			if nextIndex <= m.backend.GetTotal() {
-				m.player.Stop()
+				nextIndex := m.currentReel.Index + 1
+				if nextIndex <= m.backend.GetTotal() {
+					m.player.StopAndWait()
 
 				m.status = "Loading"
 
@@ -363,9 +363,9 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		// Otherwise navigate to previous reel
 		if m.currentReel != nil && m.status != "Loading" {
-			prevIndex := m.currentReel.Index - 1
-			if prevIndex >= 1 {
-				m.player.Stop()
+				prevIndex := m.currentReel.Index - 1
+				if prevIndex >= 1 {
+					m.player.StopAndWait()
 
 				m.status = "Loading"
 

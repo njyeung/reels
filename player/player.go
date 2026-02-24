@@ -181,6 +181,13 @@ func (p *AVPlayer) Stop() {
 	})
 }
 
+// StopAndWait stops current playback and blocks until the Play goroutine exits.
+func (p *AVPlayer) StopAndWait() {
+	p.Stop()
+	p.playMu.Lock()
+	p.playMu.Unlock()
+}
+
 // Mute toggles mute state
 func (p *AVPlayer) Mute() {
 	p.muted.Store(!p.muted.Load())
@@ -270,17 +277,9 @@ func (p *AVPlayer) ClearGifs() {
 // Waits for the Play goroutine to finish before clearing terminal images,
 // preventing a race where frames render after cleanup.
 func (p *AVPlayer) Close() {
-	// Signal for the session to stop playing
-	p.Stop()
-
-	// Play() holds playMu for its entire duration.
-	// Acquiring it here blocks until the Play goroutine has fully exited, ie
-	// when the session has fully stopped.
-	//
-	// This prevents the race condition where extra frames are
-	// being drawn right before the app exits.
-	p.playMu.Lock()
-	p.playMu.Unlock()
+	// Signal for the session to stop playing and wait for the Play goroutine to
+	// fully exit before tearing down renderer resources.
+	p.StopAndWait()
 
 	p.configMu.Lock()
 	defer p.configMu.Unlock()

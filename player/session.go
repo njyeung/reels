@@ -7,7 +7,6 @@ import (
 	_ "image/jpeg"
 	"math"
 	"os"
-	"runtime"
 	"sync"
 	"time"
 	"unsafe"
@@ -157,6 +156,9 @@ func (s *playSession) run(p *AVPlayer) error {
 
 func (s *playSession) stop() {
 	s.stopOnce.Do(func() {
+		if s.demuxer != nil {
+			s.demuxer.Interrupt()
+		}
 		if s.stopCh != nil {
 			close(s.stopCh)
 		}
@@ -200,7 +202,7 @@ func (s *playSession) demuxLoop(p *AVPlayer) {
 	//
 	//
 	// DO NOT TOUCH THIS
-	runtime.Gosched()
+	// runtime.Gosched()
 
 	defer close(s.videoPktCh)
 

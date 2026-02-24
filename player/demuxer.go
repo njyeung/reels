@@ -10,6 +10,7 @@ import (
 // Demuxer handles opening media and reading packets
 type Demuxer struct {
 	formatCtx   *astiav.FormatContext
+	interrupter *astiav.IOInterrupter
 	videoStream *astiav.Stream
 	audioStream *astiav.Stream
 	videoIdx    int
@@ -35,6 +36,10 @@ func NewDemuxer(url string) (*Demuxer, error) {
 	if d.formatCtx == nil {
 		return nil, fmt.Errorf("failed to allocate format context")
 	}
+
+	// Allow ReadFrame/FindStreamInfo to be interrupted during shutdown.
+	d.interrupter = astiav.NewIOInterrupter()
+	d.formatCtx.SetIOInterrupter(d.interrupter)
 
 	// Open input (url is filepath)
 	if err := d.formatCtx.OpenInput(url, nil, nil); err != nil {
@@ -72,6 +77,14 @@ func NewDemuxer(url string) (*Demuxer, error) {
 	}
 
 	return d, nil
+}
+
+// Interrupt requests that any in-flight FFmpeg I/O returns as soon as possible.
+func (d *Demuxer) Interrupt() {
+	// Don't take d.mu here: ReadPacket holds it while blocked inside FFmpeg.
+	if d.interrupter != nil {
+		d.interrupter.Interrupt()
+	}
 }
 
 // VideoCodecParameters returns the video codec parameters
@@ -143,6 +156,9 @@ func (d *Demuxer) PTSToSeconds(pts int64, isVideo bool) float64 {
 
 // Close releases all resources
 func (d *Demuxer) Close() {
+	// Interrupt first so a concurrent ReadFrame can unwind.
+	d.Interrupt()
+
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -155,5 +171,9 @@ func (d *Demuxer) Close() {
 		d.formatCtx.CloseInput()
 		d.formatCtx.Free()
 		d.formatCtx = nil
+	}
+	if d.interrupter != nil {
+		d.interrupter.Free()
+		d.interrupter = nil
 	}
 }
