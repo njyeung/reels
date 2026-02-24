@@ -198,10 +198,6 @@ func (s *playSession) demuxLoop(p *AVPlayer) {
 	// 		So I give up.
 	// 		Like how this yields to the OS scheduler, I too, yield to this bug.
 	//
-	// - opus: For what it's worth, we DO know the issue — CGo FFmpeg ReadPacket
-	//   	calls in a tight loop starve the Go scheduler, preventing videoRenderLoop
-	//   	from being scheduled to respond to stopCh.
-	//
 	//
 	// DO NOT TOUCH THIS
 	runtime.Gosched()
