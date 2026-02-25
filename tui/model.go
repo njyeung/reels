@@ -217,6 +217,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		key := msg.String()
 		if slices.Contains(backend.GetSettings().KeysQuit, key) {
+			if m.comments.IsOpen() {
+				m.resizeReel(backend.GetSettings().ReelSizeStep * 4)
+			}
+
 			m.player.Close()
 			if m.backend != nil {
 				m.backend.Stop()
