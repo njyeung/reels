@@ -251,6 +251,15 @@ func (cp *CommentsPanel) VisibleGifSlots(width, height, baseRow, baseCol int) []
 	return slots
 }
 
+// IsAtBottom returns true if the scroll position is at the bottom of the comments list
+func (cp *CommentsPanel) IsAtBottom() bool {
+	maxScroll := len(cp.comments) - 2
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	return cp.scroll >= maxScroll
+}
+
 // CanAccept returns true if the panel can accept comments for the given reel
 func (cp *CommentsPanel) CanAccept(reelPK string) bool {
 	return cp.isOpen && cp.reelPK == reelPK

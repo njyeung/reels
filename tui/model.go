@@ -338,6 +338,10 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.comments.IsOpen() {
 			m.comments.Scroll(1)
 			m.updateCommentGifs()
+			// Fetch more comments when scrolled to bottom
+			if m.comments.IsAtBottom() {
+				go m.backend.FetchMoreComments()
+			}
 			return m, nil
 		}
 		// Otherwise navigate to next reel

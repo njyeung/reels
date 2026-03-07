@@ -2,8 +2,10 @@ package backend
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +13,11 @@ import (
 	"github.com/chromedp/cdproto/fetch"
 	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
+)
+
+const (
+	paginationDocID        = "26653752520898584"
+	paginationFriendlyName = "PolarisPostCommentsPaginationQuery"
 )
 
 // commentsResponse represents the xdt_api__v1__media__media_id__comments__connection GraphQL response structure
@@ -39,6 +46,10 @@ type commentsResponse struct {
 					} `json:"giphy_media_info"`
 				} `json:"node"`
 			} `json:"edges"`
+			PageInfo struct {
+				EndCursor   string `json:"end_cursor"`
+				HasNextPage bool   `json:"has_next_page"`
+			} `json:"page_info"`
 		} `json:"xdt_api__v1__media__media_id__comments__connection"`
 	} `json:"data"`
 }
@@ -86,13 +97,8 @@ type reelResponse struct {
 	} `json:"data"`
 }
 
-// processCommentsResponse extracts comments from a GraphQL response
-func (b *ChromeBackend) processCommentsResponse(body string) {
-	var resp commentsResponse
-	if err := json.Unmarshal([]byte(body), &resp); err != nil {
-		return
-	}
-
+// extractComments parses comment edges from a commentsResponse
+func (b *ChromeBackend) extractComments(resp *commentsResponse) []Comment {
 	var comments []Comment
 	for _, edge := range resp.Data.Connection.Edges {
 		node := edge.Node
@@ -147,13 +153,138 @@ func (b *ChromeBackend) processCommentsResponse(body string) {
 
 		comments = append(comments, comment)
 	}
+	return comments
+}
 
-	// Persist to the reel
-	if pk := b.comments.GetReelPK(); pk != "" {
-		b.SetReelComments(pk, comments)
+// processCommentsResponse extracts comments from a GraphQL response.
+// Stores the request template and pagination cursor for later use.
+func (b *ChromeBackend) processCommentsResponse(body string, requestPostData string) {
+	var resp commentsResponse
+	if err := json.Unmarshal([]byte(body), &resp); err != nil {
+		return
+	}
+
+	comments := b.extractComments(&resp)
+
+	reelPK := b.comments.GetReelPK()
+	if reelPK != "" {
+		b.SetReelComments(reelPK, comments)
+	}
+
+	// Store pagination state for FetchMoreComments
+	b.comments.SetPagination(resp.Data.Connection.PageInfo.EndCursor, resp.Data.Connection.PageInfo.HasNextPage)
+	if requestPostData != "" {
+		b.comments.SetRequestTemplate(requestPostData)
 	}
 
 	b.events <- Event{Type: EventCommentsCaptured, Message: fmt.Sprintf("%d comments captured", len(comments)), Count: len(comments)}
+}
+
+// FetchMoreComments fetches the next page of comments using the stored request template and cursor.
+// Called by the TUI when the user scrolls to the bottom of the comments list.
+func (b *ChromeBackend) FetchMoreComments() {
+	if !b.comments.HasMoreComments() {
+		return
+	}
+	if !b.comments.StartFetch() {
+		return // already fetching
+	}
+	defer b.comments.FinishFetch()
+
+	template := b.comments.GetRequestTemplate()
+	cursor := b.comments.GetCursor()
+	reelPK := b.comments.GetReelPK()
+	if template == "" || cursor == "" || reelPK == "" {
+		return
+	}
+
+	params, err := url.ParseQuery(template)
+	if err != nil {
+		return
+	}
+
+	// Build pagination variables
+	vars := map[string]interface{}{
+		"after":      cursor,
+		"before":     nil,
+		"first":      10,
+		"last":       nil,
+		"media_id":   reelPK,
+		"sort_order": "popular",
+		"__relay_internal__pv__PolarisIsLoggedInrelayprovider": true,
+	}
+	varsJSON, _ := json.Marshal(vars)
+
+	// Swap to pagination query
+	params.Set("doc_id", paginationDocID)
+	params.Set("fb_api_req_friendly_name", paginationFriendlyName)
+	params.Set("variables", string(varsJSON))
+
+	postBody := params.Encode()
+
+	// Make the fetch from browser context with required headers
+	lsd := params.Get("lsd")
+	js := fmt.Sprintf(`
+		(async () => {
+			const csrftoken = document.cookie.split('; ')
+				.find(c => c.startsWith('csrftoken='))
+				?.split('=')[1] || '';
+			const r = await fetch("https://www.instagram.com/graphql/query", {
+				method: "POST",
+				headers: {
+					"content-type": "application/x-www-form-urlencoded",
+					"x-csrftoken": csrftoken,
+					"x-fb-friendly-name": %s,
+					"x-fb-lsd": %s,
+					"x-ig-app-id": "936619743392459",
+				},
+				body: %s,
+				credentials: "include"
+			});
+			return await r.text();
+		})()
+	`, jsonStringForJS(paginationFriendlyName), jsonStringForJS(lsd), jsonStringForJS(postBody))
+
+	var result string
+	err = chromedp.Run(b.ctx,
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			return chromedp.Evaluate(js, &result, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
+				return p.WithAwaitPromise(true)
+			}).Do(ctx)
+		}),
+	)
+	if err != nil {
+		return
+	}
+
+	var paginationResp commentsResponse
+	if err := json.Unmarshal([]byte(result), &paginationResp); err != nil {
+		return
+	}
+
+	// Drop stale results if the user switched reels/comments state mid-fetch.
+	if !b.comments.MatchesSnapshot(reelPK, template, cursor) {
+		return
+	}
+
+	newComments := b.extractComments(&paginationResp)
+	if len(newComments) > 0 {
+		b.AppendReelComments(reelPK, newComments)
+	}
+
+	// Update cursor for next pagination
+	b.comments.SetPagination(
+		paginationResp.Data.Connection.PageInfo.EndCursor,
+		paginationResp.Data.Connection.PageInfo.HasNextPage,
+	)
+
+	b.events <- Event{Type: EventCommentsCaptured, Message: fmt.Sprintf("%d more comments", len(newComments)), Count: len(newComments)}
+}
+
+// jsonStringForJS converts a Go string to a JS string literal
+func jsonStringForJS(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
 }
 
 // processReelResponse extracts reels from a GraphQL response
@@ -244,7 +375,20 @@ func (b *ChromeBackend) processResponse(e *fetch.EventRequestPaused) {
 		if strings.Contains(bodyStr, "xdt_api__v1__clips__home__connection_v2") {
 			b.processReelResponse(bodyStr)
 		} else if strings.Contains(bodyStr, "xdt_api__v1__media__media_id__comments__connection") {
-			b.processCommentsResponse(bodyStr)
+			// Decode the POST body from the intercepted request (base64-encoded)
+			var rawBytes []byte
+			for _, entry := range e.Request.PostDataEntries {
+				decoded, err := base64.StdEncoding.DecodeString(entry.Bytes)
+				if err == nil {
+					rawBytes = append(rawBytes, decoded...)
+				}
+			}
+			postData := string(rawBytes)
+
+			// Skip pagination responses — those are handled by FetchMoreComments directly
+			if !strings.Contains(postData, paginationFriendlyName) {
+				b.processCommentsResponse(bodyStr, postData)
+			}
 		}
 	}
 

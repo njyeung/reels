@@ -268,6 +268,19 @@ func (b *ChromeBackend) SetReelComments(pk string, comments []Comment) {
 	}
 }
 
+// AppendReelComments appends comments to a reel's existing comments by PK
+func (b *ChromeBackend) AppendReelComments(pk string, comments []Comment) {
+	b.reelsMu.Lock()
+	defer b.reelsMu.Unlock()
+
+	for i := range b.orderedReels {
+		if b.orderedReels[i].PK == pk {
+			b.orderedReels[i].Comments = append(b.orderedReels[i].Comments, comments...)
+			return
+		}
+	}
+}
+
 // GetTotal returns total number of captured reels
 func (b *ChromeBackend) GetTotal() int {
 	b.reelsMu.RLock()
