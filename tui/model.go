@@ -94,7 +94,7 @@ func NewModel(userDataDir, cacheDir, configDir string, output io.Writer, flags C
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
 
 	p := player.NewAVPlayer()
-	p.SetSize(playerWidth, playerHeight) // Set initial size before any playback can start
+	p.SetSize(playerWidth, playerHeight)
 	p.SetVolume(settings.Volume)
 	p.SetUseShm(player.ShmSupported())
 
