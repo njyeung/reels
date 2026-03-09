@@ -14,7 +14,7 @@ TUI for Instagram Reels. Doomscrollbrainrotmaxxing in the terminal.
 You need a terminal that supports the **Kitty graphics protocol**:
 - [Kitty](https://sw.kovidgoyal.net/kitty/) (recommended)
 - [WezTerm](https://wezfurlong.org/wezterm/)
-- [Konsole](https://konsole.kde.org/) (experimental support)
+- [Konsole](https://konsole.kde.org/)
 
 ### Browser
 Chrome, Chromium, or Brave must be installed. The app uses headless browser automation to interact with Instagram.
