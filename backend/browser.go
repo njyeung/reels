@@ -120,7 +120,7 @@ func (b *ChromeBackend) NavigateToReels() error {
 	for i := 0; i < MaxRetries; i++ {
 		info, err := b.GetCurrent()
 		if err == nil && info != nil {
-			b.events <- Event{Type: EventSyncComplete, Message: "Initial sync complete"}
+			b.events <- Event{Type: EventSyncComplete}
 			return nil
 		}
 		if err := b.scrollDown(); err != nil {
@@ -263,6 +263,19 @@ func (b *ChromeBackend) SetReelComments(pk string, comments []Comment) {
 	for i := range b.orderedReels {
 		if b.orderedReels[i].PK == pk {
 			b.orderedReels[i].Comments = comments
+			return
+		}
+	}
+}
+
+// AppendReelComments appends comments to a reel's existing comments by PK
+func (b *ChromeBackend) AppendReelComments(pk string, comments []Comment) {
+	b.reelsMu.Lock()
+	defer b.reelsMu.Unlock()
+
+	for i := range b.orderedReels {
+		if b.orderedReels[i].PK == pk {
+			b.orderedReels[i].Comments = append(b.orderedReels[i].Comments, comments...)
 			return
 		}
 	}

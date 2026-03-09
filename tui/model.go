@@ -105,7 +105,7 @@ func NewModel(userDataDir, cacheDir, configDir string, output io.Writer, flags C
 		backend:       b,
 		player:        p,
 		spinner:       s,
-		status:        "Starting browser",
+		status:        "Loading",
 		videoWidthPx:  playerWidth,
 		videoHeightPx: playerHeight,
 		comments:      NewCommentsPanel(),
@@ -283,6 +283,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case backend.EventReelsCaptured:
 			m.status = fmt.Sprintf("Captured %d reels", m.backend.GetTotal())
 		case backend.EventCommentsCaptured:
+			m.comments.SetLoading(false)
 			// Refresh currentReel to get the newly persisted comments
 			if m.currentReel != nil {
 				if info, err := m.backend.GetReel(m.currentReel.Index); err == nil {
@@ -338,6 +339,11 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.comments.IsOpen() {
 			m.comments.Scroll(1)
 			m.updateCommentGifs()
+			// Fetch more comments when scrolled to bottom
+			if m.comments.IsAtBottom() && !m.comments.loading {
+				m.comments.SetLoading(true)
+				go m.backend.FetchMoreComments()
+			}
 			return m, nil
 		}
 		// Otherwise navigate to next reel

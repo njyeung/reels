@@ -82,6 +82,9 @@ type Backend interface {
 	// ClearComments closes the comments panel and clears the cache
 	ClearComments()
 
+	// FetchMoreComments fetches the next page of comments using stored pagination state
+	FetchMoreComments()
+
 	// Download downloads a reel video and profile picture to the cache directory
 	Download(index int) (videoPath string, pfpPath string, err error)
 
