@@ -120,7 +120,7 @@ func (b *ChromeBackend) NavigateToReels() error {
 	for i := 0; i < MaxRetries; i++ {
 		info, err := b.GetCurrent()
 		if err == nil && info != nil {
-			b.events <- Event{Type: EventSyncComplete, Message: "Initial sync complete"}
+			b.events <- Event{Type: EventSyncComplete}
 			return nil
 		}
 		if err := b.scrollDown(); err != nil {

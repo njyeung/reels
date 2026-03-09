@@ -171,13 +171,10 @@ func validateCommentsRequest(postData string, appID string) bool {
 		return false
 	}
 
-	// Core API identifiers
-	// if this changes, Instagram has probably updated their frontend
+	// Core API identifiers — if these change, Instagram has updated their frontend
 	if params.Get("doc_id") != initialCommentsDocID {
 		return false
 	}
-
-	// FriendlyName is unlikely to change, but check for it anyways
 	if params.Get("fb_api_req_friendly_name") != initialCommentsFriendlyName {
 		return false
 	}
@@ -219,7 +216,7 @@ func (b *ChromeBackend) processCommentsResponse(body string, requestPostData str
 		b.comments.EnablePagination()
 	}
 
-	b.events <- Event{Type: EventCommentsCaptured, Message: fmt.Sprintf("%d comments captured", len(comments)), Count: len(comments)}
+	b.events <- Event{Type: EventCommentsCaptured, Count: len(comments)}
 }
 
 // FetchMoreComments fetches the next page of comments using the stored request template and cursor.
@@ -231,6 +228,9 @@ func (b *ChromeBackend) FetchMoreComments() {
 	if !b.comments.StartFetch() {
 		return // already fetching
 	}
+	defer func() {
+		b.events <- Event{Type: EventCommentsCaptured}
+	}()
 	defer b.comments.FinishFetch()
 
 	template := b.comments.GetRequestTemplate()
@@ -319,8 +319,6 @@ func (b *ChromeBackend) FetchMoreComments() {
 		paginationResp.Data.Connection.PageInfo.EndCursor,
 		paginationResp.Data.Connection.PageInfo.HasNextPage,
 	)
-
-	b.events <- Event{Type: EventCommentsCaptured, Message: fmt.Sprintf("%d more comments", len(newComments)), Count: len(newComments)}
 }
 
 // jsonStringForJS converts a Go string to a JS string literal
@@ -393,7 +391,7 @@ func (b *ChromeBackend) processReelResponse(body string) {
 	}
 
 	if newCount > 0 {
-		b.events <- Event{Type: EventReelsCaptured, Count: newCount, Message: fmt.Sprintf("Captured %d new reels", newCount)}
+		b.events <- Event{Type: EventReelsCaptured, Count: newCount}
 	}
 }
 
@@ -428,8 +426,11 @@ func (b *ChromeBackend) processResponse(e *fetch.EventRequestPaused) {
 
 			postData := string(rawBytes)
 			var appID string
-			if v, ok := e.Request.Headers["x-ig-app-id"]; ok {
-				appID, _ = v.(string)
+			for k, v := range e.Request.Headers {
+				if strings.EqualFold(k, "x-ig-app-id") {
+					appID, _ = v.(string)
+					break
+				}
 			}
 
 			// Skip pagination responses, those are handled by FetchMoreComments directly

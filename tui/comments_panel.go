@@ -16,6 +16,7 @@ type CommentsPanel struct {
 	isOpen   bool
 	comments []backend.Comment
 	scroll   int
+	loading  bool // true while fetching more comments
 
 	// Which reel these comments belong to
 	reelPK string
@@ -251,9 +252,15 @@ func (cp *CommentsPanel) VisibleGifSlots(width, height, baseRow, baseCol int) []
 	return slots
 }
 
+// SetLoading sets the loading state for the comments panel
+func (cp *CommentsPanel) SetLoading(loading bool) {
+	cp.loading = loading
+}
+
 // IsAtBottom returns true if the scroll position is at the bottom of the comments list
 func (cp *CommentsPanel) IsAtBottom() bool {
-	maxScroll := len(cp.comments) - 2
+	// -3 is arbritrary, this just gives padding for the network request
+	maxScroll := len(cp.comments) - 3
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
