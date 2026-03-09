@@ -16,8 +16,11 @@ import (
 )
 
 const (
-	paginationDocID        = "26653752520898584"
-	paginationFriendlyName = "PolarisPostCommentsPaginationQuery"
+	initialCommentsDocID        = "26103263252639102"
+	initialCommentsFriendlyName = "PolarisPostCommentsContainerQuery"
+	paginationDocID             = "26653752520898584"
+	paginationFriendlyName      = "PolarisPostCommentsPaginationQuery"
+	expectedAppID               = "936619743392459"
 )
 
 // commentsResponse represents the xdt_api__v1__media__media_id__comments__connection GraphQL response structure
@@ -156,9 +159,45 @@ func (b *ChromeBackend) extractComments(resp *commentsResponse) []Comment {
 	return comments
 }
 
+// validateCommentsRequest checks that the intercepted request matches expected Instagram API shape.
+// Returns false if anything looks off, pagination will be silently disabled.
+func validateCommentsRequest(postData string, appID string) bool {
+	if postData == "" {
+		return false
+	}
+
+	params, err := url.ParseQuery(postData)
+	if err != nil {
+		return false
+	}
+
+	// Core API identifiers
+	// if this changes, Instagram has probably updated their frontend
+	if params.Get("doc_id") != initialCommentsDocID {
+		return false
+	}
+
+	// FriendlyName is unlikely to change, but check for it anyways
+	if params.Get("fb_api_req_friendly_name") != initialCommentsFriendlyName {
+		return false
+	}
+
+	// App identity from request header
+	if appID != expectedAppID {
+		return false
+	}
+
+	// Session tokens we need for pagination requests
+	if params.Get("lsd") == "" || params.Get("fb_dtsg") == "" {
+		return false
+	}
+
+	return true
+}
+
 // processCommentsResponse extracts comments from a GraphQL response.
 // Stores the request template and pagination cursor for later use.
-func (b *ChromeBackend) processCommentsResponse(body string, requestPostData string) {
+func (b *ChromeBackend) processCommentsResponse(body string, requestPostData string, appID string) {
 	var resp commentsResponse
 	if err := json.Unmarshal([]byte(body), &resp); err != nil {
 		return
@@ -171,10 +210,13 @@ func (b *ChromeBackend) processCommentsResponse(body string, requestPostData str
 		b.SetReelComments(reelPK, comments)
 	}
 
-	// Store pagination state for FetchMoreComments
-	b.comments.SetPagination(resp.Data.Connection.PageInfo.EndCursor, resp.Data.Connection.PageInfo.HasNextPage)
-	if requestPostData != "" {
+	pageInfo := resp.Data.Connection.PageInfo
+
+	// Only enable pagination if the request passes validation
+	if validateCommentsRequest(requestPostData, appID) && (!pageInfo.HasNextPage || pageInfo.EndCursor != "") {
+		b.comments.SetPagination(pageInfo.EndCursor, pageInfo.HasNextPage)
 		b.comments.SetRequestTemplate(requestPostData)
+		b.comments.EnablePagination()
 	}
 
 	b.events <- Event{Type: EventCommentsCaptured, Message: fmt.Sprintf("%d comments captured", len(comments)), Count: len(comments)}
@@ -383,11 +425,16 @@ func (b *ChromeBackend) processResponse(e *fetch.EventRequestPaused) {
 					rawBytes = append(rawBytes, decoded...)
 				}
 			}
-			postData := string(rawBytes)
 
-			// Skip pagination responses — those are handled by FetchMoreComments directly
+			postData := string(rawBytes)
+			var appID string
+			if v, ok := e.Request.Headers["x-ig-app-id"]; ok {
+				appID, _ = v.(string)
+			}
+
+			// Skip pagination responses, those are handled by FetchMoreComments directly
 			if !strings.Contains(postData, paginationFriendlyName) {
-				b.processCommentsResponse(bodyStr, postData)
+				b.processCommentsResponse(bodyStr, postData, appID)
 			}
 		}
 	}

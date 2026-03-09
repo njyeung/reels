@@ -5,12 +5,13 @@ import "sync"
 // CommentsState tracks comment fetch state and pagination.
 // Comments are persisted to the Reel struct; this tracks the active fetch session.
 type CommentsState struct {
-	mu              sync.RWMutex
-	reelPK          string
-	cursor          string // pagination cursor from page_info.end_cursor
-	hasNextPage     bool
-	requestTemplate string // captured POST body from initial request
-	fetching        bool   // prevents concurrent pagination fetches
+	mu                sync.RWMutex
+	reelPK            string
+	cursor            string // pagination cursor from page_info.end_cursor
+	hasNextPage       bool
+	requestTemplate   string // captured POST body from initial request
+	paginationEnabled bool   // true only if the initial request passed validation
+	fetching          bool   // prevents concurrent pagination fetches
 }
 
 // GetReelPK returns which reel's comments are being fetched
@@ -28,6 +29,7 @@ func (cs *CommentsState) Open(reelPK string) {
 	cs.cursor = ""
 	cs.hasNextPage = false
 	cs.requestTemplate = ""
+	cs.paginationEnabled = false
 }
 
 // Clear clears all state
@@ -38,6 +40,7 @@ func (cs *CommentsState) Clear() {
 	cs.cursor = ""
 	cs.hasNextPage = false
 	cs.requestTemplate = ""
+	cs.paginationEnabled = false
 }
 
 // SetPagination updates the cursor and hasNextPage after a fetch
@@ -55,11 +58,18 @@ func (cs *CommentsState) SetRequestTemplate(template string) {
 	cs.requestTemplate = template
 }
 
+// EnablePagination marks that the initial request passed validation
+func (cs *CommentsState) EnablePagination() {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	cs.paginationEnabled = true
+}
+
 // HasMoreComments returns true if there are more pages to fetch
 func (cs *CommentsState) HasMoreComments() bool {
 	cs.mu.RLock()
 	defer cs.mu.RUnlock()
-	return cs.hasNextPage && cs.cursor != "" && cs.requestTemplate != ""
+	return cs.paginationEnabled && cs.hasNextPage && cs.cursor != ""
 }
 
 // GetCursor returns the current pagination cursor
