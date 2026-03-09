@@ -141,7 +141,7 @@ func (cp *CommentsPanel) View(width, height int, padding string) string {
 	var b strings.Builder
 
 	// Header
-	header := titleStyle.Render(fmt.Sprintf("Comments (%d)", len(cp.comments)))
+	header := titleStyle.Render(fmt.Sprintf("Comments"))
 	b.WriteString(padding + header + "\n\n")
 
 	// magic number galore
