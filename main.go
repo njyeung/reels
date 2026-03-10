@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -23,27 +22,15 @@ func main() {
 	headedFlag := flag.Bool("headed", false, "Run browser in headed (visible) mode")
 	flag.Parse()
 
-	// Set up directories based on OS.
-	// Linux: 	~/.local/share/reels/
-	// 			 ~/.cache/reels/,
-	// 			~/.config/reels/
+	// Set up directories:
+	// Browser data: 	~/.local/share/reels/
+	// Cache:			~/.cache/reels/,
+	// Settings: 		~/.config/reels/
 	//
-	// macOS: 	~/Library/Application Support/reels/
-	// 			~/Library/Caches/reels/
 	homeDir, _ := os.UserHomeDir()
-	var userDataDir, cacheDir, configDir string
-
-	if runtime.GOOS == "darwin" {
-		// macOS
-		userDataDir = filepath.Join(homeDir, "Library", "Application Support", "reels", "chrome-data")
-		cacheDir = filepath.Join(homeDir, "Library", "Caches", "reels")
-		configDir = filepath.Join(homeDir, "Library", "Application Support", "reels")
-	} else {
-		// Linux
-		userDataDir = filepath.Join(homeDir, ".local", "share", "reels", "chrome-data")
-		cacheDir = filepath.Join(homeDir, ".cache", "reels")
-		configDir = filepath.Join(homeDir, ".config", "reels")
-	}
+	userDataDir := filepath.Join(homeDir, ".local", "share", "reels", "chrome-data")
+	cacheDir := filepath.Join(homeDir, ".cache", "reels")
+	configDir := filepath.Join(homeDir, ".config", "reels")
 
 	// Create synchronized file wrapper for both Bubble Tea and video renderer
 	syncOut := &SyncFile{File: os.Stdout}
