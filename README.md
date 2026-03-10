@@ -95,10 +95,11 @@ cd reels
 go build -o reels .
 ```
 
-## Settings
+## File Paths
 
-- **macOS**: `~/Library/Application Support/reels/reels.conf`
-- **Linux**: `~/.config/reels/reels.conf`
+- Settings: `~/.config/reels/reels.conf`
+- Cache: `~/.cache/reels/`
+- Chrome Data: `~/.local/shared/reels/`
 
 ```
 # Default config (created on first run)
