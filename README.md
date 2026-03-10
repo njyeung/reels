@@ -129,8 +129,3 @@ key_share = s
 key_quit = q
 key_quit = ctrl+c
 ```
-
-## TODO
-
-- GPU decoding
-- Syncing bugs with browser
