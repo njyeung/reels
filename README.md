@@ -101,11 +101,13 @@ go build -o reels .
 - Cache: `~/.cache/reels/`
 - Chrome Data: `~/.local/shared/reels/`
 
+## Default settings
+
 ```
 # Default config (created on first run)
 
 show_navbar = true
-retina_scale = 2    # 2 on macOS, 1 on Linux by default
+retina_scale = 2    # auto detects 2 on macOS, 1 on Linux by default
 reel_width = 270
 reel_height = 480
 reel_size_step = 30
