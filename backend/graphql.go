@@ -278,14 +278,14 @@ func (b *ChromeBackend) FetchMoreComments() {
 					"x-csrftoken": csrftoken,
 					"x-fb-friendly-name": %s,
 					"x-fb-lsd": %s,
-					"x-ig-app-id": "936619743392459",
+					"x-ig-app-id": %s,
 				},
 				body: %s,
 				credentials: "include"
 			});
 			return await r.text();
 		})()
-	`, jsonStringForJS(paginationFriendlyName), jsonStringForJS(lsd), jsonStringForJS(postBody))
+	`, jsonStringForJS(paginationFriendlyName), jsonStringForJS(lsd), expectedAppID, jsonStringForJS(postBody))
 
 	var result string
 	err = chromedp.Run(b.ctx,
@@ -388,10 +388,6 @@ func (b *ChromeBackend) processReelResponse(body string) {
 		}
 		b.orderedReels = append(b.orderedReels, reel)
 		newCount++
-	}
-
-	if newCount > 0 {
-		b.events <- Event{Type: EventReelsCaptured, Count: newCount}
 	}
 }
 

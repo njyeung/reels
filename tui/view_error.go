@@ -3,5 +3,5 @@ package tui
 import "fmt"
 
 func (m Model) viewError() string {
-	return fmt.Sprintf("\n\n   %s\n\n   Press q to quit.\n", errorStyle.Render(m.err.Error()))
+	return fmt.Sprintf("\n\n	An error occured\n\n	Press q to quit.\n")
 }

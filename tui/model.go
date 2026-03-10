@@ -42,6 +42,17 @@ const (
 	stateError
 )
 
+// status represents the current player/loading status shown in the UI
+type status int
+
+const (
+	statusNone       status = iota
+	statusLoading           // reel or video is loading
+	statusPaused            // playback is paused
+	statusReelError         // error fetching reel metadata
+	statusVideoError        // error loading video
+)
+
 // Model is the Bubble Tea model
 type Model struct {
 	state       state
@@ -52,8 +63,7 @@ type Model struct {
 	width   int
 	height  int
 	spinner spinner.Model
-	err     error
-	status  string
+	status  status
 
 	// Video pixel dimensions
 	videoWidthPx  int
@@ -105,7 +115,7 @@ func NewModel(userDataDir, cacheDir, configDir string, output io.Writer, flags C
 		backend:       b,
 		player:        p,
 		spinner:       s,
-		status:        "Loading",
+		status:        statusLoading,
 		videoWidthPx:  playerWidth,
 		videoHeightPx: playerHeight,
 		comments:      NewCommentsPanel(),
@@ -253,7 +263,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case backendReadyMsg:
 		m.state = stateBrowsing
-		m.status = "Loading"
+		m.status = statusLoading
 		return m, tea.Batch(
 			m.loadCurrentReel,
 			m.listenForEvents,
@@ -275,13 +285,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case backendErrorMsg:
 		m.state = stateError
-		m.err = msg.err
 		return m, nil
 
 	case backendEventMsg:
 		switch msg.Type {
-		case backend.EventReelsCaptured:
-			m.status = fmt.Sprintf("Captured %d reels", m.backend.GetTotal())
 		case backend.EventCommentsCaptured:
 			m.comments.SetLoading(false)
 			// Refresh currentReel to get the newly persisted comments
@@ -297,7 +304,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case reelLoadedMsg:
 		m.currentReel = msg.info
-		m.status = ""
+		m.status = statusNone
 		m.musicScrollOffset = 0
 		return m, tea.Batch(m.startPlayback(msg.info.Index), m.musicTick())
 
@@ -312,16 +319,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case reelErrorMsg:
-		m.status = fmt.Sprintf("Error: %v", msg.err)
+		m.status = statusReelError
 		return m, nil
 
 	case videoReadyMsg:
-		m.status = ""
+		m.status = statusNone
 		go m.prefetch(msg.index + 1)
 		return m, nil
 
 	case videoErrorMsg:
-		m.status = fmt.Sprintf("Video error: %v", msg.err)
+		m.status = statusVideoError
 		return m, nil
 	}
 
@@ -347,12 +354,12 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Otherwise navigate to next reel
-		if m.currentReel != nil && m.status != "Loading" {
+		if m.currentReel != nil && m.status != statusLoading {
 			nextIndex := m.currentReel.Index + 1
 			if nextIndex <= m.backend.GetTotal() {
 				m.player.Stop()
 
-				m.status = "Loading"
+				m.status = statusLoading
 
 				m.player.ClearGifs()
 				m.comments.Clear()
@@ -372,12 +379,12 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Otherwise navigate to previous reel
-		if m.currentReel != nil && m.status != "Loading" {
+		if m.currentReel != nil && m.status != statusLoading {
 			prevIndex := m.currentReel.Index - 1
 			if prevIndex >= 1 {
 				m.player.Stop()
 
-				m.status = "Loading"
+				m.status = statusLoading
 
 				m.player.ClearGifs()
 				m.comments.Clear()
@@ -398,9 +405,9 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case slices.Contains(config.KeysPause, key):
 		m.player.Pause()
 		if m.player.IsPaused() {
-			m.status = "Paused"
+			m.status = statusPaused
 		} else {
-			m.status = ""
+			m.status = statusNone
 		}
 
 	case slices.Contains(config.KeysLike, key):

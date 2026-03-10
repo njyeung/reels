@@ -153,8 +153,7 @@ type Comment struct {
 type EventType int
 
 const (
-	EventReelsCaptured EventType = iota
-	EventCommentsCaptured
+	EventCommentsCaptured EventType = iota
 	EventSyncComplete
 	EventError
 )

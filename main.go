@@ -18,15 +18,14 @@ type SyncFile struct {
 }
 
 func main() {
-	loginFlag := flag.Bool("login", false, "Open browser in headed mode for manual Instagram login")
-	headedFlag := flag.Bool("headed", false, "Run browser in headed (visible) mode")
+	loginFlag := flag.Bool("login", false, "Open browser in headed mode for Instagram login, also used for debugging since the app does not try to control the browser.")
+	headedFlag := flag.Bool("headed", false, "Run browser in headed mode")
 	flag.Parse()
 
 	// Set up directories:
 	// Browser data: 	~/.local/share/reels/
 	// Cache:			~/.cache/reels/,
 	// Settings: 		~/.config/reels/
-	//
 	homeDir, _ := os.UserHomeDir()
 	userDataDir := filepath.Join(homeDir, ".local", "share", "reels", "chrome-data")
 	cacheDir := filepath.Join(homeDir, ".cache", "reels")

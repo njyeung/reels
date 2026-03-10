@@ -83,7 +83,7 @@ func (m Model) viewBrowsing() string {
 
 	if contentWidth < videoWidthChars {
 		statusContent = statusContent + strings.Repeat(" ", videoWidthChars-contentWidth)
-		if m.status == "Loading" || m.comments.loading {
+		if m.status == statusLoading || m.comments.loading {
 			runes := []rune(statusContent)
 			statusContent = string(runes[:len(runes)-1]) + m.spinner.View()
 		}
@@ -178,7 +178,7 @@ func (m Model) viewBrowsing() string {
 			}
 		}
 	} else {
-		b.WriteString(padding + m.spinner.View() + " " + m.status + "\n\n")
+		b.WriteString(padding + m.spinner.View() + "\n\n")
 	}
 
 	return strings.TrimSuffix(b.String(), "\n")

@@ -1,13 +1,12 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 )
 
 func (m Model) viewLoading() string {
 	if m.width == 0 || m.height == 0 {
-		return fmt.Sprintf("\n\n   %s %s\n\n", m.spinner.View(), m.status)
+		return "\n\n   " + m.spinner.View() + "\n\n"
 	}
 
 	return renderLoadingScreen(m.width, m.height)
