@@ -9,7 +9,7 @@ TUI for Instagram Reels. Doomscrollbrainrotmaxxing in the terminal.
 </p>
 
 <p align="center">
-  <img src="demo.gif" alt="demo gif" width="500px">
+  <img src="demo.gif" alt="demo gif" width="300px">
 </p>
 
 ## Prerequisites
