@@ -11,14 +11,14 @@ const sharePfpCellHeight = 3
 
 // SharePanel encapsulates the share modal UI state and rendering
 type SharePanel struct {
-	isOpen  bool
-	friends []backend.Friend
+	isOpen   bool
+	friends  []backend.Friend
 	cursor   int // which friend is highlighted
 	scroll   int // first visible friend index
 	selected map[int]bool
 
 	// Image state
-	pfpAnims map[int]*player.GifAnimation
+	pfps map[int]*player.PFP
 
 	// cached for scroll calculations
 	visibleCount int
@@ -40,7 +40,7 @@ func (sp *SharePanel) Open() {
 	sp.cursor = 0
 	sp.scroll = 0
 	sp.friends = nil
-	sp.pfpAnims = nil
+	sp.pfps = nil
 	sp.selected = make(map[int]bool)
 }
 
@@ -50,7 +50,7 @@ func (sp *SharePanel) Close() {
 	sp.cursor = 0
 	sp.scroll = 0
 	sp.friends = nil
-	sp.pfpAnims = nil
+	sp.pfps = nil
 	sp.selected = nil
 }
 
@@ -62,24 +62,36 @@ func (sp *SharePanel) SetFriends(friends []backend.Friend) {
 
 // loadPfps loads profile pic images from disk
 func (sp *SharePanel) loadPfps() {
-	sp.pfpAnims = make(map[int]*player.GifAnimation)
-
-	_, rows, _, termH, err := player.GetTerminalSize()
-	if err != nil || rows == 0 || termH == 0 {
+	sp.pfps = make(map[int]*player.PFP)
+	pfpHeightPx := getPfpHeightPx()
+	if pfpHeightPx == 0 {
 		return
 	}
-	cellH := termH / rows
-	pfpHeightPx := sharePfpCellHeight * cellH
 
 	for i, f := range sp.friends {
 		if f.ImgPath == "" {
 			continue
 		}
-		anim, err := player.LoadImage(f.ImgPath, pfpHeightPx)
+		pfp, err := player.LoadPFP(f.ImgPath)
 		if err != nil {
 			continue
 		}
-		sp.pfpAnims[i] = anim
+		pfp.Resize(pfpHeightPx)
+		sp.pfps[i] = pfp
+	}
+}
+
+// ResizePfps re-scales loaded share panel pfps for the current terminal cell size.
+func (sp *SharePanel) ResizePfps() {
+	if len(sp.pfps) == 0 {
+		return
+	}
+	pfpHeightPx := getPfpHeightPx()
+	if pfpHeightPx == 0 {
+		return
+	}
+	for _, pfp := range sp.pfps {
+		pfp.Resize(pfpHeightPx)
 	}
 }
 
@@ -177,8 +189,8 @@ func (sp *SharePanel) View(width, height int, padding string) string {
 }
 
 // VisiblePfpSlots computes image slots with absolute terminal cell positions
-func (sp *SharePanel) VisiblePfpSlots(width, height, baseRow, baseCol int) []player.GifSlot {
-	if !sp.isOpen || len(sp.friends) == 0 || len(sp.pfpAnims) == 0 {
+func (sp *SharePanel) VisiblePfpSlots(width, height, baseRow, baseCol int) []player.ImageSlot {
+	if !sp.isOpen || len(sp.friends) == 0 || len(sp.pfps) == 0 {
 		return nil
 	}
 
@@ -187,7 +199,7 @@ func (sp *SharePanel) VisiblePfpSlots(width, height, baseRow, baseCol int) []pla
 		return nil
 	}
 
-	var slots []player.GifSlot
+	var slots []player.ImageSlot
 	linesUsed := 0
 	currentRow := baseRow + 1 // +1 for header
 
@@ -196,11 +208,11 @@ func (sp *SharePanel) VisiblePfpSlots(width, height, baseRow, baseCol int) []pla
 			break
 		}
 
-		if anim, ok := sp.pfpAnims[i]; ok {
-			slots = append(slots, player.GifSlot{
-				Anim: anim,
-				Row:  currentRow,
-				Col:  baseCol,
+		if pfp, ok := sp.pfps[i]; ok {
+			slots = append(slots, player.ImageSlot{
+				Img: pfp,
+				Row: currentRow,
+				Col: baseCol,
 			})
 		}
 
@@ -209,4 +221,16 @@ func (sp *SharePanel) VisiblePfpSlots(width, height, baseRow, baseCol int) []pla
 	}
 
 	return slots
+}
+
+func getPfpHeightPx() int {
+	_, rows, _, termH, err := player.GetTerminalSize()
+	if err != nil || rows == 0 || termH == 0 {
+		return 0
+	}
+	cellH := termH / rows
+	if cellH <= 0 {
+		return 0
+	}
+	return sharePfpCellHeight * cellH
 }

@@ -84,7 +84,8 @@ const (
 	AudioSampleRate = 44100
 
 	// Kitty image IDs
-	VideoImageID = 1
-	PfpImageID   = 101
-	GifImageID   = 200
+	VideoImageID  = 1
+	PfpImageID    = 101
+	GifImageID    = 200
+	StaticImageID = 300
 )

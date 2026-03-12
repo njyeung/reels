@@ -30,6 +30,9 @@ type AVPlayer struct {
 
 	gifSlotsMu sync.Mutex
 	gifSlots   []GifSlot
+
+	imageSlotsMu sync.Mutex
+	imageSlots   []ImageSlot
 }
 
 func (p *AVPlayer) sessionConfig() sessionConfig {
@@ -125,8 +128,8 @@ func (p *AVPlayer) SetSize(width, height int) {
 			}
 		}
 
-		if s.overlay != nil {
-			s.overlay.ResizeOverlay()
+		if s.reelPFP != nil {
+			_ = s.reelPFP.ResizeToCells(2)
 		}
 	})
 }
@@ -168,6 +171,13 @@ func (p *AVPlayer) playOnce(videoPath string, pfpPath string) error {
 	p.gifSlotsMu.Unlock()
 	if len(slots) > 0 {
 		session.setVisibleGifs(slots)
+	}
+
+	p.imageSlotsMu.Lock()
+	imageSlots := p.imageSlots
+	p.imageSlotsMu.Unlock()
+	if len(imageSlots) > 0 {
+		session.setVisibleImages(imageSlots)
 	}
 
 	return session.run(p)
@@ -262,6 +272,37 @@ func (p *AVPlayer) ClearGifs() {
 	if r != nil {
 		for i := range 15 {
 			r.DeleteImage(GifImageID + i)
+		}
+	}
+}
+
+// SetVisibleImages updates which static images are displayed and their positions.
+func (p *AVPlayer) SetVisibleImages(slots []ImageSlot) {
+	p.imageSlotsMu.Lock()
+	p.imageSlots = slots
+	p.imageSlotsMu.Unlock()
+
+	p.withSession(func(s *playSession) {
+		s.setVisibleImages(slots)
+	})
+}
+
+// ClearImages removes all displayed static images.
+func (p *AVPlayer) ClearImages() {
+	p.imageSlotsMu.Lock()
+	p.imageSlots = nil
+	p.imageSlotsMu.Unlock()
+
+	p.withSession(func(s *playSession) {
+		s.clearImages()
+	})
+
+	p.configMu.Lock()
+	r := p.renderer
+	p.configMu.Unlock()
+	if r != nil {
+		for i := range 30 {
+			r.DeleteImage(StaticImageID + i)
 		}
 	}
 }

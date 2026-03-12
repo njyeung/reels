@@ -1,12 +1,8 @@
 package player
 
 import (
-	"bytes"
 	"fmt"
-	"image"
-	_ "image/jpeg"
 	"math"
-	"os"
 	"runtime"
 	"sync"
 	"time"
@@ -20,7 +16,7 @@ type playSession struct {
 	audio    *AudioPlayer
 	video    *VideoDecoder
 	renderer *KittyRenderer
-	overlay  *Overlay
+	reelPFP  *PFP
 
 	// Cell positions for image placement (1-indexed)
 	videoRow, videoCol int
@@ -31,17 +27,11 @@ type playSession struct {
 
 	gifsMu      sync.Mutex
 	visibleGifs []visibleGif
+	imagesMu    sync.Mutex
+	visibleImgs []visibleImage
 
 	stopCh   chan struct{}
 	stopOnce sync.Once
-}
-
-type Overlay struct {
-	mu               sync.Mutex
-	srcImage         image.Image
-	profilePic       []byte
-	profilePicWidth  int
-	profilePicHeight int
 }
 
 type audioPacket struct {
@@ -102,14 +92,20 @@ func newPlaySession(url string, pfpPath string, cfg sessionConfig) (*playSession
 		renderer.SetUseShm(cfg.useShm)
 	}
 
-	overlay := loadOverlay(pfpPath)
+	var reelPFP *PFP
+	if pfpPath != "" {
+		if pfp, err := LoadPFP(pfpPath); err == nil {
+			_ = pfp.ResizeToCells(2)
+			reelPFP = pfp
+		}
+	}
 
 	session := &playSession{
 		demuxer:    demuxer,
 		audio:      audio,
 		video:      video,
 		renderer:   renderer,
-		overlay:    overlay,
+		reelPFP:    reelPFP,
 		videoRow:   videoRow,
 		videoCol:   videoCol,
 		pfpRow:     pfpRow,
@@ -289,17 +285,14 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 			return fmt.Errorf("render error: %w", err)
 		}
 
-		// render pfp
-		if s.overlay != nil {
-			s.overlay.mu.Lock()
-			pic, w, h := s.overlay.profilePic, s.overlay.profilePicWidth, s.overlay.profilePicHeight
-			s.overlay.mu.Unlock()
-
+		// render reel owner pfp
+		if s.reelPFP != nil {
+			pic, w, h := s.reelPFP.Snapshot()
 			// only render if the pfp is different
 			// underlying slice is changed when pfp bytes are changed,
 			// crackhead pointer comparison
 			shouldRender := len(pic) != len(prevPfp) || ((len(pic) > 0 && len(prevPfp) > 0) && (unsafe.Pointer(&pic[0]) != unsafe.Pointer(&prevPfp[0])))
-			if shouldRender {
+			if shouldRender && len(pic) > 0 && w > 0 && h > 0 {
 				if err := s.renderer.RenderImage(pic, 32, w, h, PfpImageID, s.pfpRow, s.pfpCol, false); err != nil {
 					return fmt.Errorf("profile pic render error: %w", err)
 				}
@@ -322,6 +315,27 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 			s.renderer.RenderImage(g.anim.Frames[g.frameIndex], 32, g.anim.Width, g.anim.Height, g.imageID, g.row, g.col, false)
 		}
 		s.gifsMu.Unlock()
+
+		// render static images (e.g. share panel pfps) once per slot update
+		s.imagesMu.Lock()
+		for i := range s.visibleImgs {
+			img := &s.visibleImgs[i]
+			if img.rendered || img.img == nil {
+				continue
+			}
+
+			pic, w, h := img.img.Snapshot()
+			if len(pic) == 0 || w == 0 || h == 0 {
+				continue
+			}
+
+			if err := s.renderer.RenderImage(pic, 32, w, h, img.imageID, img.row, img.col, false); err != nil {
+				s.imagesMu.Unlock()
+				return fmt.Errorf("static image render error: %w", err)
+			}
+			img.rendered = true
+		}
+		s.imagesMu.Unlock()
 	}
 
 	return nil
@@ -386,141 +400,6 @@ func profilePicPosition(termCols, termRows int) (row, col int) {
 	return row, col
 }
 
-// loadOverlay loads a profile picture from disk and scales it for display.
-// Returns nil if the path is empty or loading fails.
-func loadOverlay(pfpPath string) *Overlay {
-	if pfpPath == "" {
-		return nil
-	}
-
-	data, err := os.ReadFile(pfpPath)
-	if err != nil {
-		return nil
-	}
-
-	img, _, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		return nil
-	}
-
-	o := &Overlay{srcImage: img}
-	o.ResizeOverlay()
-	return o
-}
-
-// ResizeOverlay re-scales the profile picture from the stored source image based on current terminal cell height.
-func (o *Overlay) ResizeOverlay() {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-
-	bounds := o.srcImage.Bounds()
-	srcW, srcH := bounds.Dx(), bounds.Dy()
-
-	// target pfp size: 2 character cells tall so it fits the username + music lines
-	_, rows, _, termH, err := GetTerminalSize()
-	if err != nil || rows == 0 || termH == 0 {
-		return
-	}
-	cellH := termH / rows
-	profilePicSize := 2 * cellH
-
-	// Calculate target dimensions maintaining aspect ratio
-	dstW, dstH := profilePicSize, profilePicSize
-	if srcW > srcH {
-		dstH = profilePicSize * srcH / srcW
-	} else if srcH > srcW {
-		dstW = profilePicSize * srcW / srcH
-	}
-
-	// Circle parameters
-	centerX := float64(dstW-1) / 2.0
-	centerY := float64(dstH-1) / 2.0
-	radius := float64(min(dstW, dstH)) / 2.0
-
-	rgba := make([]byte, dstW*dstH*4)
-
-	// Bilinear sampling
-	for dstY := 0; dstY < dstH; dstY++ {
-		for dstX := 0; dstX < dstW; dstX++ {
-			// Map destination pixel to source coordinates
-			srcXf := (float64(dstX)+0.5)*float64(srcW)/float64(dstW) - 0.5
-			srcYf := (float64(dstY)+0.5)*float64(srcH)/float64(dstH) - 0.5
-
-			x0 := int(srcXf)
-			y0 := int(srcYf)
-			x1 := x0 + 1
-			y1 := y0 + 1
-
-			// Clamp to bounds
-			if x0 < 0 {
-				x0 = 0
-			}
-			if y0 < 0 {
-				y0 = 0
-			}
-			if x1 >= srcW {
-				x1 = srcW - 1
-			}
-			if y1 >= srcH {
-				y1 = srcH - 1
-			}
-
-			// Interpolation weights
-			xFrac := srcXf - float64(x0)
-			yFrac := srcYf - float64(y0)
-			if xFrac < 0 {
-				xFrac = 0
-			}
-			if yFrac < 0 {
-				yFrac = 0
-			}
-
-			// Sample four corners
-			r00, g00, b00, _ := o.srcImage.At(bounds.Min.X+x0, bounds.Min.Y+y0).RGBA()
-			r10, g10, b10, _ := o.srcImage.At(bounds.Min.X+x1, bounds.Min.Y+y0).RGBA()
-			r01, g01, b01, _ := o.srcImage.At(bounds.Min.X+x0, bounds.Min.Y+y1).RGBA()
-			r11, g11, b11, _ := o.srcImage.At(bounds.Min.X+x1, bounds.Min.Y+y1).RGBA()
-
-			// bilinear interpolation
-			r := (1-xFrac)*(1-yFrac)*float64(r00) + xFrac*(1-yFrac)*float64(r10) + (1-xFrac)*yFrac*float64(r01) + xFrac*yFrac*float64(r11)
-			g := (1-xFrac)*(1-yFrac)*float64(g00) + xFrac*(1-yFrac)*float64(g10) + (1-xFrac)*yFrac*float64(g01) + xFrac*yFrac*float64(g11)
-			b := (1-xFrac)*(1-yFrac)*float64(b00) + xFrac*(1-yFrac)*float64(b10) + (1-xFrac)*yFrac*float64(b01) + xFrac*yFrac*float64(b11)
-
-			// Circular mask with anti-aliasing
-			dx := float64(dstX) - centerX
-			dy := float64(dstY) - centerY
-			dist := dx*dx + dy*dy
-			radiusSq := radius * radius
-
-			var alpha float64
-			if dist <= radiusSq-radius {
-				alpha = 255
-			} else if dist >= radiusSq+radius {
-				alpha = 0
-			} else {
-				// Anti-alias edge
-				edgeDist := (radiusSq - dist) / (2 * radius)
-				alpha = 255 * (0.5 + edgeDist)
-				if alpha < 0 {
-					alpha = 0
-				} else if alpha > 255 {
-					alpha = 255
-				}
-			}
-
-			idx := (dstY*dstW + dstX) * 4
-			rgba[idx] = uint8(r / 256)
-			rgba[idx+1] = uint8(g / 256)
-			rgba[idx+2] = uint8(b / 256)
-			rgba[idx+3] = uint8(alpha)
-		}
-	}
-
-	o.profilePic = rgba
-	o.profilePicWidth = dstW
-	o.profilePicHeight = dstH
-}
-
 func (s *playSession) setVisibleGifs(slots []GifSlot) {
 	s.gifsMu.Lock()
 	defer s.gifsMu.Unlock()
@@ -533,14 +412,12 @@ func (s *playSession) setVisibleGifs(slots []GifSlot) {
 	}
 
 	newGifs := make([]visibleGif, 0, len(slots))
-	usedIDs := make(map[int]bool)
 
 	for i, slot := range slots {
 		if slot.Anim == nil {
 			continue
 		}
 		id := GifImageID + i
-		usedIDs[id] = true
 
 		vg := visibleGif{
 			anim:    slot.Anim,
@@ -573,4 +450,39 @@ func (s *playSession) clearGifs() {
 		s.renderer.DeleteImage(g.imageID)
 	}
 	s.visibleGifs = nil
+}
+
+func (s *playSession) setVisibleImages(slots []ImageSlot) {
+	s.imagesMu.Lock()
+	defer s.imagesMu.Unlock()
+
+	newImgs := make([]visibleImage, 0, len(slots))
+	for i, slot := range slots {
+		if slot.Img == nil {
+			continue
+		}
+		newImgs = append(newImgs, visibleImage{
+			img:      slot.Img,
+			row:      slot.Row,
+			col:      slot.Col,
+			imageID:  StaticImageID + i,
+			rendered: false,
+		})
+	}
+
+	// Delete all old images (positions may have changed due to scrolling)
+	for _, img := range s.visibleImgs {
+		s.renderer.DeleteImage(img.imageID)
+	}
+	s.visibleImgs = newImgs
+}
+
+func (s *playSession) clearImages() {
+	s.imagesMu.Lock()
+	defer s.imagesMu.Unlock()
+
+	for _, img := range s.visibleImgs {
+		s.renderer.DeleteImage(img.imageID)
+	}
+	s.visibleImgs = nil
 }

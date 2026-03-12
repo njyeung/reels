@@ -257,7 +257,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// recenter the video in the new window
 		m.player.SetSize(m.videoWidthPx, m.videoHeightPx)
-		m.updateCommentGifs()
+		if m.share.IsOpen() {
+			m.share.ResizePfps()
+			m.updateSharePfps()
+		} else {
+			m.updateCommentGifs()
+		}
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -376,6 +381,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.status = statusLoading
 
 				m.player.ClearGifs()
+				m.player.ClearImages()
 				m.comments.Clear()
 				if info, err := m.backend.GetReel(nextIndex); err == nil {
 					m.currentReel = info
@@ -407,6 +413,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.status = statusLoading
 
 				m.player.ClearGifs()
+				m.player.ClearImages()
 				m.comments.Clear()
 				if info, err := m.backend.GetReel(prevIndex); err == nil {
 					m.currentReel = info
@@ -443,6 +450,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 			m.comments.Close()
 			m.player.ClearGifs()
+			m.player.ClearImages()
 			go m.backend.CloseComments()
 		} else if m.currentReel != nil && !m.currentReel.CommentsDisabled {
 			m.resizeReel(-(config.ReelSizeStep * 4))
@@ -470,7 +478,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Send to selected friends, then close
 			m.resizeReel(config.ReelSizeStep * 4)
 			m.share.Close()
-			m.player.ClearGifs()
+			m.player.ClearImages()
 			m.shareConfirmed = true
 			go m.backend.SendShare()
 			return m, m.queueShareReset()
@@ -561,7 +569,7 @@ func (m Model) updateCommentGifs() {
 
 func (m Model) updateSharePfps() {
 	if !m.share.IsOpen() {
-		m.player.ClearGifs()
+		m.player.ClearImages()
 		return
 	}
 
@@ -583,9 +591,9 @@ func (m Model) updateSharePfps() {
 
 	slots := m.share.VisiblePfpSlots(videoWidthChars, maxCaptionLines, shareBaseRow, startCol+1)
 	if len(slots) > 0 {
-		m.player.SetVisibleGifs(slots)
+		m.player.SetVisibleImages(slots)
 	} else {
-		m.player.ClearGifs()
+		m.player.ClearImages()
 	}
 }
 
