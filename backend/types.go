@@ -160,7 +160,6 @@ const (
 
 // Event is sent from backend to frontend
 type Event struct {
-	Type    EventType
-	Message string
-	Count   int // for EventReelsCaptured
+	Type  EventType
+	Count int // for EventReelsCaptured
 }
