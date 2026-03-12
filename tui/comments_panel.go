@@ -110,6 +110,15 @@ func (cp *CommentsPanel) loadGifs() {
 	}
 }
 
+// ResizeGifs re-decodes cached comment GIFs for the current terminal cell size.
+func (cp *CommentsPanel) ResizeGifs() {
+	if !cp.isOpen || len(cp.comments) == 0 {
+		return
+	}
+	cp.gifAnims = nil
+	cp.loadGifs()
+}
+
 // Scroll moves the scroll position by the given delta
 func (cp *CommentsPanel) Scroll(delta int) {
 	newScroll := cp.scroll + delta

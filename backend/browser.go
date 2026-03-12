@@ -797,7 +797,8 @@ func (b *ChromeBackend) ToggleShareFriend(index int) {
 	)
 }
 
-// SendShare clicks the Send button in the share modal, waits, then closes the modal
+// SendShare clicks the Send button in the share modal.
+// Instagram closes the modal immediately on successful send.
 func (b *ChromeBackend) SendShare() {
 	js := `
 		(() => {
@@ -824,9 +825,6 @@ func (b *ChromeBackend) SendShare() {
 	chromedp.Run(b.ctx,
 		chromedp.Click(`[data-reels-send-btn="true"]`, chromedp.ByQuery),
 	)
-
-	time.Sleep(300 * time.Millisecond)
-	b.clickCloseButton()
 }
 
 // GetCommentsReelPK returns which reel we're fetching comments for

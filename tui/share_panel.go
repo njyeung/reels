@@ -63,10 +63,6 @@ func (sp *SharePanel) SetFriends(friends []backend.Friend) {
 // loadPfps loads profile pic images from disk
 func (sp *SharePanel) loadPfps() {
 	sp.pfps = make(map[int]*player.PFP)
-	pfpHeightPx := getPfpHeightPx()
-	if pfpHeightPx == 0 {
-		return
-	}
 
 	for i, f := range sp.friends {
 		if f.ImgPath == "" {
@@ -76,22 +72,15 @@ func (sp *SharePanel) loadPfps() {
 		if err != nil {
 			continue
 		}
-		pfp.Resize(pfpHeightPx)
+		pfp.ResizeToCells(sharePfpCellHeight)
 		sp.pfps[i] = pfp
 	}
 }
 
 // ResizePfps re-scales loaded share panel pfps for the current terminal cell size.
 func (sp *SharePanel) ResizePfps() {
-	if len(sp.pfps) == 0 {
-		return
-	}
-	pfpHeightPx := getPfpHeightPx()
-	if pfpHeightPx == 0 {
-		return
-	}
 	for _, pfp := range sp.pfps {
-		pfp.Resize(pfpHeightPx)
+		pfp.ResizeToCells(sharePfpCellHeight)
 	}
 }
 
@@ -223,14 +212,3 @@ func (sp *SharePanel) VisiblePfpSlots(width, height, baseRow, baseCol int) []pla
 	return slots
 }
 
-func getPfpHeightPx() int {
-	_, rows, _, termH, err := player.GetTerminalSize()
-	if err != nil || rows == 0 || termH == 0 {
-		return 0
-	}
-	cellH := termH / rows
-	if cellH <= 0 {
-		return 0
-	}
-	return sharePfpCellHeight * cellH
-}

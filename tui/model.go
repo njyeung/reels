@@ -29,6 +29,7 @@ type (
 	videoReadyMsg    struct{ index int }
 	musicTickMsg     struct{}
 	shareResetMsg    struct{}
+	shareSentMsg     struct{}
 )
 
 // State represents the app state
@@ -84,6 +85,7 @@ type Model struct {
 
 	// share button switches to a different emoji for 1s when clicked
 	shareConfirmed bool
+	shareSending   bool
 }
 
 type Config struct {
@@ -224,6 +226,13 @@ func (m Model) queueShareReset() tea.Cmd {
 	})
 }
 
+func (m Model) sendShare() tea.Cmd {
+	return func() tea.Msg {
+		m.backend.SendShare()
+		return shareSentMsg{}
+	}
+}
+
 // Update handles messages
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -231,6 +240,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		key := msg.String()
 		if slices.Contains(backend.GetSettings().KeysQuit, key) {
 			if m.comments.IsOpen() {
+				m.resizeReel(backend.GetSettings().ReelSizeStep * 4)
+			}
+			if m.share.IsOpen() {
 				m.resizeReel(backend.GetSettings().ReelSizeStep * 4)
 			}
 
@@ -261,6 +273,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.share.ResizePfps()
 			m.updateSharePfps()
 		} else {
+			if m.comments.IsOpen() {
+				m.comments.ResizeGifs()
+			}
 			m.updateCommentGifs()
 		}
 
@@ -331,6 +346,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.shareConfirmed = false
 		return m, nil
 
+	case shareSentMsg:
+		if m.share.IsOpen() {
+			m.resizeReel(backend.GetSettings().ReelSizeStep * 4)
+			m.share.Close()
+			m.player.ClearImages()
+		}
+		m.shareSending = false
+		m.shareConfirmed = true
+		return m, m.queueShareReset()
+
 	case reelErrorMsg:
 		m.status = statusReelError
 		return m, nil
@@ -357,6 +382,9 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case slices.Contains(config.KeysNext, key):
 		// If share panel open, move cursor down
 		if m.share.IsOpen() {
+			if m.shareSending {
+				return m, nil
+			}
 			m.share.MoveCursor(1)
 			m.updateSharePfps()
 			return m, nil
@@ -394,6 +422,9 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case slices.Contains(config.KeysPrevious, key):
 		// If share panel open, move cursor up
 		if m.share.IsOpen() {
+			if m.shareSending {
+				return m, nil
+			}
 			m.share.MoveCursor(-1)
 			m.updateSharePfps()
 			return m, nil
@@ -468,6 +499,9 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			go m.backend.OpenComments()
 		}
 	case m.share.IsOpen() && key == "enter":
+		if m.shareSending {
+			return m, nil
+		}
 		// Toggle friend selection in both TUI and browser
 		m.share.ToggleSelected()
 		go m.backend.ToggleShareFriend(m.share.CursorIndex())
@@ -475,13 +509,12 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case slices.Contains(config.KeysShare, key):
 		if m.share.IsOpen() {
-			// Send to selected friends, then close
-			m.resizeReel(config.ReelSizeStep * 4)
-			m.share.Close()
-			m.player.ClearImages()
-			m.shareConfirmed = true
-			go m.backend.SendShare()
-			return m, m.queueShareReset()
+			if m.shareSending {
+				return m, nil
+			}
+			// Send to selected friends; close UI when backend finishes.
+			m.shareSending = true
+			return m, m.sendShare()
 		} else if m.currentReel != nil && m.currentReel.CanViewerReshare && !m.comments.IsOpen() {
 			m.resizeReel(-(config.ReelSizeStep * 4))
 			m.share.Open()
