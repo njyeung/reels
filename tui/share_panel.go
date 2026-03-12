@@ -132,7 +132,7 @@ func (sp *SharePanel) View(width, height int, padding string) string {
 
 	var b strings.Builder
 
-	header := commentTitleStyle.Render("Send to")
+	header := commentTitleStyle.Render("Share To")
 	b.WriteString(padding + header + "\n")
 	availableLines := height - 2
 	if availableLines < 1 {
@@ -211,4 +211,3 @@ func (sp *SharePanel) VisiblePfpSlots(width, height, baseRow, baseCol int) []pla
 
 	return slots
 }
-
