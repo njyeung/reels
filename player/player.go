@@ -124,18 +124,13 @@ func (p *AVPlayer) SetSize(width, height int) {
 			if cols, rows, termW, termH, err := GetTerminalSize(); err == nil && cols > 0 && rows > 0 {
 				s.renderer.SetTerminalSize(cols, rows, termW, termH)
 				s.videoRow, s.videoCol = videoCenterPosition(dstW, dstH)
-				s.pfpRow, s.pfpCol = profilePicPosition(cols, rows)
 			}
-		}
-
-		if s.reelPFP != nil {
-			_ = s.reelPFP.ResizeToCells(2)
 		}
 	})
 }
 
 // Play starts playing from cache files (loops until Stop is called)
-func (p *AVPlayer) Play(videoPath, pfpPath string) error {
+func (p *AVPlayer) Play(videoPath string) error {
 	p.playMu.Lock()
 	defer p.playMu.Unlock()
 
@@ -143,7 +138,7 @@ func (p *AVPlayer) Play(videoPath, pfpPath string) error {
 	p.paused.Store(false)
 
 	for p.playing.Load() {
-		err := p.playOnce(videoPath, pfpPath)
+		err := p.playOnce(videoPath)
 		if err != nil {
 			return err
 		}
@@ -152,9 +147,9 @@ func (p *AVPlayer) Play(videoPath, pfpPath string) error {
 }
 
 // playOnce plays the media file once
-func (p *AVPlayer) playOnce(videoPath string, pfpPath string) error {
+func (p *AVPlayer) playOnce(videoPath string) error {
 	cfg := p.sessionConfig()
-	session, err := newPlaySession(videoPath, pfpPath, cfg)
+	session, err := newPlaySession(videoPath, cfg)
 	if err != nil {
 		return err
 	}

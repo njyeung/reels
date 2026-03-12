@@ -8,7 +8,13 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"unsafe"
 )
+
+type cachedImage struct {
+	ptr      uintptr
+	row, col int
+}
 
 // KittyRenderer renders images using Kitty's graphics protocol
 type KittyRenderer struct {
@@ -25,11 +31,14 @@ type KittyRenderer struct {
 	// Shared memory transmission (Linux only)
 	useShm   bool // true when /dev/shm is available; checked once at construction
 	shmIndex int  // monotonically increasing counter for unique shm names
+
+	// skip re-transmitting image (by id) data if pointer and position are unchanged
+	imageCache map[int]cachedImage
 }
 
 // NewKittyRenderer creates a new Kitty graphics renderer
 func NewKittyRenderer(out io.Writer) *KittyRenderer {
-	return &KittyRenderer{out: out}
+	return &KittyRenderer{out: out, imageCache: make(map[int]cachedImage)}
 }
 
 // SetUseShm enables or disables shared memory transmission for rendering.
@@ -58,16 +67,20 @@ func (r *KittyRenderer) SetTerminalSize(cols, rows, widthPx, heightPx int) {
 
 // RenderImage renders image data at the given cell position with the given Kitty image ID.
 // format: 24 (RGB24) or 32 (RGBA). Deletes previous image with same ID.
-// If sync is true, wraps in synchronized update sequences (use for main video frame).
-func (r *KittyRenderer) RenderImage(data []byte, format, width, height, id, row, col int, sync bool) error {
+func (r *KittyRenderer) RenderImage(data []byte, format, width, height, id, row, col int) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	var buf bytes.Buffer
-
-	if sync {
-		buf.WriteString("\x1b[?2026h")
+	// if image hasn't changed, skip the delete + retransmit and do nothing
+	if len(data) > 0 {
+		ptr := uintptr(unsafe.Pointer(&data[0]))
+		if c, ok := r.imageCache[id]; ok && c.ptr == ptr && c.row == row && c.col == col {
+			return nil
+		}
+		r.imageCache[id] = cachedImage{ptr: ptr, row: row, col: col}
 	}
+
+	var buf bytes.Buffer
 
 	// Save cursor position
 	buf.WriteString("\x1b7")
@@ -94,12 +107,23 @@ func (r *KittyRenderer) RenderImage(data []byte, format, width, height, id, row,
 	// Restore cursor position
 	buf.WriteString("\x1b8")
 
-	if sync {
-		buf.WriteString("\x1b[?2026l")
-	}
-
 	_, err := r.out.Write(buf.Bytes())
 	return err
+}
+
+// BeginSync emits the synchronized-update start escape so the terminal buffers
+// subsequent renders until EndSync is called.
+func (r *KittyRenderer) BeginSync() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.out.Write([]byte("\x1b[?2026h"))
+}
+
+// EndSync commits all buffered renders to the screen.
+func (r *KittyRenderer) EndSync() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.out.Write([]byte("\x1b[?2026l"))
 }
 
 // DeleteImage removes a specific Kitty image by ID.
@@ -107,6 +131,7 @@ func (r *KittyRenderer) DeleteImage(id int) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	delete(r.imageCache, id)
 	_, err := fmt.Fprintf(r.out, "\x1b_Ga=d,d=i,i=%d,q=2\x1b\\", id)
 	return err
 }

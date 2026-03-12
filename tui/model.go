@@ -86,6 +86,8 @@ type Model struct {
 	// share button switches to a different emoji for 1s when clicked
 	shareConfirmed bool
 	shareSending   bool
+
+	reelPFP *player.PFP
 }
 
 type Config struct {
@@ -194,14 +196,23 @@ func (m Model) checkLoginStatus() tea.Msg {
 	return loginRequiredMsg{}
 }
 
-func (m Model) startPlayback(index int) tea.Cmd {
+func (m *Model) startPlayback(index int) tea.Cmd {
 	return func() tea.Msg {
 		videoPath, pfpPath, err := m.backend.Download(index)
 		if err != nil {
 			return videoErrorMsg{err}
 		}
+		if pfpPath != "" {
+			if pfp, err := player.LoadPFP(pfpPath); err == nil {
+				pfp.ResizeToCells(2)
+				m.reelPFP = pfp
+			}
+		} else {
+			m.reelPFP = nil
+		}
+		m.updateImages()
 		go func() {
-			m.player.Play(videoPath, pfpPath)
+			m.player.Play(videoPath)
 		}()
 		return videoReadyMsg{index}
 	}
@@ -269,15 +280,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// recenter the video in the new window
 		m.player.SetSize(m.videoWidthPx, m.videoHeightPx)
+		if m.reelPFP != nil {
+			m.reelPFP.ResizeToCells(2)
+		}
 		if m.share.IsOpen() {
 			m.share.ResizePfps()
-			m.updateSharePfps()
-		} else {
-			if m.comments.IsOpen() {
-				m.comments.ResizeGifs()
-			}
+		} else if m.comments.IsOpen() {
+			m.comments.ResizeGifs()
 			m.updateCommentGifs()
 		}
+		m.updateImages()
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -325,7 +337,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case backend.EventShareFriendsLoaded:
 			if m.share.IsOpen() {
 				m.share.SetFriends(m.backend.GetShareFriends())
-				m.updateSharePfps()
+				m.updateImages()
 			}
 		}
 		return m, m.listenForEvents
@@ -386,7 +398,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.share.MoveCursor(1)
-			m.updateSharePfps()
+			m.updateImages()
 			return m, nil
 		}
 		// If comments open, scroll down in comments
@@ -426,7 +438,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			m.share.MoveCursor(-1)
-			m.updateSharePfps()
+			m.updateImages()
 			return m, nil
 		}
 		// If comments open, scroll up in comments
@@ -578,15 +590,8 @@ func (m Model) updateCommentGifs() {
 	videoWidthChars := player.VideoWidthChars
 	topPad := max(int(math.Round(float64(m.height-videoHeightChars)/2.0))-1, 0)
 	fixedLines := topPad + 1 + videoHeightChars + 1 + 2
-	maxCaptionLines := m.height - fixedLines
-	if maxCaptionLines < 1 {
-		maxCaptionLines = 1
-	}
-
-	startCol := (m.width - videoWidthChars) / 2
-	if startCol < 0 {
-		startCol = 0
-	}
+	maxCaptionLines := max(m.height-fixedLines, 1)
+	startCol := max((m.width-videoWidthChars)/2, 0)
 
 	// Base row: top padding lines + status + video + separator + username + music
 	// Terminal rows are 1-indexed
@@ -600,29 +605,29 @@ func (m Model) updateCommentGifs() {
 	}
 }
 
-func (m Model) updateSharePfps() {
-	if !m.share.IsOpen() {
-		m.player.ClearImages()
-		return
+func (m *Model) updateImages() {
+	var slots []player.ImageSlot
+
+	if m.reelPFP != nil {
+		cols, rows, _, _, err := player.GetTerminalSize()
+		if err == nil && cols > 0 && rows > 0 {
+			videoTop := max(int(math.Round(float64(rows-player.VideoHeightChars)/2.0))-1, 0)
+			row := max(videoTop+player.VideoHeightChars+2, 1)
+			col := max((cols-player.VideoWidthChars)/2+1, 1)
+			slots = append(slots, player.ImageSlot{Img: m.reelPFP, Row: row, Col: col})
+		}
 	}
 
-	videoHeightChars := player.VideoHeightChars
-	videoWidthChars := player.VideoWidthChars
-	topPad := max(int(math.Round(float64(m.height-videoHeightChars)/2.0))-1, 0)
-	fixedLines := topPad + 1 + videoHeightChars + 1 + 2
-	maxCaptionLines := m.height - fixedLines
-	if maxCaptionLines < 1 {
-		maxCaptionLines = 1
+	if m.share.IsOpen() {
+		videoHeightChars := player.VideoHeightChars
+		videoWidthChars := player.VideoWidthChars
+		topPad := max(int(math.Round(float64(m.height-videoHeightChars)/2.0))-1, 0)
+		fixedLines := max(m.height-(topPad+1+videoHeightChars+1+2), 1)
+		startCol := max((m.width-videoWidthChars)/2, 0)
+		shareBaseRow := max(topPad-1, 0) + videoHeightChars + 4 + 1
+		slots = append(slots, m.share.VisiblePfpSlots(videoWidthChars, fixedLines, shareBaseRow, startCol+1)...)
 	}
 
-	startCol := (m.width - videoWidthChars) / 2
-	if startCol < 0 {
-		startCol = 0
-	}
-
-	shareBaseRow := max(topPad-1, 0) + videoHeightChars + 4 + 1
-
-	slots := m.share.VisiblePfpSlots(videoWidthChars, maxCaptionLines, shareBaseRow, startCol+1)
 	if len(slots) > 0 {
 		m.player.SetVisibleImages(slots)
 	} else {

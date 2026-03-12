@@ -50,7 +50,7 @@ type Clock interface {
 // Renderer handles terminal graphics output
 type Renderer interface {
 	// RenderImage renders image data at a cell position with a Kitty image ID
-	RenderImage(data []byte, format, width, height, id, row, col int, sync bool) error
+	RenderImage(data []byte, format, width, height, id, row, col int) error
 
 	// DeleteImage removes a specific Kitty image by ID
 	DeleteImage(id int) error

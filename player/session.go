@@ -2,11 +2,9 @@ package player
 
 import (
 	"fmt"
-	"math"
 	"runtime"
 	"sync"
 	"time"
-	"unsafe"
 
 	"github.com/asticode/go-astiav"
 )
@@ -16,11 +14,9 @@ type playSession struct {
 	audio    *AudioPlayer
 	video    *VideoDecoder
 	renderer *KittyRenderer
-	reelPFP  *PFP
 
 	// Cell positions for image placement (1-indexed)
 	videoRow, videoCol int
-	pfpRow, pfpCol     int
 
 	audioPktCh chan *audioPacket
 	videoPktCh chan *astiav.Packet
@@ -48,7 +44,7 @@ type sessionConfig struct {
 	useShm   bool
 }
 
-func newPlaySession(url string, pfpPath string, cfg sessionConfig) (*playSession, error) {
+func newPlaySession(url string, cfg sessionConfig) (*playSession, error) {
 	demuxer, err := NewDemuxer(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open media: %w", err)
@@ -82,22 +78,13 @@ func newPlaySession(url string, pfpPath string, cfg sessionConfig) (*playSession
 
 	renderer := cfg.renderer
 
-	var videoRow, videoCol, pfpRow, pfpCol int
+	var videoRow, videoCol int
 	if renderer != nil {
 		if cols, rows, termW, termH, err := GetTerminalSize(); err == nil && cols > 0 && rows > 0 {
 			renderer.SetTerminalSize(cols, rows, termW, termH)
 			videoRow, videoCol = videoCenterPosition(dstW, dstH)
-			pfpRow, pfpCol = profilePicPosition(cols, rows)
 		}
 		renderer.SetUseShm(cfg.useShm)
-	}
-
-	var reelPFP *PFP
-	if pfpPath != "" {
-		if pfp, err := LoadPFP(pfpPath); err == nil {
-			_ = pfp.ResizeToCells(2)
-			reelPFP = pfp
-		}
 	}
 
 	session := &playSession{
@@ -105,11 +92,8 @@ func newPlaySession(url string, pfpPath string, cfg sessionConfig) (*playSession
 		audio:      audio,
 		video:      video,
 		renderer:   renderer,
-		reelPFP:    reelPFP,
 		videoRow:   videoRow,
 		videoCol:   videoCol,
-		pfpRow:     pfpRow,
-		pfpCol:     pfpCol,
 		stopCh:     make(chan struct{}),
 		videoPktCh: make(chan *astiav.Packet, 30),
 	}
@@ -242,8 +226,6 @@ func (s *playSession) demuxLoop(p *AVPlayer) {
 
 // videoRenderLoop processes video packets and renders frames
 func (s *playSession) videoRenderLoop(p *AVPlayer) error {
-	var prevPfp []byte
-
 	for pkt := range s.videoPktCh {
 		if !p.playing.Load() {
 			pkt.Free()
@@ -280,24 +262,13 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 			}
 		}
 
-		// render video
-		if err := s.renderer.RenderImage(frame.RGB, 24, frame.Width, frame.Height, VideoImageID, s.videoRow, s.videoCol, true); err != nil {
-			return fmt.Errorf("render error: %w", err)
-		}
+		// render all layers in one synchronized update to avoid flickering
+		s.renderer.BeginSync()
 
-		// render reel owner pfp
-		if s.reelPFP != nil {
-			pic, w, h := s.reelPFP.Snapshot()
-			// only render if the pfp is different
-			// underlying slice is changed when pfp bytes are changed,
-			// crackhead pointer comparison
-			shouldRender := len(pic) != len(prevPfp) || ((len(pic) > 0 && len(prevPfp) > 0) && (unsafe.Pointer(&pic[0]) != unsafe.Pointer(&prevPfp[0])))
-			if shouldRender && len(pic) > 0 && w > 0 && h > 0 {
-				if err := s.renderer.RenderImage(pic, 32, w, h, PfpImageID, s.pfpRow, s.pfpCol, false); err != nil {
-					return fmt.Errorf("profile pic render error: %w", err)
-				}
-				prevPfp = pic
-			}
+		// render video
+		if err := s.renderer.RenderImage(frame.RGB, 24, frame.Width, frame.Height, VideoImageID, s.videoRow, s.videoCol); err != nil {
+			s.renderer.EndSync()
+			return fmt.Errorf("render error: %w", err)
 		}
 
 		// render gifs
@@ -312,15 +283,15 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 				g.frameIndex = (g.frameIndex + 1) % len(g.anim.Frames)
 				g.lastAdvance = now
 			}
-			s.renderer.RenderImage(g.anim.Frames[g.frameIndex], 32, g.anim.Width, g.anim.Height, g.imageID, g.row, g.col, false)
+			s.renderer.RenderImage(g.anim.Frames[g.frameIndex], 32, g.anim.Width, g.anim.Height, g.imageID, g.row, g.col)
 		}
 		s.gifsMu.Unlock()
 
-		// render static images (e.g. share panel pfps) once per slot update
+		// render static images
 		s.imagesMu.Lock()
 		for i := range s.visibleImgs {
 			img := &s.visibleImgs[i]
-			if img.rendered || img.img == nil {
+			if img.img == nil {
 				continue
 			}
 
@@ -329,13 +300,15 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 				continue
 			}
 
-			if err := s.renderer.RenderImage(pic, 32, w, h, img.imageID, img.row, img.col, false); err != nil {
+			if err := s.renderer.RenderImage(pic, 32, w, h, img.imageID, img.row, img.col); err != nil {
 				s.imagesMu.Unlock()
+				s.renderer.EndSync()
 				return fmt.Errorf("static image render error: %w", err)
 			}
-			img.rendered = true
 		}
 		s.imagesMu.Unlock()
+
+		s.renderer.EndSync()
 	}
 
 	return nil
@@ -377,25 +350,6 @@ func videoCenterPosition(videoWidthPx, videoHeightPx int) (row, col int) {
 	}
 	if row < 1 {
 		row = 1
-	}
-	return row, col
-}
-
-// profilePicPosition computes the 1-indexed (row, col) for the profile picture.
-// It is placed below the video, offset to the left.
-func profilePicPosition(termCols, termRows int) (row, col int) {
-	const (
-		offsetCols = 1
-		offsetRows = 2 // rows below the video
-	)
-	videoTop := max(int(math.Round(float64(termRows-VideoHeightChars)/2.0)-1), 0)
-	row = videoTop + VideoHeightChars + offsetRows
-	col = (termCols-VideoWidthChars)/2 + offsetCols
-	if row < 1 {
-		row = 1
-	}
-	if col < 1 {
-		col = 1
 	}
 	return row, col
 }
@@ -462,15 +416,14 @@ func (s *playSession) setVisibleImages(slots []ImageSlot) {
 			continue
 		}
 		newImgs = append(newImgs, visibleImage{
-			img:      slot.Img,
-			row:      slot.Row,
-			col:      slot.Col,
-			imageID:  StaticImageID + i,
-			rendered: false,
+			img:     slot.Img,
+			row:     slot.Row,
+			col:     slot.Col,
+			imageID: StaticImageID + i,
 		})
 	}
 
-	// Delete all old images (positions may have changed due to scrolling)
+	// Delete all old images
 	for _, img := range s.visibleImgs {
 		s.renderer.DeleteImage(img.imageID)
 	}

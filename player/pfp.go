@@ -31,7 +31,6 @@ type visibleImage struct {
 	img      *PFP
 	row, col int
 	imageID  int
-	rendered bool
 }
 
 // LoadPFP decodes a profile image from disk.
