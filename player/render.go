@@ -8,13 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"unsafe"
 )
-
-type cachedImage struct {
-	ptr      uintptr
-	row, col int
-}
 
 // KittyRenderer renders images using Kitty's graphics protocol
 type KittyRenderer struct {
@@ -31,14 +25,11 @@ type KittyRenderer struct {
 	// Shared memory transmission (Linux only)
 	useShm   bool // true when /dev/shm is available; checked once at construction
 	shmIndex int  // monotonically increasing counter for unique shm names
-
-	// skip re-transmitting image (by id) data if pointer and position are unchanged
-	imageCache map[int]cachedImage
 }
 
 // NewKittyRenderer creates a new Kitty graphics renderer
 func NewKittyRenderer(out io.Writer) *KittyRenderer {
-	return &KittyRenderer{out: out, imageCache: make(map[int]cachedImage)}
+	return &KittyRenderer{out: out}
 }
 
 // SetUseShm enables or disables shared memory transmission for rendering.
@@ -70,15 +61,6 @@ func (r *KittyRenderer) SetTerminalSize(cols, rows, widthPx, heightPx int) {
 func (r *KittyRenderer) RenderImage(data []byte, format, width, height, id, row, col int) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-
-	// if image hasn't changed, skip the delete + retransmit and do nothing
-	if len(data) > 0 {
-		ptr := uintptr(unsafe.Pointer(&data[0]))
-		if c, ok := r.imageCache[id]; ok && c.ptr == ptr && c.row == row && c.col == col {
-			return nil
-		}
-		r.imageCache[id] = cachedImage{ptr: ptr, row: row, col: col}
-	}
 
 	var buf bytes.Buffer
 
@@ -131,7 +113,6 @@ func (r *KittyRenderer) DeleteImage(id int) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	delete(r.imageCache, id)
 	_, err := fmt.Fprintf(r.out, "\x1b_Ga=d,d=i,i=%d,q=2\x1b\\", id)
 	return err
 }

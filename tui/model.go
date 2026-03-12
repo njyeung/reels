@@ -363,6 +363,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.resizeReel(backend.GetSettings().ReelSizeStep * 4)
 			m.share.Close()
 			m.player.ClearImages()
+			m.updateImages()
 		}
 		m.shareSending = false
 		m.shareConfirmed = true
@@ -494,12 +495,14 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.comments.Close()
 			m.player.ClearGifs()
 			m.player.ClearImages()
+			m.updateImages()
 			go m.backend.CloseComments()
 		} else if m.currentReel != nil && !m.currentReel.CommentsDisabled {
 			m.resizeReel(-(config.ReelSizeStep * 4))
 
 			// Open comments for current reel
 			m.comments.Open(m.currentReel.PK)
+			m.updateImages()
 
 			// Use cached comments if available
 			if m.currentReel.Comments != nil {
@@ -530,6 +533,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if m.currentReel != nil && m.currentReel.CanViewerReshare && !m.comments.IsOpen() {
 			m.resizeReel(-(config.ReelSizeStep * 4))
 			m.share.Open()
+			m.updateImages()
 			go m.backend.OpenSharePanel()
 		}
 	case slices.Contains(config.KeysNavbar, key):
@@ -541,9 +545,11 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case slices.Contains(config.KeysReelSizeInc, key):
 		m.resizeReel(config.ReelSizeStep)
+		m.updateImages()
 
 	case slices.Contains(config.KeysReelSizeDec, key):
 		m.resizeReel(-config.ReelSizeStep)
+		m.updateImages()
 
 	case slices.Contains(config.KeysVolUp, key):
 		vol := min(m.player.Volume()+0.1, 1.0)
@@ -608,6 +614,7 @@ func (m Model) updateCommentGifs() {
 func (m *Model) updateImages() {
 	var slots []player.ImageSlot
 
+	// reel's user's pfp
 	if m.reelPFP != nil {
 		cols, rows, _, _, err := player.GetTerminalSize()
 		if err == nil && cols > 0 && rows > 0 {
@@ -618,6 +625,7 @@ func (m *Model) updateImages() {
 		}
 	}
 
+	// share to friends pfps
 	if m.share.IsOpen() {
 		videoHeightChars := player.VideoHeightChars
 		videoWidthChars := player.VideoWidthChars
