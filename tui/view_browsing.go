@@ -135,8 +135,10 @@ func (m Model) viewBrowsing() string {
 			b.WriteString("\n")
 		}
 
-		// Comments view (replaces caption and navbar when open)
-		if m.comments.IsOpen() {
+		// Panel views (replace caption and navbar when open)
+		if m.share.IsOpen() {
+			b.WriteString(m.share.View(videoWidthChars, maxCaptionLines, padding))
+		} else if m.comments.IsOpen() {
 			b.WriteString(m.comments.View(videoWidthChars, maxCaptionLines, padding))
 		} else {
 			// Normal caption view
@@ -209,40 +211,3 @@ func formatLikeCount(count int) string {
 	return fmt.Sprintf("%d", count)
 }
 
-// wrapByWidth wraps text to fit within maxWidth display columns
-func wrapByWidth(text string, maxWidth int) []string {
-	var lines []string
-	var currentLine strings.Builder
-	currentWidth := 0
-
-	for _, r := range text {
-		rw := runewidth.RuneWidth(r)
-		if currentWidth+rw > maxWidth {
-			lines = append(lines, currentLine.String())
-			currentLine.Reset()
-			currentWidth = 0
-		}
-		currentLine.WriteRune(r)
-		currentWidth += rw
-	}
-	if currentLine.Len() > 0 {
-		lines = append(lines, currentLine.String())
-	}
-	return lines
-}
-
-// truncateByWidth truncates text to fit within maxWidth display columns
-func truncateByWidth(text string, maxWidth int) string {
-	var result strings.Builder
-	currentWidth := 0
-
-	for _, r := range text {
-		rw := runewidth.RuneWidth(r)
-		if currentWidth+rw > maxWidth {
-			break
-		}
-		result.WriteRune(r)
-		currentWidth += rw
-	}
-	return result.String()
-}

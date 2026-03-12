@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"io"
 	"math"
 	"os/exec"
@@ -74,6 +73,9 @@ type Model struct {
 	// Comments panel encapsulates all comments UI state
 	comments *CommentsPanel
 
+	// Share panel encapsulates the share/DM friend selection UI
+	share *SharePanel
+
 	flags Config
 
 	loginSuccess bool
@@ -119,6 +121,7 @@ func NewModel(userDataDir, cacheDir, configDir string, output io.Writer, flags C
 		videoWidthPx:  playerWidth,
 		videoHeightPx: playerHeight,
 		comments:      NewCommentsPanel(),
+		share:         NewSharePanel(),
 		flags:         flags,
 		showNavbar:    settings.ShowNavbar,
 	}
@@ -299,6 +302,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.updateCommentGifs()
 				}
 			}
+		case backend.EventShareFriendsLoaded:
+			if m.share.IsOpen() {
+				m.share.SetFriends(m.backend.GetShareFriends())
+				m.updateSharePfps()
+			}
 		}
 		return m, m.listenForEvents
 
@@ -342,12 +350,18 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch {
 	case slices.Contains(config.KeysNext, key):
+		// If share panel open, move cursor down
+		if m.share.IsOpen() {
+			m.share.MoveCursor(1)
+			m.updateSharePfps()
+			return m, nil
+		}
 		// If comments open, scroll down in comments
 		if m.comments.IsOpen() {
 			m.comments.Scroll(1)
 			m.updateCommentGifs()
-			// Fetch more comments when scrolled to bottom
-			if m.comments.IsAtBottom() && !m.comments.loading {
+			// Fetch more comments when scrolled to bottom (if more exist)
+			if m.currentReel != nil && m.comments.IsAtBottom() && !m.comments.loading && len(m.currentReel.Comments) < m.currentReel.CommentCount {
 				m.comments.SetLoading(true)
 				go m.backend.FetchMoreComments()
 			}
@@ -372,6 +386,12 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case slices.Contains(config.KeysPrevious, key):
+		// If share panel open, move cursor up
+		if m.share.IsOpen() {
+			m.share.MoveCursor(-1)
+			m.updateSharePfps()
+			return m, nil
+		}
 		// If comments open, scroll up in comments
 		if m.comments.IsOpen() {
 			m.comments.Scroll(-1)
@@ -439,13 +459,25 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Always open in browser (for Instagram's algorithm)
 			go m.backend.OpenComments()
 		}
-	case slices.Contains(config.KeysShare, key):
-		if m.currentReel != nil && m.currentReel.CanViewerReshare {
-			url := fmt.Sprintf("https://instagram.com/reels/%s/", m.currentReel.Code)
-			go copyToClipboard(url)
+	case m.share.IsOpen() && key == "enter":
+		// Toggle friend selection in both TUI and browser
+		m.share.ToggleSelected()
+		go m.backend.ToggleShareFriend(m.share.CursorIndex())
+		return m, nil
 
+	case slices.Contains(config.KeysShare, key):
+		if m.share.IsOpen() {
+			// Send to selected friends, then close
+			m.resizeReel(config.ReelSizeStep * 4)
+			m.share.Close()
+			m.player.ClearGifs()
 			m.shareConfirmed = true
+			go m.backend.SendShare()
 			return m, m.queueShareReset()
+		} else if m.currentReel != nil && m.currentReel.CanViewerReshare && !m.comments.IsOpen() {
+			m.resizeReel(-(config.ReelSizeStep * 4))
+			m.share.Open()
+			go m.backend.OpenSharePanel()
 		}
 	case slices.Contains(config.KeysNavbar, key):
 		showNavbar, err := m.backend.ToggleNavbar()
@@ -520,6 +552,36 @@ func (m Model) updateCommentGifs() {
 	commentsBaseRow := max(topPad-1, 0) + videoHeightChars + 4 + 1
 
 	slots := m.comments.VisibleGifSlots(videoWidthChars, maxCaptionLines, commentsBaseRow, startCol+1)
+	if len(slots) > 0 {
+		m.player.SetVisibleGifs(slots)
+	} else {
+		m.player.ClearGifs()
+	}
+}
+
+func (m Model) updateSharePfps() {
+	if !m.share.IsOpen() {
+		m.player.ClearGifs()
+		return
+	}
+
+	videoHeightChars := player.VideoHeightChars
+	videoWidthChars := player.VideoWidthChars
+	topPad := max(int(math.Round(float64(m.height-videoHeightChars)/2.0))-1, 0)
+	fixedLines := topPad + 1 + videoHeightChars + 1 + 2
+	maxCaptionLines := m.height - fixedLines
+	if maxCaptionLines < 1 {
+		maxCaptionLines = 1
+	}
+
+	startCol := (m.width - videoWidthChars) / 2
+	if startCol < 0 {
+		startCol = 0
+	}
+
+	shareBaseRow := max(topPad-1, 0) + videoHeightChars + 4 + 1
+
+	slots := m.share.VisiblePfpSlots(videoWidthChars, maxCaptionLines, shareBaseRow, startCol+1)
 	if len(slots) > 0 {
 		m.player.SetVisibleGifs(slots)
 	} else {

@@ -18,6 +18,9 @@ type ChromeBackend struct {
 	// comments encapsulates all comment-related state
 	comments *CommentsState
 
+	// share modal state
+	shareFriends []Friend
+
 	syncMu     sync.Mutex
 	syncCancel context.CancelFunc
 
@@ -73,6 +76,19 @@ type Backend interface {
 	// GetCommentsReelPK returns which reel we're fetching comments for
 	GetCommentsReelPK() string
 
+	// OpenSharePanel clicks the share button to open Instagram's share modal,
+	// scrapes the friend list from the DOM, and emits EventShareFriendsLoaded.
+	OpenSharePanel()
+
+	// GetShareFriends returns the friend list scraped from the share modal
+	GetShareFriends() []Friend
+
+	// ToggleShareFriend clicks the friend at the given index in the share modal
+	ToggleShareFriend(index int)
+
+	// SendShare clicks the Send button in the share modal and closes it
+	SendShare()
+
 	// OpenComments opens the current reel's comment section
 	OpenComments()
 
@@ -112,20 +128,21 @@ type MusicInfo struct {
 
 // Reel represents a single Instagram reel with metadata
 type Reel struct {
-	PK               string
-	Code             string
-	VideoURL         string
-	ProfilePicUrl    string
-	Username         string
-	Caption          string
-	Liked            bool
-	LikeCount        int
-	IsVerified       bool
-	CommentCount     int
-	CommentsDisabled bool
-	Music            *MusicInfo
-	CanViewerReshare bool
-	Comments         []Comment // cached comments (nil = not fetched yet)
+	PK                 string
+	Code               string
+	VideoURL           string
+	ProfilePicUrl      string
+	Username           string
+	Caption            string
+	Liked              bool
+	LikeCount          int
+	IsVerified         bool
+	CommentCount       int
+	CommentsDisabled   bool
+	Music              *MusicInfo
+	CanViewerReshare   bool
+	Comments           []Comment           // cached comments (nil = not fetched yet)
+	CommentsPagination *CommentsPagination // cached pagination state for resuming
 }
 
 // ReelInfo includes the reel data plus its position in the feed
@@ -133,6 +150,15 @@ type ReelInfo struct {
 	Index int `json:"index"`
 	Total int `json:"total"`
 	Reel
+}
+
+// CommentsPagination holds the resumable pagination state for a reel's comments.
+// Stored on the Reel struct so pagination can be restored after navigating away and back.
+type CommentsPagination struct {
+	Cursor            string
+	HasNextPage       bool
+	RequestTemplate   string
+	PaginationEnabled bool
 }
 
 type Comment struct {
@@ -149,11 +175,19 @@ type Comment struct {
 	GifPath           string // local path to downloaded GIF file
 }
 
+// Friend represents a user shown in the share modal's friend list
+type Friend struct {
+	Name    string // display name from the DOM
+	ImgSrc  string // profile pic URL from the DOM
+	ImgPath string // local path to downloaded profile pic
+}
+
 // EventType represents different backend events
 type EventType int
 
 const (
 	EventCommentsCaptured EventType = iota
+	EventShareFriendsLoaded
 	EventSyncComplete
 	EventError
 )
