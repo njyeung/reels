@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"math"
 	"strings"
 
 	"github.com/mattn/go-runewidth"
@@ -21,24 +20,17 @@ func (m Model) viewBrowsing() string {
 
 	var b strings.Builder
 
-	// Center the fixed-size video area
-	startCol := (m.width - videoWidthChars) / 2
+	// Layout: (videoRow-2) blank lines + status(1) + video(videoHeightChars) + separator(1) + username(1) + music(1) + caption
+	startCol := m.videoCol - 1
 	if startCol < 0 {
 		startCol = 0
 	}
 
 	padding := strings.Repeat(" ", startCol)
 	pfpPadding := strings.Repeat(" ", 5)
-	topPad := max(int(math.Round(float64(m.height-videoHeightChars)/2.0))-1, 0)
+	topPad := m.videoRow - 2
 
-	// Calculate lines available for caption area
-	// Layout: topPad + status(1) + video(videoHeightChars) + separator(1) + username(2) + caption
-	fixedLines := topPad + 1 + videoHeightChars + 1 + 2
-
-	maxCaptionLines := m.height - fixedLines
-	if maxCaptionLines < 1 {
-		maxCaptionLines = 1
-	}
+	maxCaptionLines := max(m.height-(topPad+1+videoHeightChars+1+2), 1)
 
 	b.WriteString(strings.Repeat("\n", max(topPad-1, 0)))
 
@@ -172,8 +164,8 @@ func (m Model) viewBrowsing() string {
 
 				config := backend.GetSettings()
 				nav1 := navStyle.Render(displayKeys(config.KeysPrevious) + ": prev  " + displayKeys(config.KeysNext) + ": next  " + displayKeys(config.KeysMute) + ": mute  " + displayKeys(config.KeysComments) + ": comments")
-				nav2 := navStyle.Render(displayKeys(config.KeysPause) + ": pause  " + displayKeys(config.KeysLike) + ": like  " + displayKeys(config.KeysShare) + ": share  " + displayKeys(config.KeysQuit) + ": quit")
-				nav3 := navStyle.Render(displayKeys(config.KeysReelSizeInc) + "/" + displayKeys(config.KeysReelSizeDec) + ": resize  " + displayKeys(config.KeysNavbar) + ": expand captions")
+				nav2 := navStyle.Render(displayKeys(config.KeysPause) + ": pause  " + displayKeys(config.KeysLike) + displayKeys(config.KeysQuit) + ": quit")
+				nav3 := navStyle.Render(displayKeys(config.KeysReelSizeInc) + "/" + displayKeys(config.KeysReelSizeDec) + ": resize  " + ": like  " + displayKeys(config.KeysShare) + ": share  " + displayKeys(config.KeysNavbar) + ": expand captions")
 				b.WriteString(padding + nav1 + "\n")
 				b.WriteString(padding + nav2 + "\n")
 				b.WriteString(padding + nav3 + "\n")
@@ -210,4 +202,3 @@ func formatLikeCount(count int) string {
 	}
 	return fmt.Sprintf("%d", count)
 }
-

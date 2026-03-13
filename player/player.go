@@ -33,6 +33,9 @@ type AVPlayer struct {
 
 	imageSlotsMu sync.Mutex
 	imageSlots   []ImageSlot
+
+	videoRow int // 1-indexed terminal row where the video starts (set by TUI)
+	videoCol int // 1-indexed terminal col where the video starts (set by TUI)
 }
 
 func (p *AVPlayer) sessionConfig() sessionConfig {
@@ -51,6 +54,8 @@ func (p *AVPlayer) sessionConfig() sessionConfig {
 		muted:    p.muted.Load(),
 		volume:   p.volume.Load().(float64),
 		useShm:   p.useShm,
+		videoRow: p.videoRow,
+		videoCol: p.videoCol,
 	}
 }
 
@@ -119,13 +124,26 @@ func (p *AVPlayer) SetSize(width, height int) {
 		dstW, dstH := fitSize(srcW, srcH, width, height)
 		s.video.SetSize(dstW, dstH)
 
-		// Update renderer positioning
+		// Update renderer terminal metrics
 		if s.renderer != nil {
 			if cols, rows, termW, termH, err := GetTerminalSize(); err == nil && cols > 0 && rows > 0 {
 				s.renderer.SetTerminalSize(cols, rows, termW, termH)
-				s.videoRow, s.videoCol = videoCenterPosition(dstW, dstH)
 			}
 		}
+	})
+}
+
+// SetVideoPosition sets the 1-indexed terminal (row, col) where the video is rendered.
+// The TUI is the source of truth for video position and calls this whenever the layout changes.
+func (p *AVPlayer) SetVideoPosition(row, col int) {
+	p.configMu.Lock()
+	p.videoRow = row
+	p.videoCol = col
+	p.configMu.Unlock()
+
+	p.withSession(func(s *playSession) {
+		s.videoRow = row
+		s.videoCol = col
 	})
 }
 

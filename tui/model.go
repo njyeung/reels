@@ -2,7 +2,6 @@ package tui
 
 import (
 	"io"
-	"math"
 	"os/exec"
 	goruntime "runtime"
 	"slices"
@@ -26,10 +25,13 @@ type (
 	reelErrorMsg     struct{ err error }
 	backendEventMsg  backend.Event
 	videoErrorMsg    struct{ err error }
-	videoReadyMsg    struct{ index int }
-	musicTickMsg     struct{}
-	shareResetMsg    struct{}
-	shareSentMsg     struct{}
+	videoReadyMsg    struct {
+		index int
+		pfp   *player.PFP
+	}
+	musicTickMsg  struct{}
+	shareResetMsg struct{}
+	shareSentMsg  struct{}
 )
 
 // State represents the app state
@@ -68,6 +70,11 @@ type Model struct {
 	// Video pixel dimensions
 	videoWidthPx  int
 	videoHeightPx int
+
+	// Video position in terminal cells (1-indexed). TUI is source of truth;
+	// updated via updateVideoPosition and forwarded to the player.
+	videoRow int
+	videoCol int
 
 	showNavbar bool
 
@@ -202,19 +209,17 @@ func (m *Model) startPlayback(index int) tea.Cmd {
 		if err != nil {
 			return videoErrorMsg{err}
 		}
+		var pfp *player.PFP
 		if pfpPath != "" {
-			if pfp, err := player.LoadPFP(pfpPath); err == nil {
-				pfp.ResizeToCells(2)
-				m.reelPFP = pfp
+			if loaded, err := player.LoadPFP(pfpPath); err == nil {
+				loaded.ResizeToCells(2)
+				pfp = loaded
 			}
-		} else {
-			m.reelPFP = nil
 		}
-		m.updateImages()
 		go func() {
 			m.player.Play(videoPath)
 		}()
-		return videoReadyMsg{index}
+		return videoReadyMsg{index: index, pfp: pfp}
 	}
 }
 
@@ -275,11 +280,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 
-		// recompute video row and col size for tui layout
+		// recompute video character dimensions and re-center
 		player.ComputeVideoCharacterDimensions(m.videoWidthPx, m.videoHeightPx)
-
-		// recenter the video in the new window
 		m.player.SetSize(m.videoWidthPx, m.videoHeightPx)
+		m.updateVideoPosition()
 		if m.reelPFP != nil {
 			m.reelPFP.ResizeToCells(2)
 		}
@@ -375,6 +379,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case videoReadyMsg:
 		m.status = statusNone
+		m.reelPFP = msg.pfp
+		m.updateVideoPosition()
+		m.updateImages()
 		go m.prefetch(msg.index + 1)
 		return m, nil
 
@@ -423,6 +430,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 				m.player.ClearGifs()
 				m.player.ClearImages()
+				m.reelPFP = nil
 				m.comments.Clear()
 				if info, err := m.backend.GetReel(nextIndex); err == nil {
 					m.currentReel = info
@@ -458,6 +466,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 				m.player.ClearGifs()
 				m.player.ClearImages()
+				m.reelPFP = nil
 				m.comments.Clear()
 				if info, err := m.backend.GetReel(prevIndex); err == nil {
 					m.currentReel = info
@@ -482,7 +491,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case slices.Contains(config.KeysLike, key):
-		if !m.comments.IsOpen() && m.currentReel != nil {
+		if !m.comments.IsOpen() && !m.share.IsOpen() && m.currentReel != nil {
 			m.currentReel.Liked = !m.currentReel.Liked
 			go m.backend.ToggleLike()
 		}
@@ -497,7 +506,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.player.ClearImages()
 			m.updateImages()
 			go m.backend.CloseComments()
-		} else if m.currentReel != nil && !m.currentReel.CommentsDisabled {
+		} else if m.currentReel != nil && !m.currentReel.CommentsDisabled && !m.share.IsOpen() {
 			m.resizeReel(-(config.ReelSizeStep * 4))
 
 			// Open comments for current reel
@@ -582,6 +591,7 @@ func (m *Model) resizeReel(delta int) {
 	m.videoHeightPx = newH * settings.RetinaScale
 	player.ComputeVideoCharacterDimensions(m.videoWidthPx, m.videoHeightPx)
 	m.player.SetSize(m.videoWidthPx, m.videoHeightPx)
+	m.updateVideoPosition()
 }
 
 // updateCommentGifs recomputes visible GIF slots and passes them to the player.
@@ -594,16 +604,11 @@ func (m Model) updateCommentGifs() {
 
 	videoHeightChars := player.VideoHeightChars
 	videoWidthChars := player.VideoWidthChars
-	topPad := max(int(math.Round(float64(m.height-videoHeightChars)/2.0))-1, 0)
-	fixedLines := topPad + 1 + videoHeightChars + 1 + 2
-	maxCaptionLines := max(m.height-fixedLines, 1)
-	startCol := max((m.width-videoWidthChars)/2, 0)
+	// panel content starts after: separator + username + music (2 rows below video bottom)
+	commentsBaseRow := m.videoRow + videoHeightChars + 2
+	maxCaptionLines := max(m.height-(m.videoRow+videoHeightChars+2), 1)
 
-	// Base row: top padding lines + status + video + separator + username + music
-	// Terminal rows are 1-indexed
-	commentsBaseRow := max(topPad-1, 0) + videoHeightChars + 4 + 1
-
-	slots := m.comments.VisibleGifSlots(videoWidthChars, maxCaptionLines, commentsBaseRow, startCol+1)
+	slots := m.comments.VisibleGifSlots(videoWidthChars, maxCaptionLines, commentsBaseRow, m.videoCol)
 	if len(slots) > 0 {
 		m.player.SetVisibleGifs(slots)
 	} else {
@@ -611,29 +616,34 @@ func (m Model) updateCommentGifs() {
 	}
 }
 
+// updateVideoPosition computes the centered video position and stores it on the model,
+// then forwards it to the player. Call this after any layout change (resize, new video, resizeReel).
+// Uses pixel dimensions (via ComputeVideoCenterPosition) so the player renders at the right cell.
+// Note: VideoHeightChars = videoRows+1, so the player row is 1 below the TUI text placeholder start —
+// this is an intentional 1-row gap between the status line and the video image.
+func (m *Model) updateVideoPosition() {
+	row, col := player.ComputeVideoCenterPosition(m.videoWidthPx, m.videoHeightPx)
+	m.videoRow = row
+	m.videoCol = col
+	m.player.SetVideoPosition(row, col)
+}
+
 func (m *Model) updateImages() {
 	var slots []player.ImageSlot
 
-	// reel's user's pfp
+	// reel's user's pfp — username row (1 after separator)
 	if m.reelPFP != nil {
-		cols, rows, _, _, err := player.GetTerminalSize()
-		if err == nil && cols > 0 && rows > 0 {
-			videoTop := max(int(math.Round(float64(rows-player.VideoHeightChars)/2.0))-1, 0)
-			row := max(videoTop+player.VideoHeightChars+2, 1)
-			col := max((cols-player.VideoWidthChars)/2+1, 1)
-			slots = append(slots, player.ImageSlot{Img: m.reelPFP, Row: row, Col: col})
-		}
+		row := max(m.videoRow+player.VideoHeightChars, 1)
+		slots = append(slots, player.ImageSlot{Img: m.reelPFP, Row: row, Col: m.videoCol})
 	}
 
 	// share to friends pfps
 	if m.share.IsOpen() {
 		videoHeightChars := player.VideoHeightChars
 		videoWidthChars := player.VideoWidthChars
-		topPad := max(int(math.Round(float64(m.height-videoHeightChars)/2.0))-1, 0)
-		fixedLines := max(m.height-(topPad+1+videoHeightChars+1+2), 1)
-		startCol := max((m.width-videoWidthChars)/2, 0)
-		shareBaseRow := max(topPad-1, 0) + videoHeightChars + 4 + 1
-		slots = append(slots, m.share.VisiblePfpSlots(videoWidthChars, fixedLines, shareBaseRow, startCol+1)...)
+		fixedLines := max(m.height-(m.videoRow+videoHeightChars+2), 1)
+		shareBaseRow := m.videoRow + videoHeightChars + 2
+		slots = append(slots, m.share.VisiblePfpSlots(videoWidthChars, fixedLines, shareBaseRow, m.videoCol)...)
 	}
 
 	if len(slots) > 0 {

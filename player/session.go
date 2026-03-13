@@ -38,6 +38,8 @@ type audioPacket struct {
 type sessionConfig struct {
 	width    int
 	height   int
+	videoRow int
+	videoCol int
 	renderer *KittyRenderer
 	muted    bool
 	volume   float64
@@ -78,11 +80,9 @@ func newPlaySession(url string, cfg sessionConfig) (*playSession, error) {
 
 	renderer := cfg.renderer
 
-	var videoRow, videoCol int
 	if renderer != nil {
 		if cols, rows, termW, termH, err := GetTerminalSize(); err == nil && cols > 0 && rows > 0 {
 			renderer.SetTerminalSize(cols, rows, termW, termH)
-			videoRow, videoCol = videoCenterPosition(dstW, dstH)
 		}
 		renderer.SetUseShm(cfg.useShm)
 	}
@@ -92,8 +92,8 @@ func newPlaySession(url string, cfg sessionConfig) (*playSession, error) {
 		audio:      audio,
 		video:      video,
 		renderer:   renderer,
-		videoRow:   videoRow,
-		videoCol:   videoCol,
+		videoRow:   cfg.videoRow,
+		videoCol:   cfg.videoCol,
 		stopCh:     make(chan struct{}),
 		videoPktCh: make(chan *astiav.Packet, 30),
 	}
@@ -329,30 +329,6 @@ func fitSize(srcW, srcH, maxW, maxH int) (int, int) {
 	return int(float64(maxH) * srcAspect), maxH
 }
 
-// videoCenterPosition computes the 1-indexed (row, col) to center the video in the terminal.
-// Uses the actual video pixel dimensions so videos with non-standard aspect ratios are centered correctly.
-func videoCenterPosition(videoWidthPx, videoHeightPx int) (row, col int) {
-	cols, rows, termW, termH, err := GetTerminalSize()
-	if err != nil || cols == 0 || rows == 0 || termW == 0 || termH == 0 {
-		return 1, 1
-	}
-
-	cellW := termW / cols
-	cellH := termH / rows
-
-	videoCols := (videoWidthPx + cellW - 1) / cellW
-	videoRows := (videoHeightPx + cellH - 1) / cellH
-
-	col = (cols-videoCols)/2 + 1
-	row = (rows-videoRows)/2 + 1
-	if col < 1 {
-		col = 1
-	}
-	if row < 1 {
-		row = 1
-	}
-	return row, col
-}
 
 func (s *playSession) setVisibleGifs(slots []GifSlot) {
 	s.gifsMu.Lock()
