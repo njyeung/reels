@@ -25,6 +25,8 @@ type KittyRenderer struct {
 	// Shared memory transmission (Linux only)
 	useShm   bool // true when /dev/shm is available; checked once at construction
 	shmIndex int  // monotonically increasing counter for unique shm names
+
+	imgCache map[int]struct{}
 }
 
 // NewKittyRenderer creates a new Kitty graphics renderer
