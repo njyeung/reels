@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"os"
 	"path/filepath"
@@ -26,7 +27,17 @@ type KittyRenderer struct {
 	useShm   bool // true when /dev/shm is available; checked once at construction
 	shmIndex int  // monotonically increasing counter for unique shm names
 
-	imgCache map[int]struct{}
+	renderCache map[int]renderCacheEntry
+}
+
+type renderCacheEntry struct {
+	dataChecksum uint32
+	dataLen      int
+	format       int
+	width        int
+	height       int
+	row          int
+	col          int
 }
 
 // NewKittyRenderer creates a new Kitty graphics renderer
@@ -63,6 +74,24 @@ func (r *KittyRenderer) SetTerminalSize(cols, rows, widthPx, heightPx int) {
 func (r *KittyRenderer) RenderImage(data []byte, format, width, height, id, row, col int) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	entry := renderCacheEntry{
+		dataChecksum: crc32.ChecksumIEEE(data),
+		dataLen:      len(data),
+		format:       format,
+		width:        width,
+		height:       height,
+		row:          row,
+		col:          col,
+	}
+	if r.renderCache != nil {
+		if prev, ok := r.renderCache[id]; ok && prev == entry {
+			return nil
+		}
+	} else {
+		r.renderCache = make(map[int]renderCacheEntry)
+	}
+	r.renderCache[id] = entry
 
 	var buf bytes.Buffer
 
@@ -115,6 +144,7 @@ func (r *KittyRenderer) DeleteImage(id int) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	delete(r.renderCache, id)
 	_, err := fmt.Fprintf(r.out, "\x1b_Ga=d,d=i,i=%d,q=2\x1b\\", id)
 	return err
 }
