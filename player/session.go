@@ -279,6 +279,8 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 		// render all layers in one synchronized update to avoid flickering
 		s.renderer.BeginSync()
 
+		keep := map[int]bool{VideoImageID: true}
+
 		// render video
 		if err := s.renderer.RenderImage(frame.RGB, 24, frame.Width, frame.Height, VideoImageID, s.videoRow, s.videoCol); err != nil {
 			s.renderer.EndSync()
@@ -286,8 +288,6 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 		}
 
 		// render gifs
-		keep := map[int]bool{VideoImageID: true}
-
 		s.gifsMu.Lock()
 		now := time.Now()
 		for i := range s.visibleGifs {
