@@ -30,6 +30,12 @@ type AVPlayer struct {
 
 	gifSlotsMu sync.Mutex
 	gifSlots   []GifSlot
+
+	imageSlotsMu sync.Mutex
+	imageSlots   []ImageSlot
+
+	videoRow int // 1-indexed terminal row where the video starts (set by TUI)
+	videoCol int // 1-indexed terminal col where the video starts (set by TUI)
 }
 
 func (p *AVPlayer) sessionConfig() sessionConfig {
@@ -48,6 +54,8 @@ func (p *AVPlayer) sessionConfig() sessionConfig {
 		muted:    p.muted.Load(),
 		volume:   p.volume.Load().(float64),
 		useShm:   p.useShm,
+		videoRow: p.videoRow,
+		videoCol: p.videoCol,
 	}
 }
 
@@ -116,23 +124,31 @@ func (p *AVPlayer) SetSize(width, height int) {
 		dstW, dstH := fitSize(srcW, srcH, width, height)
 		s.video.SetSize(dstW, dstH)
 
-		// Update renderer positioning
+		// Update renderer terminal metrics
 		if s.renderer != nil {
 			if cols, rows, termW, termH, err := GetTerminalSize(); err == nil && cols > 0 && rows > 0 {
 				s.renderer.SetTerminalSize(cols, rows, termW, termH)
-				s.videoRow, s.videoCol = videoCenterPosition(dstW, dstH)
-				s.pfpRow, s.pfpCol = profilePicPosition(cols, rows)
 			}
-		}
-
-		if s.overlay != nil {
-			s.overlay.ResizeOverlay()
 		}
 	})
 }
 
+// SetVideoPosition sets the 1-indexed terminal (row, col) where the video is rendered.
+// The TUI is the source of truth for video position and calls this whenever the layout changes.
+func (p *AVPlayer) SetVideoPosition(row, col int) {
+	p.configMu.Lock()
+	p.videoRow = row
+	p.videoCol = col + 1
+	p.configMu.Unlock()
+
+	p.withSession(func(s *playSession) {
+		s.videoRow = row
+		s.videoCol = col + 1
+	})
+}
+
 // Play starts playing from cache files (loops until Stop is called)
-func (p *AVPlayer) Play(videoPath, pfpPath string) error {
+func (p *AVPlayer) Play(videoPath string) error {
 	p.playMu.Lock()
 	defer p.playMu.Unlock()
 
@@ -140,7 +156,7 @@ func (p *AVPlayer) Play(videoPath, pfpPath string) error {
 	p.paused.Store(false)
 
 	for p.playing.Load() {
-		err := p.playOnce(videoPath, pfpPath)
+		err := p.playOnce(videoPath)
 		if err != nil {
 			return err
 		}
@@ -149,9 +165,9 @@ func (p *AVPlayer) Play(videoPath, pfpPath string) error {
 }
 
 // playOnce plays the media file once
-func (p *AVPlayer) playOnce(videoPath string, pfpPath string) error {
+func (p *AVPlayer) playOnce(videoPath string) error {
 	cfg := p.sessionConfig()
-	session, err := newPlaySession(videoPath, pfpPath, cfg)
+	session, err := newPlaySession(videoPath, cfg)
 	if err != nil {
 		return err
 	}
@@ -168,6 +184,13 @@ func (p *AVPlayer) playOnce(videoPath string, pfpPath string) error {
 	p.gifSlotsMu.Unlock()
 	if len(slots) > 0 {
 		session.setVisibleGifs(slots)
+	}
+
+	p.imageSlotsMu.Lock()
+	imageSlots := p.imageSlots
+	p.imageSlotsMu.Unlock()
+	if len(imageSlots) > 0 {
+		session.setVisibleImages(imageSlots)
 	}
 
 	return session.run(p)
@@ -255,14 +278,41 @@ func (p *AVPlayer) ClearGifs() {
 		s.clearGifs()
 	})
 
-	// Also delete directly via renderer in case there's no active session
+	// Also prune directly via renderer in case there's no active session
 	p.configMu.Lock()
 	r := p.renderer
 	p.configMu.Unlock()
 	if r != nil {
-		for i := range 15 {
-			r.DeleteImage(GifImageID + i)
-		}
+		r.Prune(map[int]bool{VideoImageID: true})
+	}
+}
+
+// SetVisibleImages updates which static images are displayed and their positions.
+func (p *AVPlayer) SetVisibleImages(slots []ImageSlot) {
+	p.imageSlotsMu.Lock()
+	p.imageSlots = slots
+	p.imageSlotsMu.Unlock()
+
+	p.withSession(func(s *playSession) {
+		s.setVisibleImages(slots)
+	})
+}
+
+// ClearImages removes all displayed static images.
+func (p *AVPlayer) ClearImages() {
+	p.imageSlotsMu.Lock()
+	p.imageSlots = nil
+	p.imageSlotsMu.Unlock()
+
+	p.withSession(func(s *playSession) {
+		s.clearImages()
+	})
+
+	p.configMu.Lock()
+	r := p.renderer
+	p.configMu.Unlock()
+	if r != nil {
+		r.Prune(map[int]bool{VideoImageID: true})
 	}
 }
 

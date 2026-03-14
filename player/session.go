@@ -1,16 +1,10 @@
 package player
 
 import (
-	"bytes"
 	"fmt"
-	"image"
-	_ "image/jpeg"
-	"math"
-	"os"
 	"runtime"
 	"sync"
 	"time"
-	"unsafe"
 
 	"github.com/asticode/go-astiav"
 )
@@ -20,28 +14,20 @@ type playSession struct {
 	audio    *AudioPlayer
 	video    *VideoDecoder
 	renderer *KittyRenderer
-	overlay  *Overlay
 
 	// Cell positions for image placement (1-indexed)
 	videoRow, videoCol int
-	pfpRow, pfpCol     int
 
 	audioPktCh chan *audioPacket
 	videoPktCh chan *astiav.Packet
 
 	gifsMu      sync.Mutex
 	visibleGifs []visibleGif
+	imagesMu    sync.Mutex
+	visibleImgs []visibleImage
 
 	stopCh   chan struct{}
 	stopOnce sync.Once
-}
-
-type Overlay struct {
-	mu               sync.Mutex
-	srcImage         image.Image
-	profilePic       []byte
-	profilePicWidth  int
-	profilePicHeight int
 }
 
 type audioPacket struct {
@@ -52,13 +38,15 @@ type audioPacket struct {
 type sessionConfig struct {
 	width    int
 	height   int
+	videoRow int
+	videoCol int
 	renderer *KittyRenderer
 	muted    bool
 	volume   float64
 	useShm   bool
 }
 
-func newPlaySession(url string, pfpPath string, cfg sessionConfig) (*playSession, error) {
+func newPlaySession(url string, cfg sessionConfig) (*playSession, error) {
 	demuxer, err := NewDemuxer(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open media: %w", err)
@@ -77,6 +65,20 @@ func newPlaySession(url string, pfpPath string, cfg sessionConfig) (*playSession
 	dstW, dstH := fitSize(srcW, srcH, cfg.width, cfg.height)
 	video.SetSize(dstW, dstH)
 
+	// Center the actual video within the 9:16 bounding box when aspect ratios differ.
+	// on an actual 9:16 video, these offsets should be 0.
+	videoRowOffset, videoColOffset := 0, 0
+	if cols, rows, termW, termH, err := GetTerminalSize(); err == nil && cols > 0 && rows > 0 {
+		cellW := termW / cols
+		cellH := termH / rows
+		if cellW > 0 {
+			videoColOffset = (cfg.width - dstW) / 2 / cellW
+		}
+		if cellH > 0 {
+			videoRowOffset = (cfg.height - dstH) / 2 / cellH
+		}
+	}
+
 	var audio *AudioPlayer
 	if demuxer.HasAudio() {
 		audio, err = NewAudioPlayer(demuxer.AudioCodecParameters())
@@ -92,28 +94,20 @@ func newPlaySession(url string, pfpPath string, cfg sessionConfig) (*playSession
 
 	renderer := cfg.renderer
 
-	var videoRow, videoCol, pfpRow, pfpCol int
 	if renderer != nil {
 		if cols, rows, termW, termH, err := GetTerminalSize(); err == nil && cols > 0 && rows > 0 {
 			renderer.SetTerminalSize(cols, rows, termW, termH)
-			videoRow, videoCol = videoCenterPosition(dstW, dstH)
-			pfpRow, pfpCol = profilePicPosition(cols, rows)
 		}
 		renderer.SetUseShm(cfg.useShm)
 	}
-
-	overlay := loadOverlay(pfpPath)
 
 	session := &playSession{
 		demuxer:    demuxer,
 		audio:      audio,
 		video:      video,
 		renderer:   renderer,
-		overlay:    overlay,
-		videoRow:   videoRow,
-		videoCol:   videoCol,
-		pfpRow:     pfpRow,
-		pfpCol:     pfpCol,
+		videoRow:   cfg.videoRow + videoRowOffset,
+		videoCol:   cfg.videoCol + videoColOffset,
 		stopCh:     make(chan struct{}),
 		videoPktCh: make(chan *astiav.Packet, 30),
 	}
@@ -246,8 +240,6 @@ func (s *playSession) demuxLoop(p *AVPlayer) {
 
 // videoRenderLoop processes video packets and renders frames
 func (s *playSession) videoRenderLoop(p *AVPlayer) error {
-	var prevPfp []byte
-
 	for pkt := range s.videoPktCh {
 		if !p.playing.Load() {
 			pkt.Free()
@@ -284,27 +276,15 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 			}
 		}
 
+		// render all layers in one synchronized update to avoid flickering
+		s.renderer.BeginSync()
+
+		keep := map[int]bool{VideoImageID: true}
+
 		// render video
-		if err := s.renderer.RenderImage(frame.RGB, 24, frame.Width, frame.Height, VideoImageID, s.videoRow, s.videoCol, true); err != nil {
+		if err := s.renderer.RenderImage(frame.RGB, 24, frame.Width, frame.Height, VideoImageID, s.videoRow, s.videoCol); err != nil {
+			s.renderer.EndSync()
 			return fmt.Errorf("render error: %w", err)
-		}
-
-		// render pfp
-		if s.overlay != nil {
-			s.overlay.mu.Lock()
-			pic, w, h := s.overlay.profilePic, s.overlay.profilePicWidth, s.overlay.profilePicHeight
-			s.overlay.mu.Unlock()
-
-			// only render if the pfp is different
-			// underlying slice is changed when pfp bytes are changed,
-			// crackhead pointer comparison
-			shouldRender := len(pic) != len(prevPfp) || ((len(pic) > 0 && len(prevPfp) > 0) && (unsafe.Pointer(&pic[0]) != unsafe.Pointer(&prevPfp[0])))
-			if shouldRender {
-				if err := s.renderer.RenderImage(pic, 32, w, h, PfpImageID, s.pfpRow, s.pfpCol, false); err != nil {
-					return fmt.Errorf("profile pic render error: %w", err)
-				}
-				prevPfp = pic
-			}
 		}
 
 		// render gifs
@@ -312,6 +292,7 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 		now := time.Now()
 		for i := range s.visibleGifs {
 			g := &s.visibleGifs[i]
+			keep[g.imageID] = true
 			if len(g.anim.Frames) == 0 {
 				continue
 			}
@@ -319,9 +300,36 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 				g.frameIndex = (g.frameIndex + 1) % len(g.anim.Frames)
 				g.lastAdvance = now
 			}
-			s.renderer.RenderImage(g.anim.Frames[g.frameIndex], 32, g.anim.Width, g.anim.Height, g.imageID, g.row, g.col, false)
+			s.renderer.RenderImage(g.anim.Frames[g.frameIndex], 32, g.anim.Width, g.anim.Height, g.imageID, g.row, g.col)
 		}
 		s.gifsMu.Unlock()
+
+		// render static images
+		s.imagesMu.Lock()
+		for i := range s.visibleImgs {
+			img := &s.visibleImgs[i]
+			keep[img.imageID] = true
+			if img.img == nil {
+				continue
+			}
+
+			pic, w, h := img.img.Snapshot()
+			if len(pic) == 0 || w == 0 || h == 0 {
+				continue
+			}
+
+			if err := s.renderer.RenderImage(pic, 32, w, h, img.imageID, img.row, img.col); err != nil {
+				s.imagesMu.Unlock()
+				s.renderer.EndSync()
+				return fmt.Errorf("static image render error: %w", err)
+			}
+		}
+		s.imagesMu.Unlock()
+
+		// Remove any images that weren't rendered this frame.
+		s.renderer.Prune(keep)
+
+		s.renderer.EndSync()
 	}
 
 	return nil
@@ -342,185 +350,6 @@ func fitSize(srcW, srcH, maxW, maxH int) (int, int) {
 	return int(float64(maxH) * srcAspect), maxH
 }
 
-// videoCenterPosition computes the 1-indexed (row, col) to center the video in the terminal.
-// Uses the actual video pixel dimensions so videos with non-standard aspect ratios are centered correctly.
-func videoCenterPosition(videoWidthPx, videoHeightPx int) (row, col int) {
-	cols, rows, termW, termH, err := GetTerminalSize()
-	if err != nil || cols == 0 || rows == 0 || termW == 0 || termH == 0 {
-		return 1, 1
-	}
-
-	cellW := termW / cols
-	cellH := termH / rows
-
-	videoCols := (videoWidthPx + cellW - 1) / cellW
-	videoRows := (videoHeightPx + cellH - 1) / cellH
-
-	col = (cols-videoCols)/2 + 1
-	row = (rows-videoRows)/2 + 1
-	if col < 1 {
-		col = 1
-	}
-	if row < 1 {
-		row = 1
-	}
-	return row, col
-}
-
-// profilePicPosition computes the 1-indexed (row, col) for the profile picture.
-// It is placed below the video, offset to the left.
-func profilePicPosition(termCols, termRows int) (row, col int) {
-	const (
-		offsetCols = 1
-		offsetRows = 2 // rows below the video
-	)
-	videoTop := max(int(math.Round(float64(termRows-VideoHeightChars)/2.0)-1), 0)
-	row = videoTop + VideoHeightChars + offsetRows
-	col = (termCols-VideoWidthChars)/2 + offsetCols
-	if row < 1 {
-		row = 1
-	}
-	if col < 1 {
-		col = 1
-	}
-	return row, col
-}
-
-// loadOverlay loads a profile picture from disk and scales it for display.
-// Returns nil if the path is empty or loading fails.
-func loadOverlay(pfpPath string) *Overlay {
-	if pfpPath == "" {
-		return nil
-	}
-
-	data, err := os.ReadFile(pfpPath)
-	if err != nil {
-		return nil
-	}
-
-	img, _, err := image.Decode(bytes.NewReader(data))
-	if err != nil {
-		return nil
-	}
-
-	o := &Overlay{srcImage: img}
-	o.ResizeOverlay()
-	return o
-}
-
-// ResizeOverlay re-scales the profile picture from the stored source image based on current terminal cell height.
-func (o *Overlay) ResizeOverlay() {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-
-	bounds := o.srcImage.Bounds()
-	srcW, srcH := bounds.Dx(), bounds.Dy()
-
-	// target pfp size: 2 character cells tall so it fits the username + music lines
-	_, rows, _, termH, err := GetTerminalSize()
-	if err != nil || rows == 0 || termH == 0 {
-		return
-	}
-	cellH := termH / rows
-	profilePicSize := 2 * cellH
-
-	// Calculate target dimensions maintaining aspect ratio
-	dstW, dstH := profilePicSize, profilePicSize
-	if srcW > srcH {
-		dstH = profilePicSize * srcH / srcW
-	} else if srcH > srcW {
-		dstW = profilePicSize * srcW / srcH
-	}
-
-	// Circle parameters
-	centerX := float64(dstW-1) / 2.0
-	centerY := float64(dstH-1) / 2.0
-	radius := float64(min(dstW, dstH)) / 2.0
-
-	rgba := make([]byte, dstW*dstH*4)
-
-	// Bilinear sampling
-	for dstY := 0; dstY < dstH; dstY++ {
-		for dstX := 0; dstX < dstW; dstX++ {
-			// Map destination pixel to source coordinates
-			srcXf := (float64(dstX)+0.5)*float64(srcW)/float64(dstW) - 0.5
-			srcYf := (float64(dstY)+0.5)*float64(srcH)/float64(dstH) - 0.5
-
-			x0 := int(srcXf)
-			y0 := int(srcYf)
-			x1 := x0 + 1
-			y1 := y0 + 1
-
-			// Clamp to bounds
-			if x0 < 0 {
-				x0 = 0
-			}
-			if y0 < 0 {
-				y0 = 0
-			}
-			if x1 >= srcW {
-				x1 = srcW - 1
-			}
-			if y1 >= srcH {
-				y1 = srcH - 1
-			}
-
-			// Interpolation weights
-			xFrac := srcXf - float64(x0)
-			yFrac := srcYf - float64(y0)
-			if xFrac < 0 {
-				xFrac = 0
-			}
-			if yFrac < 0 {
-				yFrac = 0
-			}
-
-			// Sample four corners
-			r00, g00, b00, _ := o.srcImage.At(bounds.Min.X+x0, bounds.Min.Y+y0).RGBA()
-			r10, g10, b10, _ := o.srcImage.At(bounds.Min.X+x1, bounds.Min.Y+y0).RGBA()
-			r01, g01, b01, _ := o.srcImage.At(bounds.Min.X+x0, bounds.Min.Y+y1).RGBA()
-			r11, g11, b11, _ := o.srcImage.At(bounds.Min.X+x1, bounds.Min.Y+y1).RGBA()
-
-			// bilinear interpolation
-			r := (1-xFrac)*(1-yFrac)*float64(r00) + xFrac*(1-yFrac)*float64(r10) + (1-xFrac)*yFrac*float64(r01) + xFrac*yFrac*float64(r11)
-			g := (1-xFrac)*(1-yFrac)*float64(g00) + xFrac*(1-yFrac)*float64(g10) + (1-xFrac)*yFrac*float64(g01) + xFrac*yFrac*float64(g11)
-			b := (1-xFrac)*(1-yFrac)*float64(b00) + xFrac*(1-yFrac)*float64(b10) + (1-xFrac)*yFrac*float64(b01) + xFrac*yFrac*float64(b11)
-
-			// Circular mask with anti-aliasing
-			dx := float64(dstX) - centerX
-			dy := float64(dstY) - centerY
-			dist := dx*dx + dy*dy
-			radiusSq := radius * radius
-
-			var alpha float64
-			if dist <= radiusSq-radius {
-				alpha = 255
-			} else if dist >= radiusSq+radius {
-				alpha = 0
-			} else {
-				// Anti-alias edge
-				edgeDist := (radiusSq - dist) / (2 * radius)
-				alpha = 255 * (0.5 + edgeDist)
-				if alpha < 0 {
-					alpha = 0
-				} else if alpha > 255 {
-					alpha = 255
-				}
-			}
-
-			idx := (dstY*dstW + dstX) * 4
-			rgba[idx] = uint8(r / 256)
-			rgba[idx+1] = uint8(g / 256)
-			rgba[idx+2] = uint8(b / 256)
-			rgba[idx+3] = uint8(alpha)
-		}
-	}
-
-	o.profilePic = rgba
-	o.profilePicWidth = dstW
-	o.profilePicHeight = dstH
-}
-
 func (s *playSession) setVisibleGifs(slots []GifSlot) {
 	s.gifsMu.Lock()
 	defer s.gifsMu.Unlock()
@@ -533,14 +362,12 @@ func (s *playSession) setVisibleGifs(slots []GifSlot) {
 	}
 
 	newGifs := make([]visibleGif, 0, len(slots))
-	usedIDs := make(map[int]bool)
 
 	for i, slot := range slots {
 		if slot.Anim == nil {
 			continue
 		}
 		id := GifImageID + i
-		usedIDs[id] = true
 
 		vg := visibleGif{
 			anim:    slot.Anim,
@@ -557,20 +384,37 @@ func (s *playSession) setVisibleGifs(slots []GifSlot) {
 		newGifs = append(newGifs, vg)
 	}
 
-	// Delete all old kitty images (positions may have changed due to scrolling)
-	for _, g := range s.visibleGifs {
-		s.renderer.DeleteImage(g.imageID)
-	}
-
 	s.visibleGifs = newGifs
 }
 
 func (s *playSession) clearGifs() {
 	s.gifsMu.Lock()
 	defer s.gifsMu.Unlock()
-
-	for _, g := range s.visibleGifs {
-		s.renderer.DeleteImage(g.imageID)
-	}
 	s.visibleGifs = nil
+}
+
+func (s *playSession) setVisibleImages(slots []ImageSlot) {
+	s.imagesMu.Lock()
+	defer s.imagesMu.Unlock()
+
+	newImgs := make([]visibleImage, 0, len(slots))
+	for i, slot := range slots {
+		if slot.Img == nil {
+			continue
+		}
+		newImgs = append(newImgs, visibleImage{
+			img:     slot.Img,
+			row:     slot.Row,
+			col:     slot.Col,
+			imageID: StaticImageID + i,
+		})
+	}
+
+	s.visibleImgs = newImgs
+}
+
+func (s *playSession) clearImages() {
+	s.imagesMu.Lock()
+	defer s.imagesMu.Unlock()
+	s.visibleImgs = nil
 }

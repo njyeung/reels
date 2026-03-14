@@ -25,6 +25,21 @@ var (
 			Foreground(lipgloss.Color("226")).
 			Background(lipgloss.Color("52")).
 			Padding(0, 1)
+	commentTitleStyle = lipgloss.NewStyle().
+				Bold(true).
+				Underline(true).
+				Foreground(lipgloss.Color("205"))
 	commentTextStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("252"))
+	friendCursorStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("205")).
+				Underline(true)
+	friendSelectedStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("33"))
+	friendSelectedCursorStyle = lipgloss.NewStyle().
+					Bold(true).
+					Foreground(lipgloss.Color("33")).
+					Underline(true)
 )

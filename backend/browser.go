@@ -3,11 +3,13 @@ package backend
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
 	"net/url"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -15,6 +17,7 @@ import (
 	"github.com/chromedp/cdproto/fetch"
 	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
 
@@ -23,7 +26,7 @@ var pkRegex = regexp.MustCompile(`ig_cache_key=([^&]+)`)
 
 // NewChromeBackend creates a new Chrome-based backend
 func NewChromeBackend(userDataDir, cacheDir, configDir string) *ChromeBackend {
-	backend := ChromeBackend{
+	b := ChromeBackend{
 		orderedReels: make([]Reel, 0),
 		seenPKs:      make(map[string]bool),
 		comments:     &CommentsState{},
@@ -33,9 +36,9 @@ func NewChromeBackend(userDataDir, cacheDir, configDir string) *ChromeBackend {
 		configDir:    configDir,
 	}
 
-	backend.initStorage()
+	b.initStorage()
 
-	return &backend
+	return &b
 }
 
 // Start initializes Chrome and navigates to Instagram homepage
@@ -255,27 +258,18 @@ func (b *ChromeBackend) GetReel(index int) (*ReelInfo, error) {
 	}, nil
 }
 
-// SetReelComments persists comments to a reel by PK
-func (b *ChromeBackend) SetReelComments(pk string, comments []Comment) {
+// updateReelComments appends comments to a reel by PK, or sets them if none exist yet.
+func (b *ChromeBackend) updateReelComments(pk string, comments []Comment) {
 	b.reelsMu.Lock()
 	defer b.reelsMu.Unlock()
 
 	for i := range b.orderedReels {
 		if b.orderedReels[i].PK == pk {
-			b.orderedReels[i].Comments = comments
-			return
-		}
-	}
-}
-
-// AppendReelComments appends comments to a reel's existing comments by PK
-func (b *ChromeBackend) AppendReelComments(pk string, comments []Comment) {
-	b.reelsMu.Lock()
-	defer b.reelsMu.Unlock()
-
-	for i := range b.orderedReels {
-		if b.orderedReels[i].PK == pk {
-			b.orderedReels[i].Comments = append(b.orderedReels[i].Comments, comments...)
+			if b.orderedReels[i].Comments != nil {
+				b.orderedReels[i].Comments = append(b.orderedReels[i].Comments, comments...)
+			} else {
+				b.orderedReels[i].Comments = comments
+			}
 			return
 		}
 	}
@@ -478,25 +472,81 @@ func (b *ChromeBackend) ToggleLike() (bool, error) {
 
 // OpenComments opens the comments panel for the current reel
 func (b *ChromeBackend) OpenComments() {
-	// Store the current reel's PK before opening
 	pk, err := b.getCurrentPK()
 	if err != nil {
 		return
 	}
 	b.comments.Open(pk)
-
 	b.clickCommentsButton()
 }
 
-// CloseComments closes the comments panel UI (preserves cache for quick reopen)
+// CloseComments closes the comments panel UI
 func (b *ChromeBackend) CloseComments() {
 	b.clickCloseButton()
 }
 
 // ClearComments closes the comments panel and clears the cache
+// Note: Pagination state is persisted in the Reel struct itself and is not wiped
 func (b *ChromeBackend) ClearComments() {
 	b.comments.Clear()
 	b.clickCloseButton()
+}
+
+// getCommentsPagination returns the pagination state for the currently open comments reel.
+// Returns nil if no comments are open or the reel isn't found.
+func (b *ChromeBackend) getCommentsPagination() *CommentsPagination {
+	pk := b.comments.GetReelPK()
+	if pk == "" {
+		return nil
+	}
+	b.reelsMu.RLock()
+	defer b.reelsMu.RUnlock()
+	for i := range b.orderedReels {
+		if b.orderedReels[i].PK == pk {
+			return b.orderedReels[i].CommentsPagination
+		}
+	}
+	return nil
+}
+
+// setCommentsPagination updates pagination fields on the currently open comments reel.
+func (b *ChromeBackend) setCommentsPagination(cursor string, hasNextPage bool) {
+	pk := b.comments.GetReelPK()
+	if pk == "" {
+		return
+	}
+	b.reelsMu.Lock()
+	defer b.reelsMu.Unlock()
+	for i := range b.orderedReels {
+		if b.orderedReels[i].PK == pk {
+			if b.orderedReels[i].CommentsPagination == nil {
+				b.orderedReels[i].CommentsPagination = &CommentsPagination{}
+			}
+			b.orderedReels[i].CommentsPagination.Cursor = cursor
+			b.orderedReels[i].CommentsPagination.HasNextPage = hasNextPage
+			return
+		}
+	}
+}
+
+// enableCommentsPagination stores the request template and marks pagination as validated.
+func (b *ChromeBackend) enableCommentsPagination(template string) {
+	pk := b.comments.GetReelPK()
+	if pk == "" {
+		return
+	}
+	b.reelsMu.Lock()
+	defer b.reelsMu.Unlock()
+	for i := range b.orderedReels {
+		if b.orderedReels[i].PK == pk {
+			if b.orderedReels[i].CommentsPagination == nil {
+				b.orderedReels[i].CommentsPagination = &CommentsPagination{}
+			}
+			b.orderedReels[i].CommentsPagination.RequestTemplate = template
+			b.orderedReels[i].CommentsPagination.PaginationEnabled = true
+			return
+		}
+	}
 }
 
 // clickCloseButton finds and clicks the Close button in the browser
@@ -568,6 +618,212 @@ func (b *ChromeBackend) clickCommentsButton() {
 
 	chromedp.Run(b.ctx,
 		chromedp.Click(`[data-reels-comment-btn="true"]`, chromedp.ByQuery),
+	)
+}
+
+// OpenSharePanel clicks the share button to open Instagram's share modal,
+// then scrapes the friend list from the DOM.
+func (b *ChromeBackend) OpenSharePanel() {
+	js := `
+		(() => {
+			// Clear old markers first
+			document.querySelectorAll('[data-reels-share-btn]').forEach(el => {
+				el.removeAttribute('data-reels-share-btn');
+			});
+
+			const videos = document.querySelectorAll('video[playsinline]');
+			for (const video of videos) {
+				const rect = video.getBoundingClientRect();
+				const viewportHeight = window.innerHeight;
+				const videoCenter = rect.top + rect.height / 2;
+				if (videoCenter > 0 && videoCenter < viewportHeight) {
+					let parent = video.parentElement;
+					for (let i = 0; i < 15; i++) {
+						if (!parent) break;
+						const svg = parent.querySelector('svg[aria-label="Share"]');
+						if (svg) {
+							const btn = svg.closest('[role="button"]');
+							if (btn) {
+								btn.setAttribute('data-reels-share-btn', 'true');
+								return true;
+							}
+						}
+						parent = parent.parentElement;
+					}
+				}
+			}
+			return false;
+		})()
+	`
+	var found bool
+	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &found)); err != nil || !found {
+		return
+	}
+
+	chromedp.Run(b.ctx,
+		chromedp.Click(`[data-reels-share-btn="true"]`, chromedp.ByQuery),
+	)
+
+	// Wait for the share modal to render
+	chromedp.Run(b.ctx,
+		chromedp.Sleep(2*time.Second),
+	)
+	js = `
+		(() => {
+			const imgs = document.querySelectorAll('img[alt="User avatar"]');
+			const friends = [];
+			for (const img of imgs) {
+				const btn = img.closest('[role="button"][tabindex="0"]');
+				if (!btn) continue;
+
+				// img → span → div (avatar div) → sibling div → span → span → name
+				let name = "";
+				const avatarDiv = img.parentElement?.parentElement;
+				if (avatarDiv) {
+					const siblingDiv = avatarDiv.nextElementSibling || avatarDiv.previousElementSibling;
+					if (siblingDiv) {
+						const outerSpan = siblingDiv.querySelector('span');
+						if (outerSpan) {
+							const innerSpan = outerSpan.querySelector('span');
+							if (innerSpan) {
+								name = innerSpan.textContent.trim();
+							}
+						}
+					}
+				}
+
+				friends.push({
+					name: name,
+					imgSrc: img.src
+				});
+			}
+			return JSON.stringify(friends);
+		})()
+	`
+
+	var result string
+	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &result)); err != nil {
+		return
+	}
+
+	var raw []struct {
+		Name   string `json:"name"`
+		ImgSrc string `json:"imgSrc"`
+	}
+	if err := json.Unmarshal([]byte(result), &raw); err != nil {
+		return
+	}
+
+	friends := make([]Friend, len(raw))
+	for i, r := range raw {
+		friends[i] = Friend{Name: r.Name, ImgSrc: r.ImgSrc}
+
+		// Download profile pic via browser fetch
+		if r.ImgSrc != "" {
+			imgFile := filepath.Join(b.cacheDir, fmt.Sprintf("share_pfp_%d.jpg", i))
+			var imgData []byte
+			err := chromedp.Run(b.ctx,
+				chromedp.ActionFunc(func(ctx context.Context) error {
+					js := fmt.Sprintf(`
+						(async () => {
+							const r = await fetch("%s");
+							const buf = await r.arrayBuffer();
+							return Array.from(new Uint8Array(buf));
+						})()
+					`, r.ImgSrc)
+					var arr []int
+					if err := chromedp.Evaluate(js, &arr, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
+						return p.WithAwaitPromise(true)
+					}).Do(ctx); err != nil {
+						return err
+					}
+					imgData = make([]byte, len(arr))
+					for j, v := range arr {
+						imgData[j] = byte(v)
+					}
+					return nil
+				}),
+			)
+			if err == nil {
+				if err := os.WriteFile(imgFile, imgData, 0644); err == nil {
+					friends[i].ImgPath = imgFile
+				}
+			}
+		}
+	}
+	b.shareFriends = friends
+
+	b.events <- Event{Type: EventShareFriendsLoaded, Count: len(friends)}
+}
+
+// GetShareFriends returns the friend list scraped from the share modal
+func (b *ChromeBackend) GetShareFriends() []Friend {
+	return b.shareFriends
+}
+
+// ToggleShareFriend clicks the friend at the given index in the share modal.
+// Finds the Nth img[alt="User avatar"], traverses up to its button, and clicks it.
+func (b *ChromeBackend) ToggleShareFriend(index int) {
+	js := fmt.Sprintf(`
+		(() => {
+			// Clear old markers
+			document.querySelectorAll('[data-reels-share-friend]').forEach(el => {
+				el.removeAttribute('data-reels-share-friend');
+			});
+
+			const imgs = document.querySelectorAll('img[alt="User avatar"]');
+			let btnIndex = 0;
+			for (const img of imgs) {
+				const btn = img.closest('[role="button"][tabindex="0"]');
+				if (btn) {
+					if (btnIndex === %d) {
+						btn.setAttribute('data-reels-share-friend', 'true');
+						return true;
+					}
+					btnIndex++;
+				}
+			}
+			return false;
+		})()
+	`, index)
+
+	var found bool
+	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &found)); err != nil || !found {
+		return
+	}
+
+	chromedp.Run(b.ctx,
+		chromedp.Click(`[data-reels-share-friend="true"]`, chromedp.ByQuery),
+	)
+}
+
+// SendShare clicks the Send button in the share modal.
+// Instagram closes the modal immediately on successful send.
+func (b *ChromeBackend) SendShare() {
+	js := `
+		(() => {
+			document.querySelectorAll('[data-reels-send-btn]').forEach(el => {
+				el.removeAttribute('data-reels-send-btn');
+			});
+
+			const buttons = document.querySelectorAll('div[role="button"]');
+			for (const btn of buttons) {
+				if (btn.textContent.trim() === 'Send') {
+					btn.setAttribute('data-reels-send-btn', 'true');
+					return true;
+				}
+			}
+			return false;
+		})()
+	`
+	var found bool
+	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &found)); err != nil || !found {
+		b.clickCloseButton()
+		return
+	}
+
+	chromedp.Run(b.ctx,
+		chromedp.Click(`[data-reels-send-btn="true"]`, chromedp.ByQuery),
 	)
 }
 

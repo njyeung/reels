@@ -100,6 +100,7 @@ type reelResponse struct {
 	} `json:"data"`
 }
 
+
 // extractComments parses comment edges from a commentsResponse
 func (b *ChromeBackend) extractComments(resp *commentsResponse) []Comment {
 	var comments []Comment
@@ -204,16 +205,15 @@ func (b *ChromeBackend) processCommentsResponse(body string, requestPostData str
 
 	reelPK := b.comments.GetReelPK()
 	if reelPK != "" {
-		b.SetReelComments(reelPK, comments)
+		b.updateReelComments(reelPK, comments)
 	}
 
 	pageInfo := resp.Data.Connection.PageInfo
 
 	// Only enable pagination if the request passes validation
 	if validateCommentsRequest(requestPostData, appID) && (!pageInfo.HasNextPage || pageInfo.EndCursor != "") {
-		b.comments.SetPagination(pageInfo.EndCursor, pageInfo.HasNextPage)
-		b.comments.SetRequestTemplate(requestPostData)
-		b.comments.EnablePagination()
+		b.setCommentsPagination(pageInfo.EndCursor, pageInfo.HasNextPage)
+		b.enableCommentsPagination(requestPostData)
 	}
 
 	b.events <- Event{Type: EventCommentsCaptured, Count: len(comments)}
@@ -222,19 +222,22 @@ func (b *ChromeBackend) processCommentsResponse(body string, requestPostData str
 // FetchMoreComments fetches the next page of comments using the stored request template and cursor.
 // Called by the TUI when the user scrolls to the bottom of the comments list.
 func (b *ChromeBackend) FetchMoreComments() {
-	if !b.comments.HasMoreComments() {
+	defer func() {
+		b.events <- Event{Type: EventCommentsCaptured}
+	}()
+
+	p := b.getCommentsPagination()
+	if p == nil || !p.PaginationEnabled || !p.HasNextPage || p.Cursor == "" {
 		return
 	}
 	if !b.comments.StartFetch() {
 		return // already fetching
 	}
-	defer func() {
-		b.events <- Event{Type: EventCommentsCaptured}
-	}()
+
 	defer b.comments.FinishFetch()
 
-	template := b.comments.GetRequestTemplate()
-	cursor := b.comments.GetCursor()
+	template := p.RequestTemplate
+	cursor := p.Cursor
 	reelPK := b.comments.GetReelPK()
 	if template == "" || cursor == "" || reelPK == "" {
 		return
@@ -268,22 +271,29 @@ func (b *ChromeBackend) FetchMoreComments() {
 	lsd := params.Get("lsd")
 	js := fmt.Sprintf(`
 		(async () => {
-			const csrftoken = document.cookie.split('; ')
-				.find(c => c.startsWith('csrftoken='))
-				?.split('=')[1] || '';
-			const r = await fetch("https://www.instagram.com/graphql/query", {
-				method: "POST",
-				headers: {
-					"content-type": "application/x-www-form-urlencoded",
-					"x-csrftoken": csrftoken,
-					"x-fb-friendly-name": %s,
-					"x-fb-lsd": %s,
-					"x-ig-app-id": %s,
-				},
-				body: %s,
-				credentials: "include"
-			});
-			return await r.text();
+			const ac = new AbortController();
+			const tid = setTimeout(() => ac.abort(), 10000);
+			try {
+				const csrftoken = document.cookie.split('; ')
+					.find(c => c.startsWith('csrftoken='))
+					?.split('=')[1] || '';
+				const r = await fetch("https://www.instagram.com/graphql/query", {
+					method: "POST",
+					headers: {
+						"content-type": "application/x-www-form-urlencoded",
+						"x-csrftoken": csrftoken,
+						"x-fb-friendly-name": %s,
+						"x-fb-lsd": %s,
+						"x-ig-app-id": %s,
+					},
+					body: %s,
+					credentials: "include",
+					signal: ac.signal
+				});
+				return await r.text();
+			} finally {
+				clearTimeout(tid);
+			}
 		})()
 	`, jsonStringForJS(paginationFriendlyName), jsonStringForJS(lsd), expectedAppID, jsonStringForJS(postBody))
 
@@ -296,6 +306,7 @@ func (b *ChromeBackend) FetchMoreComments() {
 		}),
 	)
 	if err != nil {
+		b.setCommentsPagination("", false)
 		return
 	}
 
@@ -304,18 +315,24 @@ func (b *ChromeBackend) FetchMoreComments() {
 		return
 	}
 
-	// Drop stale results if the user switched reels/comments state mid-fetch.
-	if !b.comments.MatchesSnapshot(reelPK, template, cursor) {
+	// Drop stale results if the user switched reels while fetching.
+	if b.comments.GetReelPK() != reelPK {
+		return
+	}
+
+	// Drop stale results if pagination state changed mid-fetch.
+	p = b.getCommentsPagination()
+	if p == nil || p.RequestTemplate != template || p.Cursor != cursor {
 		return
 	}
 
 	newComments := b.extractComments(&paginationResp)
 	if len(newComments) > 0 {
-		b.AppendReelComments(reelPK, newComments)
+		b.updateReelComments(reelPK, newComments)
 	}
 
 	// Update cursor for next pagination
-	b.comments.SetPagination(
+	b.setCommentsPagination(
 		paginationResp.Data.Connection.PageInfo.EndCursor,
 		paginationResp.Data.Connection.PageInfo.HasNextPage,
 	)

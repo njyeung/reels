@@ -1,9 +1,7 @@
 package tui
 
 import (
-	"fmt"
 	"io"
-	"math"
 	"os/exec"
 	goruntime "runtime"
 	"slices"
@@ -27,9 +25,13 @@ type (
 	reelErrorMsg     struct{ err error }
 	backendEventMsg  backend.Event
 	videoErrorMsg    struct{ err error }
-	videoReadyMsg    struct{ index int }
-	musicTickMsg     struct{}
-	shareResetMsg    struct{}
+	videoReadyMsg    struct {
+		index int
+		pfp   *player.PFP
+	}
+	musicTickMsg  struct{}
+	shareResetMsg struct{}
+	shareSentMsg  struct{}
 )
 
 // State represents the app state
@@ -69,10 +71,18 @@ type Model struct {
 	videoWidthPx  int
 	videoHeightPx int
 
+	// Video position in terminal cells (1-indexed). TUI is source of truth;
+	// updated via updateVideoPosition and forwarded to the player.
+	videoRow int
+	videoCol int
+
 	showNavbar bool
 
 	// Comments panel encapsulates all comments UI state
 	comments *CommentsPanel
+
+	// Share panel encapsulates the share/DM friend selection UI
+	share *SharePanel
 
 	flags Config
 
@@ -82,6 +92,9 @@ type Model struct {
 
 	// share button switches to a different emoji for 1s when clicked
 	shareConfirmed bool
+	shareSending   bool
+
+	reelPFP *player.PFP
 }
 
 type Config struct {
@@ -119,6 +132,7 @@ func NewModel(userDataDir, cacheDir, configDir string, output io.Writer, flags C
 		videoWidthPx:  playerWidth,
 		videoHeightPx: playerHeight,
 		comments:      NewCommentsPanel(),
+		share:         NewSharePanel(),
 		flags:         flags,
 		showNavbar:    settings.ShowNavbar,
 	}
@@ -189,16 +203,23 @@ func (m Model) checkLoginStatus() tea.Msg {
 	return loginRequiredMsg{}
 }
 
-func (m Model) startPlayback(index int) tea.Cmd {
+func (m *Model) startPlayback(index int) tea.Cmd {
 	return func() tea.Msg {
 		videoPath, pfpPath, err := m.backend.Download(index)
 		if err != nil {
 			return videoErrorMsg{err}
 		}
+		var pfp *player.PFP
+		if pfpPath != "" {
+			if loaded, err := player.LoadPFP(pfpPath); err == nil {
+				loaded.ResizeToCells(2)
+				pfp = loaded
+			}
+		}
 		go func() {
-			m.player.Play(videoPath, pfpPath)
+			m.player.Play(videoPath)
 		}()
-		return videoReadyMsg{index}
+		return videoReadyMsg{index: index, pfp: pfp}
 	}
 }
 
@@ -221,13 +242,20 @@ func (m Model) queueShareReset() tea.Cmd {
 	})
 }
 
+func (m Model) sendShare() tea.Cmd {
+	return func() tea.Msg {
+		m.backend.SendShare()
+		return shareSentMsg{}
+	}
+}
+
 // Update handles messages
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		key := msg.String()
 		if slices.Contains(backend.GetSettings().KeysQuit, key) {
-			if m.comments.IsOpen() {
+			if m.comments.IsOpen() || m.share.IsOpen() {
 				m.resizeReel(backend.GetSettings().ReelSizeStep * 4)
 			}
 
@@ -249,12 +277,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 
-		// recompute video row and col size for tui layout
+		// recompute video character dimensions and re-center
 		player.ComputeVideoCharacterDimensions(m.videoWidthPx, m.videoHeightPx)
-
-		// recenter the video in the new window
 		m.player.SetSize(m.videoWidthPx, m.videoHeightPx)
-		m.updateCommentGifs()
+		m.updateVideoPosition()
+		if m.reelPFP != nil {
+			m.reelPFP.ResizeToCells(2)
+		}
+		if m.share.IsOpen() {
+			m.share.ResizePfps()
+		} else if m.comments.IsOpen() {
+			m.comments.ResizeGifs()
+			m.updateCommentGifs()
+		}
+		m.updateImages()
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -299,6 +335,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.updateCommentGifs()
 				}
 			}
+		case backend.EventShareFriendsLoaded:
+			if m.share.IsOpen() {
+				m.share.SetFriends(m.backend.GetShareFriends())
+				m.updateImages()
+			}
 		}
 		return m, m.listenForEvents
 
@@ -318,12 +359,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.shareConfirmed = false
 		return m, nil
 
+	case shareSentMsg:
+		if m.share.IsOpen() {
+			m.share.Close()
+			m.closePanelLayout()
+		}
+		m.shareSending = false
+		m.shareConfirmed = true
+		return m, m.queueShareReset()
+
 	case reelErrorMsg:
 		m.status = statusReelError
 		return m, nil
 
 	case videoReadyMsg:
 		m.status = statusNone
+		m.reelPFP = msg.pfp
+		m.updateVideoPosition()
+		m.updateImages()
 		go m.prefetch(msg.index + 1)
 		return m, nil
 
@@ -342,12 +395,21 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch {
 	case slices.Contains(config.KeysNext, key):
+		// If share panel open, move cursor down
+		if m.share.IsOpen() {
+			if m.shareSending {
+				return m, nil
+			}
+			m.share.MoveCursor(1)
+			m.updateImages()
+			return m, nil
+		}
 		// If comments open, scroll down in comments
 		if m.comments.IsOpen() {
 			m.comments.Scroll(1)
 			m.updateCommentGifs()
-			// Fetch more comments when scrolled to bottom
-			if m.comments.IsAtBottom() && !m.comments.loading {
+			// Fetch more comments when scrolled to bottom (if more exist)
+			if m.currentReel != nil && m.comments.IsAtBottom() && !m.comments.loading && len(m.currentReel.Comments) < m.currentReel.CommentCount {
 				m.comments.SetLoading(true)
 				go m.backend.FetchMoreComments()
 			}
@@ -362,6 +424,8 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.status = statusLoading
 
 				m.player.ClearGifs()
+				m.player.ClearImages()
+				m.reelPFP = nil
 				m.comments.Clear()
 				if info, err := m.backend.GetReel(nextIndex); err == nil {
 					m.currentReel = info
@@ -372,6 +436,15 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case slices.Contains(config.KeysPrevious, key):
+		// If share panel open, move cursor up
+		if m.share.IsOpen() {
+			if m.shareSending {
+				return m, nil
+			}
+			m.share.MoveCursor(-1)
+			m.updateImages()
+			return m, nil
+		}
 		// If comments open, scroll up in comments
 		if m.comments.IsOpen() {
 			m.comments.Scroll(-1)
@@ -387,6 +460,8 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.status = statusLoading
 
 				m.player.ClearGifs()
+				m.player.ClearImages()
+				m.reelPFP = nil
 				m.comments.Clear()
 				if info, err := m.backend.GetReel(prevIndex); err == nil {
 					m.currentReel = info
@@ -402,7 +477,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-	case slices.Contains(config.KeysPause, key):
+	case !m.share.IsOpen() && slices.Contains(config.KeysPause, key):
 		m.player.Pause()
 		if m.player.IsPaused() {
 			m.status = statusPaused
@@ -411,7 +486,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case slices.Contains(config.KeysLike, key):
-		if !m.comments.IsOpen() && m.currentReel != nil {
+		if !m.comments.IsOpen() && !m.share.IsOpen() && m.currentReel != nil {
 			m.currentReel.Liked = !m.currentReel.Liked
 			go m.backend.ToggleLike()
 		}
@@ -419,16 +494,16 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case slices.Contains(config.KeysComments, key):
 		// Toggle comments
 		if m.comments.IsOpen() {
-			m.resizeReel(config.ReelSizeStep * 4)
-
 			m.comments.Close()
-			m.player.ClearGifs()
+			m.closePanelLayout()
 			go m.backend.CloseComments()
-		} else if m.currentReel != nil && !m.currentReel.CommentsDisabled {
+		} else if m.currentReel != nil && !m.currentReel.CommentsDisabled && !m.share.IsOpen() {
 			m.resizeReel(-(config.ReelSizeStep * 4))
 
 			// Open comments for current reel
 			m.comments.Open(m.currentReel.PK)
+			m.updateVideoPosition()
+			m.updateImages()
 
 			// Use cached comments if available
 			if m.currentReel.Comments != nil {
@@ -439,13 +514,29 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Always open in browser (for Instagram's algorithm)
 			go m.backend.OpenComments()
 		}
-	case slices.Contains(config.KeysShare, key):
-		if m.currentReel != nil && m.currentReel.CanViewerReshare {
-			url := fmt.Sprintf("https://instagram.com/reels/%s/", m.currentReel.Code)
-			go copyToClipboard(url)
+	case m.share.IsOpen() && slices.Contains(config.KeysPause, key):
+		if m.shareSending {
+			return m, nil
+		}
+		// Toggle friend selection in both TUI and browser
+		m.share.ToggleSelected()
+		go m.backend.ToggleShareFriend(m.share.CursorIndex())
+		return m, nil
 
-			m.shareConfirmed = true
-			return m, m.queueShareReset()
+	case slices.Contains(config.KeysShare, key):
+		if m.share.IsOpen() {
+			if m.shareSending {
+				return m, nil
+			}
+			// Send to selected friends; close UI when backend finishes.
+			m.shareSending = true
+			return m, m.sendShare()
+		} else if m.currentReel != nil && m.currentReel.CanViewerReshare && !m.comments.IsOpen() {
+			m.resizeReel(-(config.ReelSizeStep * 4))
+			m.share.Open()
+			m.updateVideoPosition()
+			m.updateImages()
+			go m.backend.OpenSharePanel()
 		}
 	case slices.Contains(config.KeysNavbar, key):
 		showNavbar, err := m.backend.ToggleNavbar()
@@ -456,9 +547,11 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case slices.Contains(config.KeysReelSizeInc, key):
 		m.resizeReel(config.ReelSizeStep)
+		m.updateImages()
 
 	case slices.Contains(config.KeysReelSizeDec, key):
 		m.resizeReel(-config.ReelSizeStep)
+		m.updateImages()
 
 	case slices.Contains(config.KeysVolUp, key):
 		vol := min(m.player.Volume()+0.1, 1.0)
@@ -469,9 +562,23 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		vol := max(m.player.Volume()-0.1, 0.0)
 		m.player.SetVolume(vol)
 		go m.backend.SetVolume(vol)
+
+	case slices.Contains(config.KeysCopyLink, key):
+		if m.currentReel != nil && m.currentReel.Code != "" {
+			copyToClipboard("https://www.instagram.com/reel/" + m.currentReel.Code)
+		}
 	}
 
 	return m, nil
+}
+
+// closePanelLayout restores the reel size and video position after a panel (comments/share) is closed.
+func (m *Model) closePanelLayout() {
+	m.resizeReel(backend.GetSettings().ReelSizeStep * 4)
+	m.updateVideoPosition()
+	m.player.ClearGifs()
+	m.player.ClearImages()
+	m.updateImages()
 }
 
 // resizeReel adjusts the reel bounding box by delta pixels (width), deriving height from 9:16 ratio.
@@ -491,6 +598,7 @@ func (m *Model) resizeReel(delta int) {
 	m.videoHeightPx = newH * settings.RetinaScale
 	player.ComputeVideoCharacterDimensions(m.videoWidthPx, m.videoHeightPx)
 	m.player.SetSize(m.videoWidthPx, m.videoHeightPx)
+	m.updateVideoPosition()
 }
 
 // updateCommentGifs recomputes visible GIF slots and passes them to the player.
@@ -503,27 +611,54 @@ func (m Model) updateCommentGifs() {
 
 	videoHeightChars := player.VideoHeightChars
 	videoWidthChars := player.VideoWidthChars
-	topPad := max(int(math.Round(float64(m.height-videoHeightChars)/2.0))-1, 0)
-	fixedLines := topPad + 1 + videoHeightChars + 1 + 2
-	maxCaptionLines := m.height - fixedLines
-	if maxCaptionLines < 1 {
-		maxCaptionLines = 1
-	}
+	// panel content starts after: separator + username + music (2 rows below video bottom)
+	commentsBaseRow := m.videoRow + videoHeightChars + 2
+	maxCaptionLines := max(m.height-(m.videoRow+videoHeightChars+2), 1)
 
-	startCol := (m.width - videoWidthChars) / 2
-	if startCol < 0 {
-		startCol = 0
-	}
-
-	// Base row: top padding lines + status + video + separator + username + music
-	// Terminal rows are 1-indexed
-	commentsBaseRow := max(topPad-1, 0) + videoHeightChars + 4 + 1
-
-	slots := m.comments.VisibleGifSlots(videoWidthChars, maxCaptionLines, commentsBaseRow, startCol+1)
+	slots := m.comments.VisibleGifSlots(videoWidthChars, maxCaptionLines, commentsBaseRow, m.videoCol)
 	if len(slots) > 0 {
 		m.player.SetVisibleGifs(slots)
 	} else {
 		m.player.ClearGifs()
+	}
+}
+
+// updateVideoPosition computes the centered video position and stores it on the model,
+// then forwards it to the player. Call this after any layout change (resize, new video, resizeReel).
+// Uses pixel dimensions (via ComputeVideoCenterPosition) so the player renders at the right cell.
+func (m *Model) updateVideoPosition() {
+	row, col := player.ComputeVideoCenterPosition(m.videoWidthPx, m.videoHeightPx)
+	// When a panel is open, pin the video near the top to maximize space below
+	if m.comments.IsOpen() || m.share.IsOpen() {
+		row = 5
+	}
+	m.videoRow = row
+	m.videoCol = col
+	m.player.SetVideoPosition(row, col)
+}
+
+func (m *Model) updateImages() {
+	var slots []player.ImageSlot
+
+	// reel's user's pfp — username row (1 after separator)
+	if m.reelPFP != nil {
+		row := max(m.videoRow+player.VideoHeightChars, 1)
+		slots = append(slots, player.ImageSlot{Img: m.reelPFP, Row: row, Col: m.videoCol})
+	}
+
+	// share to friends pfps
+	if m.share.IsOpen() {
+		videoHeightChars := player.VideoHeightChars
+		videoWidthChars := player.VideoWidthChars
+		fixedLines := max(m.height-(m.videoRow+videoHeightChars+2), 1)
+		shareBaseRow := m.videoRow + videoHeightChars + 2
+		slots = append(slots, m.share.VisiblePfpSlots(videoWidthChars, fixedLines, shareBaseRow, m.videoCol)...)
+	}
+
+	if len(slots) > 0 {
+		m.player.SetVisibleImages(slots)
+	} else {
+		m.player.ClearImages()
 	}
 }
 

@@ -22,6 +22,7 @@ type Settings struct {
 	ReelHeight   int
 	ReelSizeStep int
 	Volume       float64
+	GifCellHeight int
 
 	KeysNext        []string
 	KeysPrevious    []string
@@ -36,6 +37,7 @@ type Settings struct {
 	KeysVolDown     []string
 	KeysQuit        []string
 	KeysShare       []string
+	KeysCopyLink    []string
 }
 
 var Config Settings
@@ -129,6 +131,7 @@ func defaultSettings() Settings {
 		ReelHeight:      480,
 		ReelSizeStep:    30,
 		Volume:          1,
+		GifCellHeight:   5,
 		KeysNext:        []string{"j"},
 		KeysPrevious:    []string{"k"},
 		KeysPause:       []string{" "},
@@ -141,6 +144,7 @@ func defaultSettings() Settings {
 		KeysReelSizeInc: []string{"="},
 		KeysReelSizeDec: []string{"-"},
 		KeysShare:       []string{"s"},
+		KeysCopyLink:    []string{"y"},
 		KeysQuit:        []string{"q", "ctrl+c"},
 	}
 
@@ -200,6 +204,11 @@ func LoadSettings(configDir string) {
 			s.Volume = n
 		}
 	}
+	if vals, ok := conf["gif_cell_height"]; ok {
+		if n, err := strconv.Atoi(vals[len(vals)-1]); err == nil {
+			s.GifCellHeight = n
+		}
+	}
 
 	loadKey(conf, "key_next", &s.KeysNext)
 	loadKey(conf, "key_previous", &s.KeysPrevious)
@@ -214,6 +223,7 @@ func LoadSettings(configDir string) {
 	loadKey(conf, "key_reel_size_dec", &s.KeysReelSizeDec)
 	loadKey(conf, "key_quit", &s.KeysQuit)
 	loadKey(conf, "key_share", &s.KeysShare)
+	loadKey(conf, "key_copy_link", &s.KeysCopyLink)
 
 	Config = s
 }
@@ -239,6 +249,7 @@ func writeConf(path string, s Settings) error {
 	b.WriteString(fmt.Sprintf("reel_height = %d\n", s.ReelHeight))
 	b.WriteString(fmt.Sprintf("reel_size_step = %d\n", s.ReelSizeStep))
 	b.WriteString(fmt.Sprintf("volume = %g\n", s.Volume))
+	b.WriteString(fmt.Sprintf("gif_cell_height = %d\n", s.GifCellHeight))
 	b.WriteString("\n")
 	b.WriteString("# configurable keybinds\n")
 	writeKeys(&b, "key_next", s.KeysNext)

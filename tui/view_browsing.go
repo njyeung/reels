@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"math"
 	"strings"
 
 	"github.com/mattn/go-runewidth"
@@ -21,24 +20,27 @@ func (m Model) viewBrowsing() string {
 
 	var b strings.Builder
 
-	// Center the fixed-size video area
-	startCol := (m.width - videoWidthChars) / 2
+	// Layout: (videoRow-2) blank lines + status(1) + video(videoHeightChars) + separator(1) + username(1) + music(1) + caption
+	startCol := m.videoCol - 1
 	if startCol < 0 {
 		startCol = 0
 	}
 
 	padding := strings.Repeat(" ", startCol)
 	pfpPadding := strings.Repeat(" ", 5)
-	topPad := max(int(math.Round(float64(m.height-videoHeightChars)/2.0))-1, 0)
+	topPad := m.videoRow - 2
 
-	// Calculate lines available for caption area
-	// Layout: topPad + status(1) + video(videoHeightChars) + separator(1) + username(2) + caption
-	fixedLines := topPad + 1 + videoHeightChars + 1 + 2
-
-	maxCaptionLines := m.height - fixedLines
-	if maxCaptionLines < 1 {
-		maxCaptionLines = 1
-	}
+	// total height of screen subtracting the following:
+	//
+	// the top padding,
+	// likes, comments, share, loading line
+	//
+	// reel video
+	//
+	// separator bar
+	// username
+	// blank line
+	maxPanelLines := max(m.height-(topPad+1+videoHeightChars+1+2), 1)
 
 	b.WriteString(strings.Repeat("\n", max(topPad-1, 0)))
 
@@ -135,9 +137,11 @@ func (m Model) viewBrowsing() string {
 			b.WriteString("\n")
 		}
 
-		// Comments view (replaces caption and navbar when open)
-		if m.comments.IsOpen() {
-			b.WriteString(m.comments.View(videoWidthChars, maxCaptionLines, padding))
+		// Panel views (replace caption and navbar when open)
+		if m.share.IsOpen() {
+			b.WriteString(m.share.View(videoWidthChars, maxPanelLines, padding))
+		} else if m.comments.IsOpen() {
+			b.WriteString(m.comments.View(videoWidthChars, maxPanelLines, padding))
 		} else {
 			// Normal caption view
 			var captionLines []string
@@ -157,8 +161,8 @@ func (m Model) viewBrowsing() string {
 			}
 
 			// Truncate caption to available space
-			if len(captionLines) > maxCaptionLines {
-				captionLines = captionLines[:maxCaptionLines]
+			if len(captionLines) > maxPanelLines {
+				captionLines = captionLines[:maxPanelLines]
 			}
 			for _, line := range captionLines {
 				b.WriteString(padding + captionStyle.Render(line) + "\n")
@@ -170,8 +174,8 @@ func (m Model) viewBrowsing() string {
 
 				config := backend.GetSettings()
 				nav1 := navStyle.Render(displayKeys(config.KeysPrevious) + ": prev  " + displayKeys(config.KeysNext) + ": next  " + displayKeys(config.KeysMute) + ": mute  " + displayKeys(config.KeysComments) + ": comments")
-				nav2 := navStyle.Render(displayKeys(config.KeysPause) + ": pause  " + displayKeys(config.KeysLike) + ": like  " + displayKeys(config.KeysShare) + ": share  " + displayKeys(config.KeysQuit) + ": quit")
-				nav3 := navStyle.Render(displayKeys(config.KeysReelSizeInc) + "/" + displayKeys(config.KeysReelSizeDec) + ": resize  " + displayKeys(config.KeysNavbar) + ": expand captions")
+				nav2 := navStyle.Render(displayKeys(config.KeysPause) + ": pause  " + displayKeys(config.KeysLike) + displayKeys(config.KeysQuit) + ": quit")
+				nav3 := navStyle.Render(displayKeys(config.KeysReelSizeInc) + "/" + displayKeys(config.KeysReelSizeDec) + ": resize  " + ": like  " + displayKeys(config.KeysShare) + ": share  " + displayKeys(config.KeysNavbar) + ": expand captions")
 				b.WriteString(padding + nav1 + "\n")
 				b.WriteString(padding + nav2 + "\n")
 				b.WriteString(padding + nav3 + "\n")
@@ -207,42 +211,4 @@ func formatLikeCount(count int) string {
 		return fmt.Sprintf("%.1fK", float64(count)/1000)
 	}
 	return fmt.Sprintf("%d", count)
-}
-
-// wrapByWidth wraps text to fit within maxWidth display columns
-func wrapByWidth(text string, maxWidth int) []string {
-	var lines []string
-	var currentLine strings.Builder
-	currentWidth := 0
-
-	for _, r := range text {
-		rw := runewidth.RuneWidth(r)
-		if currentWidth+rw > maxWidth {
-			lines = append(lines, currentLine.String())
-			currentLine.Reset()
-			currentWidth = 0
-		}
-		currentLine.WriteRune(r)
-		currentWidth += rw
-	}
-	if currentLine.Len() > 0 {
-		lines = append(lines, currentLine.String())
-	}
-	return lines
-}
-
-// truncateByWidth truncates text to fit within maxWidth display columns
-func truncateByWidth(text string, maxWidth int) string {
-	var result strings.Builder
-	currentWidth := 0
-
-	for _, r := range text {
-		rw := runewidth.RuneWidth(r)
-		if currentWidth+rw > maxWidth {
-			break
-		}
-		result.WriteRune(r)
-		currentWidth += rw
-	}
-	return result.String()
 }

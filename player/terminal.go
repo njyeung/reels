@@ -29,6 +29,31 @@ func ComputeVideoCharacterDimensions(videoWidthPx, videoHeightPx int) {
 	VideoHeightChars = ((videoHeightPx + cellH - 1) / cellH) + 1
 }
 
+// ComputeVideoCenterPosition computes the 1-indexed (row, col) to center the video in the terminal.
+// Uses the actual video pixel dimensions so videos with non-standard aspect ratios are centered correctly.
+func ComputeVideoCenterPosition(videoWidthPx, videoHeightPx int) (row, col int) {
+	cols, rows, termW, termH, err := GetTerminalSize()
+	if err != nil || cols == 0 || rows == 0 || termW == 0 || termH == 0 {
+		return 1, 1
+	}
+
+	cellW := termW / cols
+	cellH := termH / rows
+
+	videoCols := (videoWidthPx + cellW - 1) / cellW
+	videoRows := (videoHeightPx + cellH - 1) / cellH
+
+	col = (cols-videoCols)/2 + 1
+	row = (rows-videoRows)/2 + 1
+	if col < 1 {
+		col = 1
+	}
+	if row < 1 {
+		row = 1
+	}
+	return row, col
+}
+
 // GetTerminalSize returns terminal dimensions (cols, rows, widthPx, heightPx)
 func GetTerminalSize() (cols, rows, widthPx, heightPx int, err error) {
 	ws, err := unix.IoctlGetWinsize(int(os.Stdout.Fd()), unix.TIOCGWINSZ)
