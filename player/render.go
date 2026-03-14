@@ -139,14 +139,17 @@ func (r *KittyRenderer) EndSync() {
 	r.out.Write([]byte("\x1b[?2026l"))
 }
 
-// DeleteImage removes a specific Kitty image by ID.
-func (r *KittyRenderer) DeleteImage(id int) error {
+// Prune deletes every cached image whose ID is not in keep.
+func (r *KittyRenderer) Prune(keep map[int]bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	delete(r.renderCache, id)
-	_, err := fmt.Fprintf(r.out, "\x1b_Ga=d,d=i,i=%d,q=2\x1b\\", id)
-	return err
+	for id := range r.renderCache {
+		if !keep[id] {
+			delete(r.renderCache, id)
+			fmt.Fprintf(r.out, "\x1b_Ga=d,d=i,i=%d,q=2\x1b\\", id)
+		}
+	}
 }
 
 // writeImageDirect encodes pixel data as base64 and writes it in chunks using direct transmission (t=d).
@@ -170,8 +173,7 @@ func (r *KittyRenderer) writeImageDirect(buf *bytes.Buffer, data []byte, format,
 		}
 
 		if first {
-			fmt.Fprintf(buf, "\x1b_Ga=T,f=%d,s=%d,v=%d,i=%d,q=2,m=%d;%s\x1b\\",
-				format, width, height, id, more, chunk)
+			fmt.Fprintf(buf, "\x1b_Ga=T,f=%d,s=%d,v=%d,i=%d,q=2,m=%d;%s\x1b\\", format, width, height, id, more, chunk)
 			first = false
 		} else {
 			fmt.Fprintf(buf, "\x1b_Gm=%d;%s\x1b\\", more, chunk)
@@ -201,8 +203,7 @@ func (r *KittyRenderer) writeImageShm(buf *bytes.Buffer, data []byte, format, wi
 
 	// Payload is the base64-encoded shm name, not the pixel data
 	encodedName := base64.StdEncoding.EncodeToString([]byte(name))
-	fmt.Fprintf(buf, "\x1b_Ga=T,f=%d,s=%d,v=%d,i=%d,t=s,q=2;%s\x1b\\",
-		format, width, height, id, encodedName)
+	fmt.Fprintf(buf, "\x1b_Ga=T,f=%d,s=%d,v=%d,i=%d,t=s,q=2;%s\x1b\\", format, width, height, id, encodedName)
 
 	return nil
 }

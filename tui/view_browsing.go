@@ -30,7 +30,17 @@ func (m Model) viewBrowsing() string {
 	pfpPadding := strings.Repeat(" ", 5)
 	topPad := m.videoRow - 2
 
-	maxCaptionLines := max(m.height-(topPad+1+videoHeightChars+1+2), 1)
+	// total height of screen subtracting the following:
+	//
+	// the top padding,
+	// likes, comments, share, loading line
+	//
+	// reel video
+	//
+	// separator bar
+	// username
+	// blank line
+	maxPanelLines := max(m.height-(topPad+1+videoHeightChars+1+2), 1)
 
 	b.WriteString(strings.Repeat("\n", max(topPad-1, 0)))
 
@@ -129,9 +139,9 @@ func (m Model) viewBrowsing() string {
 
 		// Panel views (replace caption and navbar when open)
 		if m.share.IsOpen() {
-			b.WriteString(m.share.View(videoWidthChars, maxCaptionLines, padding))
+			b.WriteString(m.share.View(videoWidthChars, maxPanelLines, padding))
 		} else if m.comments.IsOpen() {
-			b.WriteString(m.comments.View(videoWidthChars, maxCaptionLines, padding))
+			b.WriteString(m.comments.View(videoWidthChars, maxPanelLines, padding))
 		} else {
 			// Normal caption view
 			var captionLines []string
@@ -151,8 +161,8 @@ func (m Model) viewBrowsing() string {
 			}
 
 			// Truncate caption to available space
-			if len(captionLines) > maxCaptionLines {
-				captionLines = captionLines[:maxCaptionLines]
+			if len(captionLines) > maxPanelLines {
+				captionLines = captionLines[:maxPanelLines]
 			}
 			for _, line := range captionLines {
 				b.WriteString(padding + captionStyle.Render(line) + "\n")

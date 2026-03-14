@@ -65,6 +65,20 @@ func newPlaySession(url string, cfg sessionConfig) (*playSession, error) {
 	dstW, dstH := fitSize(srcW, srcH, cfg.width, cfg.height)
 	video.SetSize(dstW, dstH)
 
+	// Center the actual video within the 9:16 bounding box when aspect ratios differ.
+	// on an actual 9:16 video, these offsets should be 0.
+	videoRowOffset, videoColOffset := 0, 0
+	if cols, rows, termW, termH, err := GetTerminalSize(); err == nil && cols > 0 && rows > 0 {
+		cellW := termW / cols
+		cellH := termH / rows
+		if cellW > 0 {
+			videoColOffset = (cfg.width - dstW) / 2 / cellW
+		}
+		if cellH > 0 {
+			videoRowOffset = (cfg.height - dstH) / 2 / cellH
+		}
+	}
+
 	var audio *AudioPlayer
 	if demuxer.HasAudio() {
 		audio, err = NewAudioPlayer(demuxer.AudioCodecParameters())
@@ -92,8 +106,8 @@ func newPlaySession(url string, cfg sessionConfig) (*playSession, error) {
 		audio:      audio,
 		video:      video,
 		renderer:   renderer,
-		videoRow:   cfg.videoRow,
-		videoCol:   cfg.videoCol,
+		videoRow:   cfg.videoRow + videoRowOffset,
+		videoCol:   cfg.videoCol + videoColOffset,
 		stopCh:     make(chan struct{}),
 		videoPktCh: make(chan *astiav.Packet, 30),
 	}
@@ -272,10 +286,13 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 		}
 
 		// render gifs
+		keep := map[int]bool{VideoImageID: true}
+
 		s.gifsMu.Lock()
 		now := time.Now()
 		for i := range s.visibleGifs {
 			g := &s.visibleGifs[i]
+			keep[g.imageID] = true
 			if len(g.anim.Frames) == 0 {
 				continue
 			}
@@ -291,6 +308,7 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 		s.imagesMu.Lock()
 		for i := range s.visibleImgs {
 			img := &s.visibleImgs[i]
+			keep[img.imageID] = true
 			if img.img == nil {
 				continue
 			}
@@ -307,6 +325,9 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 			}
 		}
 		s.imagesMu.Unlock()
+
+		// Remove any images that weren't rendered this frame.
+		s.renderer.Prune(keep)
 
 		s.renderer.EndSync()
 	}
@@ -328,7 +349,6 @@ func fitSize(srcW, srcH, maxW, maxH int) (int, int) {
 	}
 	return int(float64(maxH) * srcAspect), maxH
 }
-
 
 func (s *playSession) setVisibleGifs(slots []GifSlot) {
 	s.gifsMu.Lock()
@@ -364,21 +384,12 @@ func (s *playSession) setVisibleGifs(slots []GifSlot) {
 		newGifs = append(newGifs, vg)
 	}
 
-	// Delete all old kitty images (positions may have changed due to scrolling)
-	for _, g := range s.visibleGifs {
-		s.renderer.DeleteImage(g.imageID)
-	}
-
 	s.visibleGifs = newGifs
 }
 
 func (s *playSession) clearGifs() {
 	s.gifsMu.Lock()
 	defer s.gifsMu.Unlock()
-
-	for _, g := range s.visibleGifs {
-		s.renderer.DeleteImage(g.imageID)
-	}
 	s.visibleGifs = nil
 }
 
@@ -399,19 +410,11 @@ func (s *playSession) setVisibleImages(slots []ImageSlot) {
 		})
 	}
 
-	// Delete all old images
-	for _, img := range s.visibleImgs {
-		s.renderer.DeleteImage(img.imageID)
-	}
 	s.visibleImgs = newImgs
 }
 
 func (s *playSession) clearImages() {
 	s.imagesMu.Lock()
 	defer s.imagesMu.Unlock()
-
-	for _, img := range s.visibleImgs {
-		s.renderer.DeleteImage(img.imageID)
-	}
 	s.visibleImgs = nil
 }

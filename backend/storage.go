@@ -37,6 +37,7 @@ type Settings struct {
 	KeysVolDown     []string
 	KeysQuit        []string
 	KeysShare       []string
+	KeysCopyLink    []string
 }
 
 var Config Settings
@@ -143,6 +144,7 @@ func defaultSettings() Settings {
 		KeysReelSizeInc: []string{"="},
 		KeysReelSizeDec: []string{"-"},
 		KeysShare:       []string{"s"},
+		KeysCopyLink:    []string{"y"},
 		KeysQuit:        []string{"q", "ctrl+c"},
 	}
 
@@ -221,6 +223,7 @@ func LoadSettings(configDir string) {
 	loadKey(conf, "key_reel_size_dec", &s.KeysReelSizeDec)
 	loadKey(conf, "key_quit", &s.KeysQuit)
 	loadKey(conf, "key_share", &s.KeysShare)
+	loadKey(conf, "key_copy_link", &s.KeysCopyLink)
 
 	Config = s
 }

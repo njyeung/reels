@@ -138,12 +138,12 @@ func (p *AVPlayer) SetSize(width, height int) {
 func (p *AVPlayer) SetVideoPosition(row, col int) {
 	p.configMu.Lock()
 	p.videoRow = row
-	p.videoCol = col
+	p.videoCol = col + 1
 	p.configMu.Unlock()
 
 	p.withSession(func(s *playSession) {
 		s.videoRow = row
-		s.videoCol = col
+		s.videoCol = col + 1
 	})
 }
 
@@ -278,14 +278,12 @@ func (p *AVPlayer) ClearGifs() {
 		s.clearGifs()
 	})
 
-	// Also delete directly via renderer in case there's no active session
+	// Also prune directly via renderer in case there's no active session
 	p.configMu.Lock()
 	r := p.renderer
 	p.configMu.Unlock()
 	if r != nil {
-		for i := range 15 {
-			r.DeleteImage(GifImageID + i)
-		}
+		r.Prune(map[int]bool{VideoImageID: true})
 	}
 }
 
@@ -314,9 +312,7 @@ func (p *AVPlayer) ClearImages() {
 	r := p.renderer
 	p.configMu.Unlock()
 	if r != nil {
-		for i := range 30 {
-			r.DeleteImage(StaticImageID + i)
-		}
+		r.Prune(map[int]bool{VideoImageID: true})
 	}
 }
 

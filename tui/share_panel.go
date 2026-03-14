@@ -54,9 +54,16 @@ func (sp *SharePanel) Close() {
 	sp.selected = nil
 }
 
-// SetFriends sets the friend list and loads their profile pics
+// SetFriends sets the friend list and loads their profile pics.
+// Friends with any empty fields are filtered out.
 func (sp *SharePanel) SetFriends(friends []backend.Friend) {
-	sp.friends = friends
+	filtered := friends[:0:0]
+	for _, f := range friends {
+		if f.Name != "" && f.ImgSrc != "" && f.ImgPath != "" {
+			filtered = append(filtered, f)
+		}
+	}
+	sp.friends = filtered
 	sp.loadPfps()
 }
 

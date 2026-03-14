@@ -255,10 +255,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		key := msg.String()
 		if slices.Contains(backend.GetSettings().KeysQuit, key) {
-			if m.comments.IsOpen() {
-				m.resizeReel(backend.GetSettings().ReelSizeStep * 4)
-			}
-			if m.share.IsOpen() {
+			if m.comments.IsOpen() || m.share.IsOpen() {
 				m.resizeReel(backend.GetSettings().ReelSizeStep * 4)
 			}
 
@@ -364,10 +361,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case shareSentMsg:
 		if m.share.IsOpen() {
-			m.resizeReel(backend.GetSettings().ReelSizeStep * 4)
 			m.share.Close()
-			m.player.ClearImages()
-			m.updateImages()
+			m.closePanelLayout()
 		}
 		m.shareSending = false
 		m.shareConfirmed = true
@@ -482,7 +477,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-	case slices.Contains(config.KeysPause, key):
+	case !m.share.IsOpen() && slices.Contains(config.KeysPause, key):
 		m.player.Pause()
 		if m.player.IsPaused() {
 			m.status = statusPaused
@@ -499,18 +494,15 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case slices.Contains(config.KeysComments, key):
 		// Toggle comments
 		if m.comments.IsOpen() {
-			m.resizeReel(config.ReelSizeStep * 4)
-
 			m.comments.Close()
-			m.player.ClearGifs()
-			m.player.ClearImages()
-			m.updateImages()
+			m.closePanelLayout()
 			go m.backend.CloseComments()
 		} else if m.currentReel != nil && !m.currentReel.CommentsDisabled && !m.share.IsOpen() {
 			m.resizeReel(-(config.ReelSizeStep * 4))
 
 			// Open comments for current reel
 			m.comments.Open(m.currentReel.PK)
+			m.updateVideoPosition()
 			m.updateImages()
 
 			// Use cached comments if available
@@ -522,7 +514,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Always open in browser (for Instagram's algorithm)
 			go m.backend.OpenComments()
 		}
-	case m.share.IsOpen() && key == "enter":
+	case m.share.IsOpen() && slices.Contains(config.KeysPause, key):
 		if m.shareSending {
 			return m, nil
 		}
@@ -542,6 +534,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if m.currentReel != nil && m.currentReel.CanViewerReshare && !m.comments.IsOpen() {
 			m.resizeReel(-(config.ReelSizeStep * 4))
 			m.share.Open()
+			m.updateVideoPosition()
 			m.updateImages()
 			go m.backend.OpenSharePanel()
 		}
@@ -569,9 +562,23 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		vol := max(m.player.Volume()-0.1, 0.0)
 		m.player.SetVolume(vol)
 		go m.backend.SetVolume(vol)
+
+	case slices.Contains(config.KeysCopyLink, key):
+		if m.currentReel != nil && m.currentReel.Code != "" {
+			copyToClipboard("https://www.instagram.com/reel/" + m.currentReel.Code)
+		}
 	}
 
 	return m, nil
+}
+
+// closePanelLayout restores the reel size and video position after a panel (comments/share) is closed.
+func (m *Model) closePanelLayout() {
+	m.resizeReel(backend.GetSettings().ReelSizeStep * 4)
+	m.updateVideoPosition()
+	m.player.ClearGifs()
+	m.player.ClearImages()
+	m.updateImages()
 }
 
 // resizeReel adjusts the reel bounding box by delta pixels (width), deriving height from 9:16 ratio.
@@ -619,10 +626,12 @@ func (m Model) updateCommentGifs() {
 // updateVideoPosition computes the centered video position and stores it on the model,
 // then forwards it to the player. Call this after any layout change (resize, new video, resizeReel).
 // Uses pixel dimensions (via ComputeVideoCenterPosition) so the player renders at the right cell.
-// Note: VideoHeightChars = videoRows+1, so the player row is 1 below the TUI text placeholder start —
-// this is an intentional 1-row gap between the status line and the video image.
 func (m *Model) updateVideoPosition() {
 	row, col := player.ComputeVideoCenterPosition(m.videoWidthPx, m.videoHeightPx)
+	// When a panel is open, pin the video near the top to maximize space below
+	if m.comments.IsOpen() || m.share.IsOpen() {
+		row = 5
+	}
 	m.videoRow = row
 	m.videoCol = col
 	m.player.SetVideoPosition(row, col)
