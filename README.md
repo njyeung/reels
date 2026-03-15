@@ -50,6 +50,7 @@ reels
 - `y` - Copy reel link to clipboard
 - `=` - Enlarge Video
 - `-` - Shrink Video
+- `?` - Help
 - `q` - Quit
 
 All keybinds are configurable in `reels.conf`. Each action supports multiple binds.
@@ -118,6 +119,7 @@ reel_height = 480
 reel_size_step = 30
 volume = 1
 gif_cell_height = 5
+panel_shrink_steps = 4  # how many reel_size_steps to shrink when opening a panel
 
 # Configurable keybinds (multiple binds per action supported)
 key_next = j

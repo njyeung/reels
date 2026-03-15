@@ -149,7 +149,7 @@ func (cp *CommentsPanel) View(width, height int, padding string) string {
 	var b strings.Builder
 
 	// Header
-	header := commentTitleStyle.Render("Comments")
+	header := panelTitleStyle.Render("Comments")
 	b.WriteString(padding + header + "\n")
 	availableLines := height - 2
 	if availableLines < 1 {

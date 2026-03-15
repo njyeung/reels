@@ -139,7 +139,7 @@ func (sp *SharePanel) View(width, height int, padding string) string {
 
 	var b strings.Builder
 
-	header := commentTitleStyle.Render("Share To")
+	header := panelTitleStyle.Render("Share To")
 	b.WriteString(padding + header + "\n")
 	availableLines := height - 2
 	if availableLines < 1 {

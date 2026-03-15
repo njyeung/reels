@@ -75,7 +75,7 @@ func (m Model) viewBrowsing() string {
 		if !m.shareConfirmed {
 			shareIcon = "↗"
 		} else {
-			shareIcon = "✔"
+			shareIcon = friendSelectedStyle.Render("✔")
 		}
 	}
 
@@ -142,6 +142,8 @@ func (m Model) viewBrowsing() string {
 			b.WriteString(m.share.View(videoWidthChars, maxPanelLines, padding))
 		} else if m.comments.IsOpen() {
 			b.WriteString(m.comments.View(videoWidthChars, maxPanelLines, padding))
+		} else if m.help.IsOpen() {
+			b.WriteString(m.help.View(videoWidthChars, maxPanelLines, padding))
 		} else {
 			// Normal caption view
 			var captionLines []string
@@ -173,9 +175,9 @@ func (m Model) viewBrowsing() string {
 				b.WriteString("\n")
 
 				config := backend.GetSettings()
-				nav1 := navStyle.Render(displayKeys(config.KeysPrevious) + ": prev  " + displayKeys(config.KeysNext) + ": next  " + displayKeys(config.KeysMute) + ": mute  " + displayKeys(config.KeysComments) + ": comments")
-				nav2 := navStyle.Render(displayKeys(config.KeysPause) + ": pause  " + displayKeys(config.KeysLike) + displayKeys(config.KeysQuit) + ": quit")
-				nav3 := navStyle.Render(displayKeys(config.KeysReelSizeInc) + "/" + displayKeys(config.KeysReelSizeDec) + ": resize  " + ": like  " + displayKeys(config.KeysShare) + ": share  " + displayKeys(config.KeysNavbar) + ": expand captions")
+				nav1 := navStyle.Render(displayKeys(config.KeysNext) + ": next  " + displayKeys(config.KeysPrevious) + ": prev")
+				nav2 := navStyle.Render(displayKeys(config.KeysQuit) + ": quit  " + displayKeys(config.KeysNavbar) + ": hide navbar")
+				nav3 := navStyle.Render("?: help")
 				b.WriteString(padding + nav1 + "\n")
 				b.WriteString(padding + nav2 + "\n")
 				b.WriteString(padding + nav3 + "\n")

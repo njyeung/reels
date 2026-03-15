@@ -23,6 +23,7 @@ type Settings struct {
 	ReelSizeStep int
 	Volume       float64
 	GifCellHeight int
+	PanelShrinkSteps int
 
 	KeysNext        []string
 	KeysPrevious    []string
@@ -132,6 +133,7 @@ func defaultSettings() Settings {
 		ReelSizeStep:    30,
 		Volume:          1,
 		GifCellHeight:   5,
+		PanelShrinkSteps: 4,
 		KeysNext:        []string{"j"},
 		KeysPrevious:    []string{"k"},
 		KeysPause:       []string{" "},
@@ -209,6 +211,11 @@ func LoadSettings(configDir string) {
 			s.GifCellHeight = n
 		}
 	}
+	if vals, ok := conf["panel_shrink_steps"]; ok {
+		if n, err := strconv.Atoi(vals[len(vals)-1]); err == nil {
+			s.PanelShrinkSteps = n
+		}
+	}
 
 	loadKey(conf, "key_next", &s.KeysNext)
 	loadKey(conf, "key_previous", &s.KeysPrevious)
@@ -250,6 +257,7 @@ func writeConf(path string, s Settings) error {
 	b.WriteString(fmt.Sprintf("reel_size_step = %d\n", s.ReelSizeStep))
 	b.WriteString(fmt.Sprintf("volume = %g\n", s.Volume))
 	b.WriteString(fmt.Sprintf("gif_cell_height = %d\n", s.GifCellHeight))
+	b.WriteString(fmt.Sprintf("panel_shrink = %d\n", s.PanelShrinkSteps))
 	b.WriteString("\n")
 	b.WriteString("# configurable keybinds\n")
 	writeKeys(&b, "key_next", s.KeysNext)

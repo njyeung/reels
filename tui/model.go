@@ -84,6 +84,9 @@ type Model struct {
 	// Share panel encapsulates the share/DM friend selection UI
 	share *SharePanel
 
+	// Help panel displays all keybinds
+	help *HelpPanel
+
 	flags Config
 
 	loginSuccess bool
@@ -133,6 +136,7 @@ func NewModel(userDataDir, cacheDir, configDir string, output io.Writer, flags C
 		videoHeightPx: playerHeight,
 		comments:      NewCommentsPanel(),
 		share:         NewSharePanel(),
+		help:          NewHelpPanel(),
 		flags:         flags,
 		showNavbar:    settings.ShowNavbar,
 	}
@@ -255,8 +259,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		key := msg.String()
 		if slices.Contains(backend.GetSettings().KeysQuit, key) {
-			if m.comments.IsOpen() || m.share.IsOpen() {
-				m.resizeReel(backend.GetSettings().ReelSizeStep * 4)
+			if m.comments.IsOpen() || m.share.IsOpen() || m.help.IsOpen() {
+				m.resizeReel(backend.GetSettings().ReelSizeStep * backend.GetSettings().PanelShrinkSteps)
 			}
 
 			m.player.Close()
@@ -395,6 +399,11 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch {
 	case slices.Contains(config.KeysNext, key):
+		// If help panel open, scroll down
+		if m.help.IsOpen() {
+			m.help.Scroll(1)
+			return m, nil
+		}
 		// If share panel open, move cursor down
 		if m.share.IsOpen() {
 			if m.shareSending {
@@ -436,6 +445,11 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case slices.Contains(config.KeysPrevious, key):
+		// If help panel open, scroll up
+		if m.help.IsOpen() {
+			m.help.Scroll(-1)
+			return m, nil
+		}
 		// If share panel open, move cursor up
 		if m.share.IsOpen() {
 			if m.shareSending {
@@ -497,8 +511,8 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.comments.Close()
 			m.closePanelLayout()
 			go m.backend.CloseComments()
-		} else if m.currentReel != nil && !m.currentReel.CommentsDisabled && !m.share.IsOpen() {
-			m.resizeReel(-(config.ReelSizeStep * 4))
+		} else if m.currentReel != nil && !m.currentReel.CommentsDisabled && !m.share.IsOpen() && !m.help.IsOpen() {
+			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
 
 			// Open comments for current reel
 			m.comments.Open(m.currentReel.PK)
@@ -531,13 +545,24 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Send to selected friends; close UI when backend finishes.
 			m.shareSending = true
 			return m, m.sendShare()
-		} else if m.currentReel != nil && m.currentReel.CanViewerReshare && !m.comments.IsOpen() {
-			m.resizeReel(-(config.ReelSizeStep * 4))
+		} else if m.currentReel != nil && m.currentReel.CanViewerReshare && !m.comments.IsOpen() && !m.help.IsOpen() {
+			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
 			m.share.Open()
 			m.updateVideoPosition()
 			m.updateImages()
 			go m.backend.OpenSharePanel()
 		}
+	case key == "?":
+		if m.help.IsOpen() {
+			m.help.Close()
+			m.closePanelLayout()
+		} else if !m.comments.IsOpen() && !m.share.IsOpen() {
+			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
+			m.help.Open()
+			m.updateVideoPosition()
+			m.updateImages()
+		}
+
 	case slices.Contains(config.KeysNavbar, key):
 		showNavbar, err := m.backend.ToggleNavbar()
 		if err != nil {
@@ -566,6 +591,8 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case slices.Contains(config.KeysCopyLink, key):
 		if m.currentReel != nil && m.currentReel.Code != "" {
 			copyToClipboard("https://www.instagram.com/reel/" + m.currentReel.Code)
+			m.shareConfirmed = true
+			return m, m.queueShareReset()
 		}
 	}
 
@@ -574,7 +601,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // closePanelLayout restores the reel size and video position after a panel (comments/share) is closed.
 func (m *Model) closePanelLayout() {
-	m.resizeReel(backend.GetSettings().ReelSizeStep * 4)
+	m.resizeReel(backend.GetSettings().ReelSizeStep * backend.GetSettings().PanelShrinkSteps)
 	m.updateVideoPosition()
 	m.player.ClearGifs()
 	m.player.ClearImages()
@@ -629,7 +656,7 @@ func (m Model) updateCommentGifs() {
 func (m *Model) updateVideoPosition() {
 	row, col := player.ComputeVideoCenterPosition(m.videoWidthPx, m.videoHeightPx)
 	// When a panel is open, pin the video near the top to maximize space below
-	if m.comments.IsOpen() || m.share.IsOpen() {
+	if m.comments.IsOpen() || m.share.IsOpen() || m.help.IsOpen() {
 		row = 5
 	}
 	m.videoRow = row
