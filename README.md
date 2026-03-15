@@ -46,7 +46,8 @@ reels
 - `m` - Mute
 - `]` - Volume up
 - `[` - Volume down
-- `s` - Copy reel link to clipboard
+- `s` - Share reel via DM
+- `y` - Copy reel link to clipboard
 - `=` - Enlarge Video
 - `-` - Shrink Video
 - `q` - Quit
@@ -116,6 +117,7 @@ reel_width = 270
 reel_height = 480
 reel_size_step = 30
 volume = 1
+gif_cell_height = 5
 
 # Configurable keybinds (multiple binds per action supported)
 key_next = j
@@ -130,6 +132,7 @@ key_vol_down = [
 key_reel_size_inc = =
 key_reel_size_dec = -
 key_share = s
+key_copy_link = y
 key_quit = q
 key_quit = ctrl+c
 ```
