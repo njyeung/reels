@@ -432,9 +432,6 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 				m.status = statusLoading
 
-				m.player.ClearGifs()
-				m.player.ClearImages()
-				m.reelPFP = nil
 				m.comments.Clear()
 				if info, err := m.backend.GetReel(nextIndex); err == nil {
 					m.currentReel = info
@@ -473,9 +470,6 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 				m.status = statusLoading
 
-				m.player.ClearGifs()
-				m.player.ClearImages()
-				m.reelPFP = nil
 				m.comments.Clear()
 				if info, err := m.backend.GetReel(prevIndex); err == nil {
 					m.currentReel = info
@@ -604,7 +598,6 @@ func (m *Model) closePanelLayout() {
 	m.resizeReel(backend.GetSettings().ReelSizeStep * backend.GetSettings().PanelShrinkSteps)
 	m.updateVideoPosition()
 	m.player.ClearGifs()
-	m.player.ClearImages()
 	m.updateImages()
 }
 
