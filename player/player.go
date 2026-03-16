@@ -142,8 +142,8 @@ func (p *AVPlayer) SetVideoPosition(row, col int) {
 	p.configMu.Unlock()
 
 	p.withSession(func(s *playSession) {
-		s.videoRow = row
-		s.videoCol = col + 1
+		s.videoRow = row + s.videoRowOffset
+		s.videoCol = col + 1 + s.videoColOffset
 	})
 }
 
