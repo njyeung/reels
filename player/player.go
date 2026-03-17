@@ -142,8 +142,8 @@ func (p *AVPlayer) SetVideoPosition(row, col int) {
 	p.configMu.Unlock()
 
 	p.withSession(func(s *playSession) {
-		s.videoRow = row
-		s.videoCol = col + 1
+		s.videoRow = row + s.videoRowOffset
+		s.videoCol = col + 1 + s.videoColOffset
 	})
 }
 
@@ -278,12 +278,19 @@ func (p *AVPlayer) ClearGifs() {
 		s.clearGifs()
 	})
 
-	// Also prune directly via renderer in case there's no active session
-	p.configMu.Lock()
-	r := p.renderer
-	p.configMu.Unlock()
-	if r != nil {
-		r.Prune(map[int]bool{VideoImageID: true})
+	// Only prune directly via renderer when there's no active session.
+	// With an active session, the per-frame Prune inside BeginSync/EndSync handles
+	// cleanup without disturbing other rendered images (e.g. the pfp).
+	p.sessionMu.Lock()
+	hasSession := p.session != nil
+	p.sessionMu.Unlock()
+	if !hasSession {
+		p.configMu.Lock()
+		r := p.renderer
+		p.configMu.Unlock()
+		if r != nil {
+			r.Prune(map[int]bool{VideoImageID: true})
+		}
 	}
 }
 
@@ -308,11 +315,19 @@ func (p *AVPlayer) ClearImages() {
 		s.clearImages()
 	})
 
-	p.configMu.Lock()
-	r := p.renderer
-	p.configMu.Unlock()
-	if r != nil {
-		r.Prune(map[int]bool{VideoImageID: true})
+	// Only prune directly via renderer when there's no active session.
+	// With an active session, the per-frame Prune inside BeginSync/EndSync handles
+	// cleanup without disturbing other rendered images (e.g. the pfp).
+	p.sessionMu.Lock()
+	hasSession := p.session != nil
+	p.sessionMu.Unlock()
+	if !hasSession {
+		p.configMu.Lock()
+		r := p.renderer
+		p.configMu.Unlock()
+		if r != nil {
+			r.Prune(map[int]bool{VideoImageID: true})
+		}
 	}
 }
 

@@ -666,17 +666,17 @@ func (b *ChromeBackend) OpenSharePanel() {
 
 	// Wait for the share modal to render
 	chromedp.Run(b.ctx,
-		chromedp.Sleep(2*time.Second),
+		chromedp.WaitVisible(`img[alt="User avatar"]`, chromedp.ByQuery),
 	)
+	// Scrape friend list and fetch all profile pics in parallel via Promise.all.
+	// Base64 encoding is used instead of int arrays to keep transfer size small.
 	js = `
-		(() => {
+		(async () => {
 			const imgs = document.querySelectorAll('img[alt="User avatar"]');
-			const friends = [];
-			for (const img of imgs) {
+			const results = await Promise.all(Array.from(imgs).map(async (img) => {
 				const btn = img.closest('[role="button"][tabindex="0"]');
-				if (!btn) continue;
-
-				// img → span → div (avatar div) → sibling div → span → span → name
+				if (!btn) return null;
+				
 				let name = "";
 				const avatarDiv = img.parentElement?.parentElement;
 				if (avatarDiv) {
@@ -692,23 +692,37 @@ func (b *ChromeBackend) OpenSharePanel() {
 					}
 				}
 
-				friends.push({
-					name: name,
-					imgSrc: img.src
-				});
-			}
-			return JSON.stringify(friends);
+				let imgB64 = "";
+				if (img.src) {
+					try {
+						const r = await fetch(img.src);
+						const buf = await r.arrayBuffer();
+						const bytes = new Uint8Array(buf);
+						let binary = '';
+						for (let i = 0; i < bytes.length; i += 8192) {
+							binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+						}
+						imgB64 = btoa(binary);
+					} catch(e) {}
+				}
+
+				return { name, imgSrc: img.src, imgB64 };
+			}));
+			return JSON.stringify(results.filter(r => r !== null));
 		})()
 	`
 
 	var result string
-	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &result)); err != nil {
+	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &result, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
+		return p.WithAwaitPromise(true)
+	})); err != nil {
 		return
 	}
 
 	var raw []struct {
 		Name   string `json:"name"`
 		ImgSrc string `json:"imgSrc"`
+		ImgB64 string `json:"imgB64"`
 	}
 	if err := json.Unmarshal([]byte(result), &raw); err != nil {
 		return
@@ -717,34 +731,10 @@ func (b *ChromeBackend) OpenSharePanel() {
 	friends := make([]Friend, len(raw))
 	for i, r := range raw {
 		friends[i] = Friend{Name: r.Name, ImgSrc: r.ImgSrc}
-
-		// Download profile pic via browser fetch
-		if r.ImgSrc != "" {
-			imgFile := filepath.Join(b.cacheDir, fmt.Sprintf("share_pfp_%d.jpg", i))
-			var imgData []byte
-			err := chromedp.Run(b.ctx,
-				chromedp.ActionFunc(func(ctx context.Context) error {
-					js := fmt.Sprintf(`
-						(async () => {
-							const r = await fetch("%s");
-							const buf = await r.arrayBuffer();
-							return Array.from(new Uint8Array(buf));
-						})()
-					`, r.ImgSrc)
-					var arr []int
-					if err := chromedp.Evaluate(js, &arr, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
-						return p.WithAwaitPromise(true)
-					}).Do(ctx); err != nil {
-						return err
-					}
-					imgData = make([]byte, len(arr))
-					for j, v := range arr {
-						imgData[j] = byte(v)
-					}
-					return nil
-				}),
-			)
+		if r.ImgB64 != "" {
+			imgData, err := base64.StdEncoding.DecodeString(r.ImgB64)
 			if err == nil {
+				imgFile := filepath.Join(b.cacheDir, fmt.Sprintf("share_pfp_%d.jpg", i))
 				if err := os.WriteFile(imgFile, imgData, 0644); err == nil {
 					friends[i].ImgPath = imgFile
 				}

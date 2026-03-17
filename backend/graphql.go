@@ -100,63 +100,97 @@ type reelResponse struct {
 	} `json:"data"`
 }
 
-
-// extractComments parses comment edges from a commentsResponse
+// extractComments parses comment edges from a commentsResponse.
+// GIFs (if any) are fetched in parallel via a single Promise.all JS call.
 func (b *ChromeBackend) extractComments(resp *commentsResponse) []Comment {
 	var comments []Comment
 	for _, edge := range resp.Data.Connection.Edges {
 		node := edge.Node
-
-		comment := Comment{
+		comments = append(comments, Comment{
 			PK:                node.PK,
 			CreatedAt:         node.CreatedAt,
 			ChildCommentCount: node.ChildCommentCount,
 			HasLikedComment:   node.HasLikedComment,
 			CommentLikeCount:  node.CommentLikeCount,
 			Text:              node.Text,
-
-			ProfilePicUrl: node.User.ProfilePicUrl,
-			Username:      node.User.Username,
-			IsVerified:    node.User.IsVerified,
-
-			GifUrl: node.GiphyMediaInfo.FirstPartyCdnProxiedImages.FixedHeight.Url,
-		}
-
-		// Download GIF if present
-		if comment.GifUrl != "" {
-			gifFile := filepath.Join(b.cacheDir, fmt.Sprintf("gif_%s.gif", comment.PK))
-			var gifData []byte
-			err := chromedp.Run(b.ctx,
-				chromedp.ActionFunc(func(ctx context.Context) error {
-					js := fmt.Sprintf(`
-						(async () => {
-							const r = await fetch("%s");
-							const buf = await r.arrayBuffer();
-							return Array.from(new Uint8Array(buf));
-						})()
-					`, comment.GifUrl)
-					var arr []int
-					if err := chromedp.Evaluate(js, &arr, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
-						return p.WithAwaitPromise(true)
-					}).Do(ctx); err != nil {
-						return err
-					}
-					gifData = make([]byte, len(arr))
-					for j, v := range arr {
-						gifData[j] = byte(v)
-					}
-					return nil
-				}),
-			)
-			if err == nil {
-				if err := os.WriteFile(gifFile, gifData, 0644); err == nil {
-					comment.GifPath = gifFile
-				}
-			}
-		}
-
-		comments = append(comments, comment)
+			ProfilePicUrl:     node.User.ProfilePicUrl,
+			Username:          node.User.Username,
+			IsVerified:        node.User.IsVerified,
+			GifUrl:            node.GiphyMediaInfo.FirstPartyCdnProxiedImages.FixedHeight.Url,
+			GifPath:           "", // filled out below
+		})
 	}
+
+	// Collect indices and URLs of comments that have GIFs
+	type gifTask struct {
+		idx int
+		url string
+	}
+	var tasks []gifTask
+	for i, c := range comments {
+		if c.GifUrl != "" {
+			tasks = append(tasks, gifTask{i, c.GifUrl})
+		}
+	}
+	if len(tasks) == 0 {
+		return comments
+	}
+
+	// Build a URL list and fetch all GIFs in parallel via Promise.all
+	urlsJSON, _ := json.Marshal(func() []string {
+		urls := make([]string, len(tasks))
+		for i, t := range tasks {
+			urls[i] = t.url
+		}
+		return urls
+	}())
+
+	js := fmt.Sprintf(`
+		(async () => {
+			const urls = %s;
+			const results = await Promise.all(urls.map(async (url) => {
+				if (!url) return "";
+				try {
+					const r = await fetch(url);
+					const buf = await r.arrayBuffer();
+					const bytes = new Uint8Array(buf);
+					let binary = '';
+					for (let i = 0; i < bytes.length; i += 8192) {
+						binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+					}
+					return btoa(binary);
+				} catch(e) { return ""; }
+			}));
+			return JSON.stringify(results);
+		})()
+	`, string(urlsJSON))
+
+	var result string
+	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &result, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
+		return p.WithAwaitPromise(true)
+	})); err != nil {
+		return comments
+	}
+
+	var b64s []string
+	if err := json.Unmarshal([]byte(result), &b64s); err != nil {
+		return comments
+	}
+
+	for i, task := range tasks {
+		if i >= len(b64s) || b64s[i] == "" {
+			continue
+		}
+		gifData, err := base64.StdEncoding.DecodeString(b64s[i])
+		if err != nil {
+			continue
+		}
+		gifFile := filepath.Join(b.cacheDir, fmt.Sprintf("gif_%s.gif", comments[task.idx].PK))
+		if err := os.WriteFile(gifFile, gifData, 0644); err == nil {
+			comments[task.idx].GifPath = gifFile
+		}
+	}
+
 	return comments
 }
 

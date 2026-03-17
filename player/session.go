@@ -17,6 +17,8 @@ type playSession struct {
 
 	// Cell positions for image placement (1-indexed)
 	videoRow, videoCol int
+	// Centering offsets for non-9:16 videos within the bounding box
+	videoRowOffset, videoColOffset int
 
 	audioPktCh chan *audioPacket
 	videoPktCh chan *astiav.Packet
@@ -102,14 +104,16 @@ func newPlaySession(url string, cfg sessionConfig) (*playSession, error) {
 	}
 
 	session := &playSession{
-		demuxer:    demuxer,
-		audio:      audio,
-		video:      video,
-		renderer:   renderer,
-		videoRow:   cfg.videoRow + videoRowOffset,
-		videoCol:   cfg.videoCol + videoColOffset,
-		stopCh:     make(chan struct{}),
-		videoPktCh: make(chan *astiav.Packet, 30),
+		demuxer:        demuxer,
+		audio:          audio,
+		video:          video,
+		renderer:       renderer,
+		videoRow:       cfg.videoRow + videoRowOffset,
+		videoCol:       cfg.videoCol + videoColOffset,
+		videoRowOffset: videoRowOffset,
+		videoColOffset: videoColOffset,
+		stopCh:         make(chan struct{}),
+		videoPktCh:     make(chan *astiav.Packet, 30),
 	}
 	if audio != nil {
 		session.audioPktCh = make(chan *audioPacket, 64)
