@@ -258,13 +258,6 @@ func (a *AudioPlayer) Time() float64 {
 	return a.clock.Load().(float64)
 }
 
-// BufferSize returns the current size of the audio buffer in bytes
-func (a *AudioPlayer) BufferSize() int {
-	a.buffMu.Lock()
-	defer a.buffMu.Unlock()
-	return len(a.sampleBuf)
-}
-
 // SetVolume sets the playback volume (0.0–1.0)
 func (a *AudioPlayer) SetVolume(vol float64) {
 	a.volume.Store(vol)
@@ -283,21 +276,6 @@ func (a *AudioPlayer) IsPlaying() bool {
 // Pause toggles pause state
 func (a *AudioPlayer) Pause() {
 	a.paused.Store(!a.paused.Load())
-}
-
-// IsPaused returns current pause state
-func (a *AudioPlayer) IsPaused() bool {
-	return a.paused.Load()
-}
-
-// IsMuted returns current mute state
-func (a *AudioPlayer) IsMuted() bool {
-	return a.muted.Load()
-}
-
-// ResetClock resets the audio clock to zero
-func (a *AudioPlayer) ResetClock() {
-	a.clock.Store(float64(0))
 }
 
 // Close releases all resources
