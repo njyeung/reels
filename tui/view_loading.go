@@ -1,14 +1,19 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
+	"math/rand/v2"
+	"net/http"
 	"strings"
+	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 )
 
-const loadingBarWidth = 36
+const loadingBarWidth = 32
 
 func (m Model) viewLoading() string {
 	if m.width == 0 || m.height == 0 {
@@ -23,7 +28,11 @@ func (m Model) viewLoading() string {
 		barStyle = loadingUpdateStyle
 	} else if len(m.loadingMessages) > 0 {
 		barText = m.loadingMessages[m.loadingMsgIndex]
-		barStyle = loadingMsgStyle
+		if m.loadingFadeStep > 0 {
+			barStyle = loadingMsgStyle.Foreground(lipgloss.Color(loadingFadeColor(m.loadingFadeStep)))
+		} else {
+			barStyle = loadingMsgStyle
+		}
 	}
 
 	return renderLoadingScreen(m.width, m.height, barText, barStyle, m.loadingMsgScroll)
@@ -38,10 +47,7 @@ func renderLoadingScreen(width, height int, barText string, barStyle lipgloss.St
 		"|_| \\_\\_____||_____||____|/____/",
 	}
 
-	blockHeight := len(logo)
-	if barText != "" {
-		blockHeight += 2 // blank line + bar
-	}
+	blockHeight := len(logo) + 2 // logo + blank line + bar
 	startRow := (height - blockHeight) / 2
 	barRow := startRow + len(logo) + 1
 
@@ -60,7 +66,7 @@ func renderLoadingScreen(width, height int, barText string, barStyle lipgloss.St
 			right := pad - left
 			line = strings.Repeat(" ", left) + titleStyle.Render(text) + strings.Repeat(" ", right)
 
-		case barText != "" && y == barRow:
+		case y == barRow:
 			bar := renderLoadingBar(barText, barStyle, scrollOffset)
 			pad := width - loadingBarWidth
 			if pad < 0 {
@@ -121,4 +127,60 @@ func renderLoadingBar(text string, style lipgloss.Style, scrollOffset int) strin
 	}
 
 	return style.Render(visible)
+}
+
+// Loading data & tick functions
+
+func (m Model) fetchLoadingMessages() tea.Msg {
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get("https://raw.githubusercontent.com/njyeung/reels/main/loading.json")
+	if err != nil {
+		return loadingMsgsMsg{}
+	}
+	defer resp.Body.Close()
+	var data struct {
+		Messages []string `json:"messages"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return loadingMsgsMsg{}
+	}
+	messages := data.Messages
+	rand.Shuffle(len(messages), func(i, j int) {
+		messages[i], messages[j] = messages[j], messages[i]
+	})
+	return loadingMsgsMsg{messages: messages}
+}
+
+func (m Model) loadingMsgTick() tea.Cmd {
+	return tea.Tick(4*time.Second, func(t time.Time) tea.Msg {
+		return loadingMsgTickMsg{}
+	})
+}
+
+func (m Model) loadingScrollTick() tea.Cmd {
+	return tea.Tick(200*time.Millisecond, func(t time.Time) tea.Msg {
+		return loadingScrollTickMsg{}
+	})
+}
+
+func (m Model) loadingFadeTick() tea.Cmd {
+	return tea.Tick(60*time.Millisecond, func(t time.Time) tea.Msg {
+		return loadingFadeTickMsg{}
+	})
+}
+
+// loadingFadeColor returns the ANSI color for the current fade step.
+// Steps 1-6: fade out (245→236), steps 7-12: fade in (236→245).
+func loadingFadeColor(step int) string {
+	grays := [7]int{245, 244, 242, 241, 239, 237, 236}
+	switch {
+	case step <= 0:
+		return "245"
+	case step <= 6:
+		return fmt.Sprintf("%d", grays[step])
+	case step <= 12:
+		return fmt.Sprintf("%d", grays[12-step])
+	default:
+		return "245"
+	}
 }
