@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	initialCommentsDocID        = "26103263252639102"
+	initialCommentsDocID        = "26561764186787969"
 	initialCommentsFriendlyName = "PolarisPostCommentsContainerQuery"
-	paginationDocID             = "26653752520898584"
+	paginationDocID             = "26224338453892885"
 	paginationFriendlyName      = "PolarisPostCommentsPaginationQuery"
 	expectedAppID               = "936619743392459"
 )
