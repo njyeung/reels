@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 )
 
@@ -9,10 +10,15 @@ func (m Model) viewLoading() string {
 		return "\n\n   " + m.spinner.View() + "\n\n"
 	}
 
-	return renderLoadingScreen(m.width, m.height)
+	var updateNotice string
+	if m.latestVersion != "" {
+		updateNotice = fmt.Sprintf("Update available: v%s → v%s", m.version, m.latestVersion)
+	}
+
+	return renderLoadingScreen(m.width, m.height, updateNotice)
 }
 
-func renderLoadingScreen(width, height int) string {
+func renderLoadingScreen(width, height int, updateNotice string) string {
 	logo := []string{
 		"____  _____  _____  _      ___",
 		"|  _ \\| ____|| ____|| |   / ___|",
@@ -21,7 +27,11 @@ func renderLoadingScreen(width, height int) string {
 		"|_| \\_\\_____||_____||____|/____/",
 	}
 
+	// Add a blank line + update notice below the logo if available
 	blockHeight := len(logo)
+	if updateNotice != "" {
+		blockHeight += 2 // blank line + notice
+	}
 	startRow := (height - blockHeight) / 2
 
 	var b strings.Builder
@@ -40,6 +50,17 @@ func renderLoadingScreen(width, height int) string {
 			leftPad := strings.Repeat(" ", left)
 			rightPad := strings.Repeat(" ", right)
 			line = leftPad + titleStyle.Render(text) + rightPad
+		case updateNotice != "" && y == startRow+len(logo)+1:
+			pad := width - len(updateNotice)
+			if pad < 0 {
+				pad = 0
+				updateNotice = updateNotice[:width]
+			}
+			left := pad / 2
+			right := pad - left
+			leftPad := strings.Repeat(" ", left)
+			rightPad := strings.Repeat(" ", right)
+			line = leftPad + importantStyle.Render(updateNotice) + rightPad
 		default:
 			line = strings.Repeat(" ", width)
 		}

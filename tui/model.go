@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"encoding/json"
 	"io"
+	"net/http"
 	"os/exec"
 	goruntime "runtime"
 	"slices"
@@ -13,6 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/njyeung/reels/backend"
 	"github.com/njyeung/reels/player"
+	"github.com/njyeung/reels/player/shm"
 )
 
 // Messages
@@ -30,8 +33,9 @@ type (
 		pfp   *player.PFP
 	}
 	musicTickMsg  struct{}
-	shareResetMsg struct{}
-	shareSentMsg  struct{}
+	shareResetMsg   struct{}
+	shareSentMsg    struct{}
+	versionCheckMsg struct{ latest string }
 )
 
 // State represents the app state
@@ -98,6 +102,9 @@ type Model struct {
 	shareSending   bool
 
 	reelPFP *player.PFP
+
+	version        string
+	latestVersion  string
 }
 
 type Config struct {
@@ -106,7 +113,7 @@ type Config struct {
 }
 
 // NewModel creates a new TUI model
-func NewModel(userDataDir, cacheDir, configDir string, output io.Writer, flags Config) Model {
+func NewModel(userDataDir, cacheDir, configDir string, output io.Writer, version string, flags Config) Model {
 	backend.LoadSettings(configDir)
 
 	settings := backend.GetSettings()
@@ -122,7 +129,7 @@ func NewModel(userDataDir, cacheDir, configDir string, output io.Writer, flags C
 	p := player.NewAVPlayer()
 	p.SetSize(playerWidth, playerHeight)
 	p.SetVolume(settings.Volume)
-	p.SetUseShm(player.ShmSupported())
+	p.SetUseShm(shm.ShmSupported())
 
 	b := backend.NewChromeBackend(userDataDir, cacheDir, configDir)
 
@@ -139,6 +146,7 @@ func NewModel(userDataDir, cacheDir, configDir string, output io.Writer, flags C
 		help:          NewHelpPanel(),
 		flags:         flags,
 		showNavbar:    settings.ShowNavbar,
+		version:       version,
 	}
 }
 
@@ -147,7 +155,31 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(
 		m.spinner.Tick,
 		m.startBackend,
+		m.checkVersion,
 	)
+}
+
+func (m Model) checkVersion() tea.Msg {
+	if m.version == "dev" {
+		return versionCheckMsg{}
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get("https://api.github.com/repos/njyeung/reels/releases/latest")
+	if err != nil {
+		return versionCheckMsg{}
+	}
+	defer resp.Body.Close()
+	var release struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return versionCheckMsg{}
+	}
+	latest := strings.TrimPrefix(release.TagName, "v")
+	if latest != "" && latest != m.version {
+		return versionCheckMsg{latest: latest}
+	}
+	return versionCheckMsg{}
 }
 
 func (m Model) startBackend() tea.Msg {
@@ -300,6 +332,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
+
+	case versionCheckMsg:
+		m.latestVersion = msg.latest
+		return m, nil
 
 	case backendReadyMsg:
 		m.state = stateBrowsing

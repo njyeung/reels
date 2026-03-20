@@ -11,6 +11,8 @@ import (
 	"github.com/njyeung/reels/tui"
 )
 
+var Version = "dev"
+
 // SyncFile wraps *os.File with a mutex to serialize writes while preserving Fd() for ioctls
 type SyncFile struct {
 	mu sync.Mutex
@@ -35,7 +37,7 @@ func main() {
 	syncOut := &SyncFile{File: os.Stdout}
 
 	p := tea.NewProgram(
-		tui.NewModel(userDataDir, cacheDir, configDir, syncOut, tui.Config{LoginMode: *loginFlag, HeadedMode: *headedFlag}),
+		tui.NewModel(userDataDir, cacheDir, configDir, syncOut, Version, tui.Config{LoginMode: *loginFlag, HeadedMode: *headedFlag}),
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
 		tea.WithOutput(syncOut),
