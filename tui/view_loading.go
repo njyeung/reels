@@ -101,7 +101,7 @@ func renderLoadingBar(text string, style lipgloss.Style, scrollOffset int) strin
 	}
 
 	// Marquee scroll: duplicate text with gap for seamless loop
-	gap := "       "
+	gap := "   "
 	scrollText := text + gap + text
 	scrollRunes := []rune(scrollText)
 	loopLen := runewidth.StringWidth(text) + runewidth.StringWidth(gap)
