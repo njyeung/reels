@@ -1,6 +1,6 @@
 //go:build linux
 
-package player
+package shm
 
 import (
 	"os"

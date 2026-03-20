@@ -7,6 +7,8 @@ import (
 	"hash/crc32"
 	"io"
 	"sync"
+
+	"github.com/njyeung/reels/player/shm"
 )
 
 // KittyRenderer renders images using Kitty's graphics protocol
@@ -185,7 +187,7 @@ func (r *KittyRenderer) writeImageShm(buf *bytes.Buffer, data []byte, format, wi
 	name := fmt.Sprintf("/kitty-reels-%d-%d", id, r.shmIndex)
 	r.shmIndex++
 
-	if err := ShmWrite(name, data); err != nil {
+	if err := shm.ShmWrite(name, data); err != nil {
 		return err
 	}
 
@@ -200,5 +202,5 @@ func (r *KittyRenderer) CleanupShm() {
 	if !r.useShm {
 		return
 	}
-	ShmCleanupAll()
+	shm.ShmCleanupAll()
 }

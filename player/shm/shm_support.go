@@ -1,4 +1,4 @@
-package player
+package shm
 
 import (
 	"encoding/base64"

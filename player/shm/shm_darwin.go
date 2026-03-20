@@ -1,6 +1,6 @@
 //go:build darwin
 
-package player
+package shm
 
 /*
 #include <fcntl.h>

@@ -1,6 +1,6 @@
 //go:build darwin
 
-package player
+package shm
 
 import "golang.org/x/sys/unix"
 
