@@ -42,4 +42,13 @@ var (
 					Bold(true).
 					Foreground(lipgloss.Color("220")).
 					Underline(true)
+	loadingBarStyle = lipgloss.NewStyle().
+			Background(lipgloss.Color("236"))
+	loadingMsgStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("245")).
+			Background(lipgloss.Color("236"))
+	loadingUpdateStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("226")).
+				Background(lipgloss.Color("236"))
 )

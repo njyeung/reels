@@ -32,10 +32,13 @@ type (
 		index int
 		pfp   *player.PFP
 	}
-	musicTickMsg  struct{}
-	shareResetMsg   struct{}
-	shareSentMsg    struct{}
-	versionCheckMsg struct{ latest string }
+	musicTickMsg       struct{}
+	shareResetMsg      struct{}
+	shareSentMsg       struct{}
+	versionCheckMsg    struct{ latest string }
+	loadingMsgsMsg        struct{ messages []string }
+	loadingMsgTickMsg     struct{}
+	loadingScrollTickMsg  struct{}
 )
 
 // State represents the app state
@@ -103,8 +106,12 @@ type Model struct {
 
 	reelPFP *player.PFP
 
-	version        string
-	latestVersion  string
+	version       string
+	latestVersion string
+
+	loadingMessages    []string
+	loadingMsgIndex    int
+	loadingMsgScroll   int
 }
 
 type Config struct {
@@ -156,7 +163,36 @@ func (m Model) Init() tea.Cmd {
 		m.spinner.Tick,
 		m.startBackend,
 		m.checkVersion,
+		m.fetchLoadingMessages,
 	)
+}
+
+func (m Model) fetchLoadingMessages() tea.Msg {
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get("https://raw.githubusercontent.com/njyeung/reels/main/loading.json")
+	if err != nil {
+		return loadingMsgsMsg{}
+	}
+	defer resp.Body.Close()
+	var data struct {
+		Messages []string `json:"messages"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return loadingMsgsMsg{}
+	}
+	return loadingMsgsMsg{messages: data.Messages}
+}
+
+func (m Model) loadingMsgTick() tea.Cmd {
+	return tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
+		return loadingMsgTickMsg{}
+	})
+}
+
+func (m Model) loadingScrollTick() tea.Cmd {
+	return tea.Tick(300*time.Millisecond, func(t time.Time) tea.Msg {
+		return loadingScrollTickMsg{}
+	})
 }
 
 func (m Model) checkVersion() tea.Msg {
@@ -336,6 +372,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case versionCheckMsg:
 		m.latestVersion = msg.latest
 		return m, nil
+
+	case loadingMsgsMsg:
+		if len(msg.messages) > 0 {
+			m.loadingMessages = msg.messages
+			m.loadingMsgIndex = 0
+			m.loadingMsgScroll = 0
+			return m, tea.Batch(m.loadingMsgTick(), m.loadingScrollTick())
+		}
+		return m, nil
+
+	case loadingMsgTickMsg:
+		if m.state != stateLoading || len(m.loadingMessages) == 0 {
+			return m, nil
+		}
+		m.loadingMsgIndex = (m.loadingMsgIndex + 1) % len(m.loadingMessages)
+		m.loadingMsgScroll = 0
+		return m, m.loadingMsgTick()
+
+	case loadingScrollTickMsg:
+		if m.state != stateLoading || len(m.loadingMessages) == 0 {
+			return m, nil
+		}
+		m.loadingMsgScroll++
+		return m, m.loadingScrollTick()
 
 	case backendReadyMsg:
 		m.state = stateBrowsing
