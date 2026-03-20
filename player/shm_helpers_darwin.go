@@ -7,6 +7,11 @@ package player
 #include <sys/mman.h>
 #include <stdlib.h>
 #include <unistd.h>
+
+// Wrapper needed because shm_open is variadic and CGo cannot call variadic C functions.
+static int shm_open_wrapper(const char *name, int oflag, mode_t mode) {
+	return shm_open(name, oflag, mode);
+}
 */
 import "C"
 
@@ -40,10 +45,10 @@ func shmTrackRemove(name string) {
 	shmTracker.mu.Unlock()
 }
 
-func shmOpen(name string, oflag int) (int, error) {
+func shmOpen(name string, oflag int, mode uint32) (int, error) {
 	cname := C.CString(name)
 	defer C.free(unsafe.Pointer(cname))
-	fd, err := C.shm_open(cname, C.int(oflag), 0600)
+	fd, err := C.shm_open_wrapper(cname, C.int(oflag), C.mode_t(mode))
 	if fd < 0 {
 		return -1, fmt.Errorf("shm_open %q: %w", name, err)
 	}
@@ -59,7 +64,7 @@ func shmUnlinkRaw(name string) {
 // ShmWrite creates a POSIX shared memory object, truncates it to len(data),
 // and writes data into it via mmap.
 func ShmWrite(name string, data []byte) error {
-	fd, err := shmOpen(name, C.O_CREAT|C.O_RDWR|C.O_TRUNC)
+	fd, err := shmOpen(name, C.O_CREAT|C.O_RDWR|C.O_TRUNC, 0600)
 	if err != nil {
 		return err
 	}
