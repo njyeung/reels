@@ -195,8 +195,8 @@ func (r *KittyRenderer) writeImageShm(buf *bytes.Buffer, data []byte, format, wi
 	return nil
 }
 
-// CleanupSHM removes any lingering shared memory objects on shutdown.
-func (r *KittyRenderer) CleanupSHM() {
+// CleanupShm removes any lingering shared memory objects on shutdown.
+func (r *KittyRenderer) CleanupShm() {
 	if !r.useShm {
 		return
 	}

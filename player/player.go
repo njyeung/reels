@@ -351,7 +351,7 @@ func (p *AVPlayer) Close() {
 	defer p.configMu.Unlock()
 
 	if p.renderer != nil {
-		p.renderer.CleanupSHM()
+		p.renderer.CleanupShm()
 		p.renderer = nil
 	}
 }
