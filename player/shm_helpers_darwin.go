@@ -43,7 +43,7 @@ func shmTrackRemove(name string) {
 func shmOpen(name string, oflag int, mode uint32) (int, error) {
 	cname := C.CString(name)
 	defer C.free(unsafe.Pointer(cname))
-	fd, err := C.shm_open(cname, C.int(oflag), C.mode_t(mode))
+	fd, err := C.shm_open(cname, C.int(oflag), 0600)
 	if fd < 0 {
 		return -1, fmt.Errorf("shm_open %q: %w", name, err)
 	}
