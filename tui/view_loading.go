@@ -158,7 +158,7 @@ func (m Model) loadingMsgTick() tea.Cmd {
 }
 
 func (m Model) loadingScrollTick() tea.Cmd {
-	return tea.Tick(200*time.Millisecond, func(t time.Time) tea.Msg {
+	return tea.Tick(150*time.Millisecond, func(t time.Time) tea.Msg {
 		return loadingScrollTickMsg{}
 	})
 }
@@ -170,7 +170,7 @@ func (m Model) loadingFadeTick() tea.Cmd {
 }
 
 // loadingFadeColor returns the ANSI color for the current fade step.
-// Steps 1-6: fade out (245→236), steps 7-12: fade in (236→245).
+// Steps 1-6: fade out (245 -> 236), steps 7-12: fade in (236 -> 245).
 func loadingFadeColor(step int) string {
 	grays := [7]int{245, 244, 242, 241, 239, 237, 236}
 	switch {

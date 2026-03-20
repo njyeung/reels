@@ -322,13 +322,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.loadingFadeStep++
+		// Midpoint: swap to next message
 		if m.loadingFadeStep == 7 {
-			// Midpoint: swap to next message
 			m.loadingMsgIndex = (m.loadingMsgIndex + 1) % len(m.loadingMessages)
 			m.loadingMsgScroll = 0
 		}
+		// Fade complete
 		if m.loadingFadeStep >= 13 {
-			// Fade complete
 			m.loadingFadeStep = 0
 			return m, m.loadingMsgTick()
 		}
