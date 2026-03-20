@@ -40,7 +40,7 @@ func shmTrackRemove(name string) {
 	shmTracker.mu.Unlock()
 }
 
-func shmOpen(name string, oflag int, mode uint32) (int, error) {
+func shmOpen(name string, oflag int) (int, error) {
 	cname := C.CString(name)
 	defer C.free(unsafe.Pointer(cname))
 	fd, err := C.shm_open(cname, C.int(oflag), 0600)
