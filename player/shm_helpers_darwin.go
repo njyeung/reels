@@ -59,7 +59,7 @@ func shmUnlinkRaw(name string) {
 // ShmWrite creates a POSIX shared memory object, truncates it to len(data),
 // and writes data into it via mmap.
 func ShmWrite(name string, data []byte) error {
-	fd, err := shmOpen(name, C.O_CREAT|C.O_RDWR|C.O_TRUNC, 0600)
+	fd, err := shmOpen(name, C.O_CREAT|C.O_RDWR|C.O_TRUNC)
 	if err != nil {
 		return err
 	}
