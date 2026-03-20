@@ -22,7 +22,13 @@ type SyncFile struct {
 func main() {
 	loginFlag := flag.Bool("login", false, "Open browser in headed mode for Instagram login, also used for debugging since the app does not try to control the browser.")
 	headedFlag := flag.Bool("headed", false, "Run browser in headed mode")
+	versionFlag := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
+
+	if *versionFlag {
+		fmt.Println(Version)
+		return
+	}
 
 	// Set up directories:
 	// Browser data: 	~/.local/share/reels/

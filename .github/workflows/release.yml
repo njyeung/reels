@@ -84,6 +84,24 @@ jobs:
         run: |
           git archive --format=tar.gz --prefix=reels-${GITHUB_REF_NAME#v}/ HEAD > artifacts/reels-${GITHUB_REF_NAME#v}.tar.gz
 
+      - name: Extract changelog
+        id: changelog
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          # Extract the section for this version (between its heading and the next heading)
+          BODY=$(awk "/^## \\[${VERSION}\\]/{found=1; next} /^## \\[/{if(found) exit} found{print}" CHANGELOG.md)
+          # Fall back to auto-generated notes if no changelog entry exists
+          if [ -z "$BODY" ]; then
+            echo "found=false" >> $GITHUB_OUTPUT
+          else
+            echo "found=true" >> $GITHUB_OUTPUT
+            {
+              echo "body<<EOF"
+              echo "$BODY"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
+          fi
+
       - name: Create release
         uses: softprops/action-gh-release@v1
         with:
@@ -91,4 +109,5 @@ jobs:
             artifacts/reels-linux-amd64/reels-linux-amd64
             artifacts/reels-darwin-arm64/reels-darwin-arm64
             artifacts/reels-*.tar.gz
-          generate_release_notes: true
+          body: ${{ steps.changelog.outputs.found == 'true' && steps.changelog.outputs.body || '' }}
+          generate_release_notes: ${{ steps.changelog.outputs.found != 'true' }}
