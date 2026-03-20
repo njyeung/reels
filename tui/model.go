@@ -1,11 +1,8 @@
 package tui
 
 import (
-	"encoding/json"
 	"io"
-	"net/http"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -106,7 +103,7 @@ type Model struct {
 	reelPFP *player.PFP
 
 	version       string
-	latestVersion string
+	updateAvailable string
 
 	loadingMessages  []string
 	loadingMsgIndex  int
@@ -165,29 +162,6 @@ func (m Model) Init() tea.Cmd {
 		m.checkVersion,
 		m.fetchLoadingMessages,
 	)
-}
-
-func (m Model) checkVersion() tea.Msg {
-	if m.version == "dev" {
-		return versionCheckMsg{}
-	}
-	client := &http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Get("https://api.github.com/repos/njyeung/reels/releases/latest")
-	if err != nil {
-		return versionCheckMsg{}
-	}
-	defer resp.Body.Close()
-	var release struct {
-		TagName string `json:"tag_name"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return versionCheckMsg{}
-	}
-	latest := strings.TrimPrefix(release.TagName, "v")
-	if latest != "" && latest != m.version {
-		return versionCheckMsg{latest: latest}
-	}
-	return versionCheckMsg{}
 }
 
 func (m Model) startBackend() tea.Msg {
@@ -296,7 +270,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case versionCheckMsg:
-		m.latestVersion = msg.latest
+		m.updateAvailable = msg.latest
 		return m, nil
 
 	case loadingMsgsMsg:
@@ -310,7 +284,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case loadingMsgTickMsg:
-		if m.state != stateLoading || len(m.loadingMessages) == 0 {
+		if m.state != stateLoading || len(m.loadingMessages) == 0 || m.updateAvailable != "" {
 			return m, nil
 		}
 		// Start fade-out instead of immediately swapping
@@ -329,6 +303,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		// Fade complete
 		if m.loadingFadeStep >= 13 {
+
 			m.loadingFadeStep = 0
 			return m, m.loadingMsgTick()
 		}

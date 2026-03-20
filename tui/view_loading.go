@@ -13,7 +13,7 @@ import (
 	"github.com/mattn/go-runewidth"
 )
 
-const loadingBarWidth = 32
+const loadingBarWidth = 34
 
 func (m Model) viewLoading() string {
 	if m.width == 0 || m.height == 0 {
@@ -23,8 +23,8 @@ func (m Model) viewLoading() string {
 	// Determine bar text and style
 	var barText string
 	var barStyle lipgloss.Style
-	if m.latestVersion != "" {
-		barText = fmt.Sprintf("Update available: v%s → v%s", m.version, m.latestVersion)
+	if m.updateAvailable != "" {
+		barText = fmt.Sprintf("Update available: v%s ➞ v%s", m.version, m.updateAvailable)
 		barStyle = loadingUpdateStyle
 	} else if len(m.loadingMessages) > 0 {
 		barText = m.loadingMessages[m.loadingMsgIndex]
@@ -36,6 +36,29 @@ func (m Model) viewLoading() string {
 	}
 
 	return renderLoadingScreen(m.width, m.height, barText, barStyle, m.loadingMsgScroll)
+}
+
+func (m Model) checkVersion() tea.Msg {
+	if m.version == "dev" {
+		return versionCheckMsg{}
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get("https://api.github.com/repos/njyeung/reels/releases/latest")
+	if err != nil {
+		return versionCheckMsg{}
+	}
+	defer resp.Body.Close()
+	var release struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return versionCheckMsg{}
+	}
+	latest := strings.TrimPrefix(release.TagName, "v")
+	if latest != "" && latest != m.version {
+		return versionCheckMsg{latest: latest}
+	}
+	return versionCheckMsg{}
 }
 
 func renderLoadingScreen(width, height int, barText string, barStyle lipgloss.Style, scrollOffset int) string {
