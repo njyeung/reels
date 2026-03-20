@@ -152,7 +152,7 @@ func (m Model) fetchLoadingMessages() tea.Msg {
 }
 
 func (m Model) loadingMsgTick() tea.Cmd {
-	return tea.Tick(4*time.Second, func(t time.Time) tea.Msg {
+	return tea.Tick(5*time.Second, func(t time.Time) tea.Msg {
 		return loadingMsgTickMsg{}
 	})
 }
