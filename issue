@@ -1,0 +1,5 @@
+Downloads % ./reels-darwin-arm64 
+dyld[36381]: Symbol not found: _av_buffer_unref
+  Referenced from: <B4171F14-2227-39AF-EAF4-CA51438EC239> /Users/nickjyeung/Downloads/reels-darwin-arm64
+  Expected in:     <8477F707-FCE5-3244-87F2-4B68F08E50B0> /opt/homebrew/Cellar/ffmpeg/8.1/lib/libavdevice.62.3.100.dylib
+zsh: abort      ./reels-darwin-arm64
