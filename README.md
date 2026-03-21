@@ -27,6 +27,8 @@
   <em>Doomscrollbrainrotmaxxing in the terminal.</em>
 </p>
 
+---
+
 <p align="center">
   <img src="screenshot-2.png" width="41%">
   <img src="demo.gif" width="25%" />
