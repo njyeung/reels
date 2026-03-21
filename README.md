@@ -1,6 +1,7 @@
 TUI for Instagram Reels. Doomscrollbrainrotmaxxing in the terminal.
 
 [![Stars](https://img.shields.io/github/stars/njyeung/reels)](https://github.com/njyeung/reels)
+[![npm](https://img.shields.io/endpoint?url=https://YOUR_WORKER.workers.dev&logo=npm)](https://www.npmjs.com/package/@reels/tui)
 [![AUR](https://img.shields.io/aur/version/reels-bin)](https://aur.archlinux.org/packages/reels-bin)
 [![Homebrew](https://img.shields.io/badge/brew-njyeung/tap-orange?logo=homebrew)](https://github.com/njyeung/homebrew-tap)
 ---
