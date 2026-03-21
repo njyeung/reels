@@ -1,9 +1,24 @@
-TUI for Instagram Reels. Doomscrollbrainrotmaxxing in the terminal.
+<p align="center">
+<pre align="center">
+██████╗ ███████╗███████╗██╗     ███████╗
+██╔══██╗██╔════╝██╔════╝██║     ██╔════╝
+██████╔╝█████╗  █████╗  ██║     ███████╗
+██╔══██╗██╔══╝  ██╔══╝  ██║     ╚════██║
+██║  ██║███████╗███████╗███████╗███████║
+╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝╚══════╝
+</pre>
+</p>
+<p align="center">
+  <em>Doomscrollbrainrotmaxxing in the terminal.</em>
+</p>
+<p align="center">
+  <a href="https://github.com/njyeung/reels"><img src="https://img.shields.io/github/stars/njyeung/reels" alt="Stars"></a>
+  <a href="https://www.npmjs.com/package/@reels/tui"><img src="https://img.shields.io/endpoint?url=https://proud-sun-d44c.nickjyeung.workers.dev&logo=npm" alt="npm"></a>
+  <a href="https://aur.archlinux.org/packages/reels-bin"><img src="https://img.shields.io/aur/version/reels-bin" alt="AUR"></a>
+  <a href="https://github.com/njyeung/homebrew-tap"><img src="https://img.shields.io/badge/brew-njyeung/tap-orange?logo=homebrew" alt="Homebrew"></a>
+</p>
 
-[![Stars](https://img.shields.io/github/stars/njyeung/reels)](https://github.com/njyeung/reels)
-[![npm](https://img.shields.io/endpoint?url=https://proud-sun-d44c.nickjyeung.workers.dev&logo=npm)](https://www.npmjs.com/package/@reels/tui)
-[![AUR](https://img.shields.io/aur/version/reels-bin)](https://aur.archlinux.org/packages/reels-bin)
-[![Homebrew](https://img.shields.io/badge/brew-njyeung/tap-orange?logo=homebrew)](https://github.com/njyeung/homebrew-tap)
+
 ---
 
 <p align="center">
