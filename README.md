@@ -81,7 +81,7 @@ All keybinds are configurable in `reels.conf`. Each action supports multiple bin
 
 ### npm (macOS ARM64 / Linux x86_64)
 
-**macOS** — requires [Homebrew](https://brew.sh):
+**macOS** *requires [Homebrew](https://brew.sh)*:
 ```bash
 brew install ffmpeg-full
 npm install -g @reels/tui
