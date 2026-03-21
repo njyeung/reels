@@ -3,9 +3,9 @@ TUI for Instagram Reels. Doomscrollbrainrotmaxxing in the terminal.
 ---
 
 <p align="center">
-  <img src="screenshot-3.png" width="32%">
-  <img src="screenshot-1.png" width="26%" />
-  <img src="demo.gif" width="39%" />
+  <img src="screenshot-2.png" width="41%">
+  <img src="demo.gif" width="25%" />
+  <img src="screenshot-1.png" width="27%" />
 </p>
 
 ## Prerequisites
