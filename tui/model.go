@@ -102,7 +102,7 @@ type Model struct {
 
 	reelPFP *player.PFP
 
-	version       string
+	version         string
 	updateAvailable string
 
 	loadingMessages  []string

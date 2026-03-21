@@ -16,13 +16,13 @@ import (
 )
 
 type Settings struct {
-	ShowNavbar  bool
-	RetinaScale int
-	ReelWidth    int
-	ReelHeight   int
-	ReelSizeStep int
-	Volume       float64
-	GifCellHeight int
+	ShowNavbar       bool
+	RetinaScale      int
+	ReelWidth        int
+	ReelHeight       int
+	ReelSizeStep     int
+	Volume           float64
+	GifCellHeight    int
 	PanelShrinkSteps int
 
 	KeysNext        []string
@@ -126,28 +126,28 @@ func add(filepath string) error {
 
 func defaultSettings() Settings {
 	s := Settings{
-		ShowNavbar:      true,
-		RetinaScale:     1,
-		ReelWidth:       270,
-		ReelHeight:      480,
-		ReelSizeStep:    30,
-		Volume:          1,
-		GifCellHeight:   5,
+		ShowNavbar:       true,
+		RetinaScale:      1,
+		ReelWidth:        270,
+		ReelHeight:       480,
+		ReelSizeStep:     30,
+		Volume:           1,
+		GifCellHeight:    5,
 		PanelShrinkSteps: 4,
-		KeysNext:        []string{"j"},
-		KeysPrevious:    []string{"k"},
-		KeysPause:       []string{" "},
-		KeysMute:        []string{"m"},
-		KeysLike:        []string{"l"},
-		KeysComments:    []string{"c"},
-		KeysNavbar:      []string{"e"},
-		KeysVolUp:       []string{"]"},
-		KeysVolDown:     []string{"["},
-		KeysReelSizeInc: []string{"="},
-		KeysReelSizeDec: []string{"-"},
-		KeysShare:       []string{"s"},
-		KeysCopyLink:    []string{"y"},
-		KeysQuit:        []string{"q", "ctrl+c"},
+		KeysNext:         []string{"j"},
+		KeysPrevious:     []string{"k"},
+		KeysPause:        []string{" "},
+		KeysMute:         []string{"m"},
+		KeysLike:         []string{"l"},
+		KeysComments:     []string{"c"},
+		KeysNavbar:       []string{"e"},
+		KeysVolUp:        []string{"]"},
+		KeysVolDown:      []string{"["},
+		KeysReelSizeInc:  []string{"="},
+		KeysReelSizeDec:  []string{"-"},
+		KeysShare:        []string{"s"},
+		KeysCopyLink:     []string{"y"},
+		KeysQuit:         []string{"q", "ctrl+c"},
 	}
 
 	if goruntime.GOOS == "darwin" {

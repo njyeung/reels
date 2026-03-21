@@ -26,9 +26,9 @@ var (
 			Background(lipgloss.Color("52")).
 			Padding(0, 1)
 	panelTitleStyle = lipgloss.NewStyle().
-				Bold(true).
-				Underline(true).
-				Foreground(lipgloss.Color("141"))
+			Bold(true).
+			Underline(true).
+			Foreground(lipgloss.Color("141"))
 	commentTextStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("252"))
 	friendCursorStyle = lipgloss.NewStyle().
