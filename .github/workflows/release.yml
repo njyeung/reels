@@ -63,16 +63,20 @@ jobs:
           VERSION=${GITHUB_REF_NAME#v}
           go build -ldflags "-X main.Version=$VERSION" -o reels-darwin-arm64 .
 
-          # Normalize any versioned cellar dylib paths to the stable opt symlink path.
-          # This ensures the binary works with any installed version of ffmpeg-full,
-          # not just the exact version present on the build machine.
-          for dylib_path in $(otool -L reels-darwin-arm64 | grep "Cellar/ffmpeg" | awk '{print $1}'); do
+          # Rewrite dylib references to use @rpath so the binary works with any
+          # FFmpeg 8+ installation, not just ffmpeg-full from Homebrew.
+          for dylib_path in $(otool -L reels-darwin-arm64 | grep "Cellar/ffmpeg\|/opt/homebrew" | awk '{print $1}'); do
             filename=$(basename "$dylib_path")
             stable_name=$(echo "$filename" | sed -E 's/(lib[a-z]+\.[0-9]+)\.[0-9]+\.[0-9]+\.dylib/\1.dylib/')
-            stable_path="/opt/homebrew/opt/ffmpeg-full/lib/$stable_name"
-            echo "Normalizing: $dylib_path -> $stable_path"
-            install_name_tool -change "$dylib_path" "$stable_path" reels-darwin-arm64
+            echo "Rewriting: $dylib_path -> @rpath/$stable_name"
+            install_name_tool -change "$dylib_path" "@rpath/$stable_name" reels-darwin-arm64
           done
+
+          # Add search paths for common FFmpeg install locations
+          install_name_tool -add_rpath /opt/homebrew/opt/ffmpeg-full/lib reels-darwin-arm64
+          install_name_tool -add_rpath /opt/homebrew/opt/ffmpeg/lib reels-darwin-arm64
+          install_name_tool -add_rpath /usr/local/lib reels-darwin-arm64
+          install_name_tool -add_rpath /opt/homebrew/lib reels-darwin-arm64
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
