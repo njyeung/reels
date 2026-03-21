@@ -351,6 +351,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 			// Always open in browser (for Instagram's algorithm)
 			go m.backend.OpenComments()
+			m.player.RedrawVideo()
 		}
 	case m.share.IsOpen() && slices.Contains(config.KeysPause, key):
 		if m.shareSending {
@@ -375,6 +376,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.updateVideoPosition()
 			m.updateImages()
 			go m.backend.OpenSharePanel()
+			m.player.RedrawVideo()
 		}
 	case key == "?":
 		if m.help.IsOpen() {
@@ -385,6 +387,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.help.Open()
 			m.updateVideoPosition()
 			m.updateImages()
+			m.player.RedrawVideo()
 		}
 
 	case slices.Contains(config.KeysNavbar, key):
@@ -475,6 +478,7 @@ func (m *Model) closePanelLayout() {
 	m.updateVideoPosition()
 	m.player.ClearGifs()
 	m.updateImages()
+	m.player.RedrawVideo()
 }
 
 // resizeReel adjusts the reel bounding box by delta pixels (width), deriving height from 9:16 ratio.

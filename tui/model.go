@@ -263,6 +263,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.updateCommentGifs()
 		}
 		m.updateImages()
+		m.player.RedrawVideo()
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd

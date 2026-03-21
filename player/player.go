@@ -17,9 +17,10 @@ type AVPlayer struct {
 	height int
 	useShm bool
 
-	playing atomic.Bool
-	paused  atomic.Bool
-	muted   atomic.Bool
+	playing        atomic.Bool
+	paused         atomic.Bool
+	muted          atomic.Bool
+	needsRedrawVid atomic.Bool
 	volume  atomic.Value // float64, 0.0–1.0
 
 	playMu   sync.Mutex
@@ -249,6 +250,12 @@ func (p *AVPlayer) Pause() {
 // IsPaused returns current pause state
 func (p *AVPlayer) IsPaused() bool {
 	return p.paused.Load()
+}
+
+// RedrawVideo signals the render loop to advance one frame while paused,
+// picking up any layout changes (position, size, overlays).
+func (p *AVPlayer) RedrawVideo() {
+	p.needsRedrawVid.Store(true)
 }
 
 // IsMuted returns current mute state

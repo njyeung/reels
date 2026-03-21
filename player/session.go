@@ -250,7 +250,23 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 			continue
 		}
 
+		redraw := false
 		for p.paused.Load() {
+			if p.needsRedrawVid.CompareAndSwap(true, false) {
+				redraw = true
+				break
+			}
+
+			// Render gifs and static images while paused
+			s.renderer.BeginSync()
+			keep := map[int]bool{VideoImageID: true}
+			if err := s.renderOverlays(keep); err != nil {
+				s.renderer.EndSync()
+				return err
+			}
+			s.renderer.Prune(keep)
+			s.renderer.EndSync()
+
 			time.Sleep(50 * time.Millisecond)
 			if !p.playing.Load() {
 				pkt.Free()
@@ -265,6 +281,9 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 			return fmt.Errorf("video decode error: %w", err)
 		}
 		if frame == nil {
+			if redraw {
+				p.needsRedrawVid.Store(true)
+			}
 			continue
 		}
 
@@ -291,44 +310,11 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 			return fmt.Errorf("render error: %w", err)
 		}
 
-		// render gifs
-		s.gifsMu.Lock()
-		now := time.Now()
-		for i := range s.visibleGifs {
-			g := &s.visibleGifs[i]
-			keep[g.imageID] = true
-			if len(g.anim.Frames) == 0 {
-				continue
-			}
-			if now.Sub(g.lastAdvance) >= g.anim.Delays[g.frameIndex] {
-				g.frameIndex = (g.frameIndex + 1) % len(g.anim.Frames)
-				g.lastAdvance = now
-			}
-			s.renderer.RenderImage(g.anim.Frames[g.frameIndex], 32, g.anim.Width, g.anim.Height, g.imageID, g.row, g.col)
+		// render gifs and static images
+		if err := s.renderOverlays(keep); err != nil {
+			s.renderer.EndSync()
+			return err
 		}
-		s.gifsMu.Unlock()
-
-		// render static images
-		s.imagesMu.Lock()
-		for i := range s.visibleImgs {
-			img := &s.visibleImgs[i]
-			keep[img.imageID] = true
-			if img.img == nil {
-				continue
-			}
-
-			pic, w, h := img.img.Snapshot()
-			if len(pic) == 0 || w == 0 || h == 0 {
-				continue
-			}
-
-			if err := s.renderer.RenderImage(pic, 32, w, h, img.imageID, img.row, img.col); err != nil {
-				s.imagesMu.Unlock()
-				s.renderer.EndSync()
-				return fmt.Errorf("static image render error: %w", err)
-			}
-		}
-		s.imagesMu.Unlock()
 
 		// Remove any images that weren't rendered this frame.
 		s.renderer.Prune(keep)
@@ -336,6 +322,49 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 		s.renderer.EndSync()
 	}
 
+	return nil
+}
+
+// renderOverlays renders gifs and static images into the given keep map.
+// Must be called between BeginSync and EndSync.
+func (s *playSession) renderOverlays(keep map[int]bool) error {
+	// render gifs
+	s.gifsMu.Lock()
+	now := time.Now()
+	for i := range s.visibleGifs {
+		g := &s.visibleGifs[i]
+		keep[g.imageID] = true
+		if len(g.anim.Frames) == 0 {
+			continue
+		}
+		if now.Sub(g.lastAdvance) >= g.anim.Delays[g.frameIndex] {
+			g.frameIndex = (g.frameIndex + 1) % len(g.anim.Frames)
+			g.lastAdvance = now
+		}
+		s.renderer.RenderImage(g.anim.Frames[g.frameIndex], 32, g.anim.Width, g.anim.Height, g.imageID, g.row, g.col)
+	}
+	s.gifsMu.Unlock()
+
+	// render static images
+	s.imagesMu.Lock()
+	for i := range s.visibleImgs {
+		img := &s.visibleImgs[i]
+		keep[img.imageID] = true
+		if img.img == nil {
+			continue
+		}
+
+		pic, w, h := img.img.Snapshot()
+		if len(pic) == 0 || w == 0 || h == 0 {
+			continue
+		}
+
+		if err := s.renderer.RenderImage(pic, 32, w, h, img.imageID, img.row, img.col); err != nil {
+			s.imagesMu.Unlock()
+			return fmt.Errorf("static image render error: %w", err)
+		}
+	}
+	s.imagesMu.Unlock()
 	return nil
 }
 
