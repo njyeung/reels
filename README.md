@@ -5,18 +5,14 @@ TUI for Instagram Reels. Doomscrollbrainrotmaxxing in the terminal.
 <p align="center">
   <img src="screenshot-3.png" width="32%">
   <img src="screenshot-1.png" width="26%" />
-  <img src="screenshot-2.png" width="39%" />
-</p>
-
-<p align="center">
-  <img src="demo.gif" alt="demo gif" width="250px">
+  <img src="demo.gif" width="39%" />
 </p>
 
 ## Prerequisites
 
 ### Terminal
 You need a terminal that supports the **Kitty graphics protocol**:
-- [Kitty](https://sw.kovidgoyal.net/kitty/) (recommended)
+- [Kitty](https://sw.kovidgoyal.net/kitty/) (recommended — most performant)
 - [WezTerm](https://wezfurlong.org/wezterm/)
 - [Konsole](https://konsole.kde.org/)
 
@@ -24,7 +20,7 @@ You need a terminal that supports the **Kitty graphics protocol**:
 Chrome, Chromium, or Brave must be installed. The app uses headless browser automation to interact with Instagram.
 
 ### FFmpeg
-FFmpeg 8+ must be installed on your system. Homebrew installs it automatically. Arch users should ensure ffmpeg is up to date (`sudo pacman -Syu ffmpeg`).
+FFmpeg 8+ must be installed on your system. The Homebrew install method handles this automatically. For other install methods, see the FFmpeg notes under each section below.
 
 ## Usage
 
@@ -59,8 +55,17 @@ All keybinds are configurable in `reels.conf`. Each action supports multiple bin
 
 ### npm (macOS ARM64 / Linux x86_64)
 
+**macOS** — requires [Homebrew](https://brew.sh):
 ```bash
 brew install ffmpeg-full
+npm install -g @reels/tui
+reels
+```
+
+**Linux:**
+```bash
+# sudo pacman -S ffmpeg        # Arch
+# sudo apt install ffmpeg      # Debian/Ubuntu
 npm install -g @reels/tui
 reels
 ```
@@ -90,7 +95,9 @@ Download the latest release from [GitHub Releases](https://github.com/njyeung/re
 | Linux (x86_64) | `reels-linux-amd64` |
 | macOS (Apple Silicon) | `reels-darwin-arm64` |
 
-**Note:** Pre-built binaries require FFmpeg 8+ to be installed on your system.
+**macOS:** Requires `ffmpeg-full` from Homebrew — `brew install ffmpeg-full`
+
+**Linux:** Requires FFmpeg 8+ (e.g. `sudo pacman -S ffmpeg` on Arch, `sudo apt install ffmpeg` on Debian/Ubuntu)
 
 ### Building from Source
 
