@@ -1,17 +1,4 @@
 <p align="center">
-  <pre align="center">    
-██████╗ ███████╗███████╗██╗     ███████╗    ████████╗██╗   ██╗██╗
-██╔══██╗██╔════╝██╔════╝██║     ██╔════╝    ╚══██╔══╝██║   ██║██║
-██████╔╝█████╗  █████╗  ██║     ███████╗       ██║   ██║   ██║██║
-██╔══██╗██╔══╝  ██╔══╝  ██║     ╚════██║       ██║   ██║   ██║██║
-██║  ██║███████╗███████╗███████╗███████║       ██║   ╚██████╔╝██║
-╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝╚══════╝       ╚═╝    ╚═════╝ ╚═╝
-  </pre>
-</p>
-<p align="center">
-  <em>Doomscrollbrainrotmaxxing in the terminal.</em>
-</p>
-<p align="center">
   <a href="https://github.com/njyeung/reels"><img src="https://img.shields.io/github/stars/njyeung/reels" alt="Stars"></a>
   <a href="https://www.npmjs.com/package/@reels/tui"><img src="https://img.shields.io/endpoint?url=https://proud-sun-d44c.nickjyeung.workers.dev&logo=npm" alt="npm"></a>
   <a href="https://aur.archlinux.org/packages/reels-bin"><img src="https://img.shields.io/aur/version/reels-bin" alt="AUR"></a>
@@ -23,6 +10,20 @@
   <a href="https://goreportcard.com/report/github.com/njyeung/reels"><img src="https://goreportcard.com/badge/github.com/njyeung/reels" alt="Go Report Card"></a>
   <img src="https://img.shields.io/github/last-commit/njyeung/reels" alt="Last Commit">
   <img src="https://img.shields.io/github/license/njyeung/reels" alt="License">
+</p>
+
+<p align="center">
+  <pre align="center">    
+██████╗ ███████╗███████╗██╗     ███████╗    ████████╗██╗   ██╗██╗
+██╔══██╗██╔════╝██╔════╝██║     ██╔════╝    ╚══██╔══╝██║   ██║██║
+██████╔╝█████╗  █████╗  ██║     ███████╗       ██║   ██║   ██║██║
+██╔══██╗██╔══╝  ██╔══╝  ██║     ╚════██║       ██║   ██║   ██║██║
+██║  ██║███████╗███████╗███████╗███████║       ██║   ╚██████╔╝██║
+╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝╚══════╝       ╚═╝    ╚═════╝ ╚═╝
+  </pre>
+</p>
+<p align="center">
+  <em>Doomscrollbrainrotmaxxing in the terminal.</em>
 </p>
 
 <p align="center">
