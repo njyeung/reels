@@ -67,7 +67,7 @@ reels
 ### Homebrew (macOS ARM64 / Linux x86_64)
 
 ```bash
-brew tap njyeung/reels
+brew tap njyeung/tap
 brew install reels
 reels
 ```
