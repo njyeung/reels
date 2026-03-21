@@ -49,6 +49,7 @@ jobs:
         run: |
           brew update
           brew install ffmpeg-full
+          brew upgrade ffmpeg-full 2>/dev/null || true
           echo "PKG_CONFIG_PATH=$(brew --prefix ffmpeg-full)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
           echo "LDFLAGS=-L$(brew --prefix ffmpeg-full)/lib" >> $GITHUB_ENV
           echo "CFLAGS=-I$(brew --prefix ffmpeg-full)/include" >> $GITHUB_ENV
@@ -61,6 +62,17 @@ jobs:
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           go build -ldflags "-X main.Version=$VERSION" -o reels-darwin-arm64 .
+
+          # Normalize any versioned cellar dylib paths to the stable opt symlink path.
+          # This ensures the binary works with any installed version of ffmpeg-full,
+          # not just the exact version present on the build machine.
+          for dylib_path in $(otool -L reels-darwin-arm64 | grep "Cellar/ffmpeg" | awk '{print $1}'); do
+            filename=$(basename "$dylib_path")
+            stable_name=$(echo "$filename" | sed -E 's/(lib[a-z]+\.[0-9]+)\.[0-9]+\.[0-9]+\.dylib/\1.dylib/')
+            stable_path="/opt/homebrew/opt/ffmpeg-full/lib/$stable_name"
+            echo "Normalizing: $dylib_path -> $stable_path"
+            install_name_tool -change "$dylib_path" "$stable_path" reels-darwin-arm64
+          done
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
