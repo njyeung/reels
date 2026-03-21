@@ -25,14 +25,13 @@
   <img src="https://img.shields.io/github/license/njyeung/reels" alt="License">
 </p>
 
-
----
-
 <p align="center">
   <img src="screenshot-2.png" width="41%">
   <img src="demo.gif" width="25%" />
   <img src="screenshot-1.png" width="27%" />
 </p>
+
+---
 
 ## Prerequisites
 
