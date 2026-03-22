@@ -1,8 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 150" role="img" aria-label="REELS TUI">
   <defs>
     <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#58a6ff"/>
-      <stop offset="100%" stop-color="#d2a8ff"/>
+      <stop offset="0%" stop-color="#405de6"/> 
+      <stop offset="20%" stop-color="#833ab4"/>
+      <stop offset="30%" stop-color="#c13584"/>
+      <stop offset="40%" stop-color="#e1306c"/>
+      <stop offset="50%" stop-color="#f56040"/>
+      <stop offset="70%" stop-color="#fcaf45"/>
+      <stop offset="100%" stop-color="#ffdc80"/>
     </linearGradient>
     <clipPath id="viewport">
       <rect width="700" height="150" rx="10"/>

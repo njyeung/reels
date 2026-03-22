@@ -17,7 +17,7 @@
   <img src="banner.svg" alt="REELS TUI" width="100%">
 </p>
 <p align="center">
-  <em>Doomscrollbrainrotmaxxing in the terminal.</em>
+  <img src="subtitle.svg" alt="Doomscrollbrainrotmaxxing in the terminal.">
 </p>
 
 ---

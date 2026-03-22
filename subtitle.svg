@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 450 30" role="img" aria-label="Doomscrollbrainrotmaxxing in the terminal.">
+  <style>
+    @keyframes wave {
+      0%, 57% { fill: #6e7681; }
+      60% { fill: #767e86; }
+      63% { fill: #8b949e; }
+      66% { fill: #9ca5af; }
+      69% { fill: #a8b1bb; }
+      71% { fill: #bac3cc; }
+      73% { fill: #c9d1d9; }
+      75% { fill: #bac3cc; }
+      77% { fill: #a8b1bb; }
+      80% { fill: #9ca5af; }
+      83% { fill: #8b949e; }
+      86% { fill: #767e86; }
+      89%, 100% { fill: #6e7681; }
+    }
+    .c {
+      animation: wave 4s ease-in-out infinite;
+    }
+  </style>
+
+  <text text-anchor="middle" x="225" y="20" font-family="'Palatino Linotype', Palatino, 'Book Antiqua', serif" font-style="italic" font-size="16"><tspan class="c" style="animation-delay:-3.28s">D</tspan><tspan class="c" style="animation-delay:-3.20s">o</tspan><tspan class="c" style="animation-delay:-3.12s">o</tspan><tspan class="c" style="animation-delay:-3.04s">m</tspan><tspan class="c" style="animation-delay:-2.96s">s</tspan><tspan class="c" style="animation-delay:-2.88s">c</tspan><tspan class="c" style="animation-delay:-2.80s">r</tspan><tspan class="c" style="animation-delay:-2.72s">o</tspan><tspan class="c" style="animation-delay:-2.64s">l</tspan><tspan class="c" style="animation-delay:-2.56s">l</tspan><tspan class="c" style="animation-delay:-2.48s">b</tspan><tspan class="c" style="animation-delay:-2.40s">r</tspan><tspan class="c" style="animation-delay:-2.32s">a</tspan><tspan class="c" style="animation-delay:-2.24s">i</tspan><tspan class="c" style="animation-delay:-2.16s">n</tspan><tspan class="c" style="animation-delay:-2.08s">r</tspan><tspan class="c" style="animation-delay:-2.00s">o</tspan><tspan class="c" style="animation-delay:-1.92s">t</tspan><tspan class="c" style="animation-delay:-1.84s">m</tspan><tspan class="c" style="animation-delay:-1.76s">a</tspan><tspan class="c" style="animation-delay:-1.68s">x</tspan><tspan class="c" style="animation-delay:-1.60s">x</tspan><tspan class="c" style="animation-delay:-1.52s">i</tspan><tspan class="c" style="animation-delay:-1.44s">n</tspan><tspan class="c" style="animation-delay:-1.36s">g</tspan><tspan class="c" style="animation-delay:-1.28s">&#160;</tspan><tspan class="c" style="animation-delay:-1.20s">i</tspan><tspan class="c" style="animation-delay:-1.12s">n</tspan><tspan class="c" style="animation-delay:-1.04s">&#160;</tspan><tspan class="c" style="animation-delay:-0.96s">t</tspan><tspan class="c" style="animation-delay:-0.88s">h</tspan><tspan class="c" style="animation-delay:-0.80s">e</tspan><tspan class="c" style="animation-delay:-0.72s">&#160;</tspan><tspan class="c" style="animation-delay:-0.64s">t</tspan><tspan class="c" style="animation-delay:-0.56s">e</tspan><tspan class="c" style="animation-delay:-0.48s">r</tspan><tspan class="c" style="animation-delay:-0.40s">m</tspan><tspan class="c" style="animation-delay:-0.32s">i</tspan><tspan class="c" style="animation-delay:-0.24s">n</tspan><tspan class="c" style="animation-delay:-0.16s">a</tspan><tspan class="c" style="animation-delay:-0.08s">l</tspan><tspan class="c" style="animation-delay:0s">.</tspan></text>
+</svg>
