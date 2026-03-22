@@ -20,8 +20,6 @@
   <img src="subtitle.svg" alt="Doomscrollbrainrotmaxxing in the terminal" width="500">
 </p>
 
----
-
 <p align="center">
   <img src="screenshot-2.png" width="41%">
   <img src="demo.gif" width="25%" />
