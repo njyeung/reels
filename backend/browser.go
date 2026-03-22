@@ -9,7 +9,6 @@ import (
 	"math/rand"
 	"net/url"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -17,7 +16,6 @@ import (
 	"github.com/chromedp/cdproto/fetch"
 	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/cdproto/network"
-	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/chromedp"
 )
 
@@ -668,15 +666,14 @@ func (b *ChromeBackend) OpenSharePanel() {
 	chromedp.Run(b.ctx,
 		chromedp.WaitVisible(`img[alt="User avatar"]`, chromedp.ByQuery),
 	)
-	// Scrape friend list and fetch all profile pics in parallel via Promise.all.
-	// Base64 encoding is used instead of int arrays to keep transfer size small.
+	// Scrape friend list from the DOM
 	js = `
-		(async () => {
+		(() => {
 			const imgs = document.querySelectorAll('img[alt="User avatar"]');
-			const results = await Promise.all(Array.from(imgs).map(async (img) => {
+			const results = Array.from(imgs).map((img) => {
 				const btn = img.closest('[role="button"][tabindex="0"]');
 				if (!btn) return null;
-				
+
 				let name = "";
 				const avatarDiv = img.parentElement?.parentElement;
 				if (avatarDiv) {
@@ -692,53 +689,38 @@ func (b *ChromeBackend) OpenSharePanel() {
 					}
 				}
 
-				let imgB64 = "";
-				if (img.src) {
-					try {
-						const r = await fetch(img.src);
-						const buf = await r.arrayBuffer();
-						const bytes = new Uint8Array(buf);
-						let binary = '';
-						for (let i = 0; i < bytes.length; i += 8192) {
-							binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
-						}
-						imgB64 = btoa(binary);
-					} catch(e) {}
-				}
-
-				return { name, imgSrc: img.src, imgB64 };
-			}));
+				return { name, imgSrc: img.src || "" };
+			});
 			return JSON.stringify(results.filter(r => r !== null));
 		})()
 	`
 
 	var result string
-	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &result, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
-		return p.WithAwaitPromise(true)
-	})); err != nil {
+	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &result)); err != nil {
 		return
 	}
 
 	var raw []struct {
 		Name   string `json:"name"`
 		ImgSrc string `json:"imgSrc"`
-		ImgB64 string `json:"imgB64"`
 	}
 	if err := json.Unmarshal([]byte(result), &raw); err != nil {
 		return
 	}
 
+	// Download all friend profile pics in parallel
+	urls := make([]string, len(raw))
+	for i, r := range raw {
+		urls[i] = r.ImgSrc
+	}
+
+	data := b.fetchURLs(urls)
+
 	friends := make([]Friend, len(raw))
 	for i, r := range raw {
 		friends[i] = Friend{Name: r.Name, ImgSrc: r.ImgSrc}
-		if r.ImgB64 != "" {
-			imgData, err := base64.StdEncoding.DecodeString(r.ImgB64)
-			if err == nil {
-				imgFile := filepath.Join(b.cacheDir, fmt.Sprintf("share_pfp_%d.jpg", i))
-				if err := os.WriteFile(imgFile, imgData, 0644); err == nil {
-					friends[i].ImgPath = imgFile
-				}
-			}
+		if i < len(data) && data[i] != nil {
+			friends[i].ImgPath = b.cacheSharePfp(fmt.Sprintf("share_pfp_%d.jpg", i), data[i])
 		}
 	}
 	b.shareFriends = friends

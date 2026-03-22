@@ -2,7 +2,8 @@ package backend
 
 import (
 	"bufio"
-	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -62,11 +63,49 @@ func GetSettings() Settings {
 	return Config
 }
 
-var (
-	cacheMu  sync.Mutex
-	fifoList []string
-	fifoMap  map[string]bool
+// fifoCache is a bounded FIFO that evicts the oldest entry (and its file) when full.
+type fifoCache struct {
+	mu   sync.Mutex
+	list []string
+	set  map[string]bool
+	max  int
+}
 
+func newFIFOCache(max int) *fifoCache {
+	return &fifoCache{
+		set: make(map[string]bool),
+		max: max,
+	}
+}
+
+func (c *fifoCache) has(path string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.set[path]
+}
+
+func (c *fifoCache) add(path string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.set[path] {
+		return
+	}
+	c.list = append(c.list, path)
+	c.set[path] = true
+	for len(c.list) > c.max {
+		os.Remove(c.list[0])
+		delete(c.set, c.list[0])
+		c.list = c.list[1:]
+	}
+}
+
+var (
+	videoCache    *fifoCache
+	reelPfpCache  *fifoCache
+	sharePfpCache *fifoCache
+	gifCache      *fifoCache
+
+	cacheMu sync.Mutex
 	// inProgress tracks downloads currently in flight; channel is closed when done
 	inProgress map[string]chan struct{}
 
@@ -76,11 +115,10 @@ var (
 )
 
 func (b *ChromeBackend) initStorage() error {
-	if CacheSize < 1 {
-		return fmt.Errorf("cannot have a cache size < 1")
-	}
-
-	fifoMap = make(map[string]bool)
+	videoCache = newFIFOCache(ReelCacheSize)
+	reelPfpCache = newFIFOCache(ReelCacheSize)
+	sharePfpCache = newFIFOCache(SharePfpCacheSize)
+	gifCache = newFIFOCache(GifCacheSize)
 	inProgress = make(map[string]chan struct{})
 	liked = make(map[string]bool)
 
@@ -106,22 +144,34 @@ func (b *ChromeBackend) initStorage() error {
 	return nil
 }
 
-func add(filepath string) error {
-	cacheMu.Lock()
-	defer cacheMu.Unlock()
-
-	fifoList = append(fifoList, filepath)
-	fifoMap[filepath] = true
-
-	if len(fifoList) > CacheSize {
-		if err := os.Remove(fifoList[0]); err != nil {
-			return fmt.Errorf("could not remove cached reel")
-		}
-		delete(fifoMap, fifoList[0])
-		fifoList = fifoList[1:]
+// cacheGif writes GIF data to the cache directory with FIFO eviction.
+func (b *ChromeBackend) cacheGif(pk string, data []byte) string {
+	path := filepath.Join(b.cacheDir, fmt.Sprintf("gif_%s.gif", pk))
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return ""
 	}
+	gifCache.add(path)
+	return path
+}
 
-	return nil
+// cacheReelPfp writes a reel profile picture to the cache directory with FIFO eviction.
+func (b *ChromeBackend) cacheReelPfp(name string, data []byte) string {
+	path := filepath.Join(b.cacheDir, name)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return ""
+	}
+	reelPfpCache.add(path)
+	return path
+}
+
+// cacheSharePfp writes a share panel avatar to the cache directory with FIFO eviction.
+func (b *ChromeBackend) cacheSharePfp(name string, data []byte) string {
+	path := filepath.Join(b.cacheDir, name)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return ""
+	}
+	sharePfpCache.add(path)
+	return path
 }
 
 func defaultSettings() Settings {
@@ -337,6 +387,60 @@ func (b *ChromeBackend) SetVolume(vol float64) error {
 	return nil
 }
 
+// fetchURLs fetches multiple URLs in parallel via a single chromedp Promise.all call,
+// returning the decoded bytes for each URL (nil if the fetch failed).
+func (b *ChromeBackend) fetchURLs(urls []string) [][]byte {
+	if len(urls) == 0 {
+		return nil
+	}
+
+	urlsJSON, _ := json.Marshal(urls)
+
+	js := fmt.Sprintf(`
+		(async () => {
+			const urls = %s;
+			const results = await Promise.all(urls.map(async (url) => {
+				if (!url) return "";
+				try {
+					const r = await fetch(url);
+					const buf = await r.arrayBuffer();
+					const bytes = new Uint8Array(buf);
+					let binary = '';
+					for (let i = 0; i < bytes.length; i += 8192) {
+						binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+					}
+					return btoa(binary);
+				} catch(e) { return ""; }
+			}));
+			return JSON.stringify(results);
+		})()
+	`, string(urlsJSON))
+
+	var result string
+	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &result, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
+		return p.WithAwaitPromise(true)
+	})); err != nil {
+		return make([][]byte, len(urls))
+	}
+
+	var b64s []string
+	if err := json.Unmarshal([]byte(result), &b64s); err != nil {
+		return make([][]byte, len(urls))
+	}
+
+	data := make([][]byte, len(urls))
+	for i, s := range b64s {
+		if s == "" {
+			continue
+		}
+		decoded, err := base64.StdEncoding.DecodeString(s)
+		if err == nil {
+			data[i] = decoded
+		}
+	}
+	return data
+}
+
 // Download downloads a reel video and profile picture to the cache directory
 func (b *ChromeBackend) Download(index int) (string, string, error) {
 	b.reelsMu.RLock()
@@ -355,8 +459,13 @@ func (b *ChromeBackend) Download(index int) (string, string, error) {
 	pfpFile := filepath.Join(b.cacheDir, fmt.Sprintf("%03d_%s_pfp.jpg", index, reel.Code))
 
 	// check cache to see if already downloaded
+	if videoCache.has(videoFile) {
+		return videoFile, pfpFile, nil
+	}
+
 	cacheMu.Lock()
-	if fifoMap[videoFile] {
+	// re-check under lock
+	if videoCache.has(videoFile) {
 		cacheMu.Unlock()
 		return videoFile, pfpFile, nil
 	}
@@ -365,14 +474,10 @@ func (b *ChromeBackend) Download(index int) (string, string, error) {
 	if ch, ok := inProgress[videoFile]; ok {
 		cacheMu.Unlock()
 		<-ch // Wait for the other download to complete
-
-		// re-check cache
-		cacheMu.Lock()
-		if fifoMap[videoFile] {
-			cacheMu.Unlock()
+		if videoCache.has(videoFile) {
 			return videoFile, pfpFile, nil
 		}
-		// else fall through to download
+		cacheMu.Lock()
 	}
 
 	// Mark as in progress
@@ -387,71 +492,24 @@ func (b *ChromeBackend) Download(index int) (string, string, error) {
 		close(done)
 	}()
 
-	// Download video using chromedp fetch
-	var videoData []byte
-	err := chromedp.Run(b.ctx,
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			js := fmt.Sprintf(`
-				(async () => {
-					const r = await fetch("%s");
-					const buf = await r.arrayBuffer();
-					return Array.from(new Uint8Array(buf));
-				})()
-			`, reel.VideoURL)
-			var arr []int
-			if err := chromedp.Evaluate(js, &arr, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
-				return p.WithAwaitPromise(true)
-			}).Do(ctx); err != nil {
-				return err
-			}
-			videoData = make([]byte, len(arr))
-			for i, v := range arr {
-				videoData[i] = byte(v)
-			}
-			return nil
-		}),
-	)
-	if err != nil {
-		return "", "", err
-	}
-
-	if err := os.WriteFile(videoFile, videoData, 0644); err != nil {
-		return "", "", err
-	}
-
-	// Download profile picture using chromedp fetch
+	// Download video and profile pic in parallel
+	urls := []string{reel.VideoURL}
 	if reel.ProfilePicUrl != "" {
-		var pfpData []byte
-		err := chromedp.Run(b.ctx,
-			chromedp.ActionFunc(func(ctx context.Context) error {
-				js := fmt.Sprintf(`
-					(async () => {
-						const r = await fetch("%s");
-						const buf = await r.arrayBuffer();
-						return Array.from(new Uint8Array(buf));
-					})()
-				`, reel.ProfilePicUrl)
-				var arr []int
-				if err := chromedp.Evaluate(js, &arr, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
-					return p.WithAwaitPromise(true)
-				}).Do(ctx); err != nil {
-					return err
-				}
-				pfpData = make([]byte, len(arr))
-				for i, v := range arr {
-					pfpData[i] = byte(v)
-				}
-				return nil
-			}),
-		)
-		if err == nil {
-			os.WriteFile(pfpFile, pfpData, 0644)
-		}
-		// Don't fail the whole download if profile pic fails
+		urls = append(urls, reel.ProfilePicUrl)
 	}
 
-	if err := add(videoFile); err != nil {
+	data := b.fetchURLs(urls)
+	if data[0] == nil {
+		return "", "", fmt.Errorf("failed to download video")
+	}
+
+	if err := os.WriteFile(videoFile, data[0], 0644); err != nil {
 		return "", "", err
+	}
+	videoCache.add(videoFile)
+
+	if len(data) > 1 && data[1] != nil {
+		b.cacheReelPfp(fmt.Sprintf("%03d_%s_pfp.jpg", index, reel.Code), data[1])
 	}
 
 	return videoFile, pfpFile, nil

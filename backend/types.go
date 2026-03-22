@@ -115,8 +115,10 @@ const (
 	// InstagramPKLength is the length of Instagram primary keys (19 digits)
 	InstagramPKLength = 19
 
-	// Max num of reels that can be in the cache
-	CacheSize = 10
+	// FIFO cache limits per asset type
+	ReelCacheSize     = 50
+	GifCacheSize      = 1000
+	SharePfpCacheSize = 50
 )
 
 // MusicInfo contains song metadata when a reel has music
