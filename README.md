@@ -49,7 +49,9 @@ You need a terminal that supports the **Kitty graphics protocol**:
 Chrome, Chromium, or Brave must be installed. The app uses headless browser automation to interact with Instagram.
 
 ### FFmpeg
-FFmpeg 8+ must be installed on your system. The Homebrew install method handles this automatically. For other install methods, see the FFmpeg notes under each section below.
+__**macOS:**__ Requires [`ffmpeg-full`](https://github.com/homebrew-ffmpeg/homebrew-ffmpeg) from Homebrew — `brew install ffmpeg-full`. The standard `brew install ffmpeg` will **not** work due to missing framework dependencies. You may also build FFmpeg 8+ from source or use MacPorts, as long as the Apple framework dependencies (VideoToolbox, AudioToolbox) are properly included. The **Homebrew** install method (`brew install reels`) handles installing `ffmpeg-full` automatically; if installing via **npm**, you will need to have ffmpeg-full with the proper Apple framework dependencies installed separately (either via homebrew, source, or MacPorts).
+
+__**Linux:**__ Any FFmpeg 8+ from your package manager (e.g. `pacman -S ffmpeg`, `apt install ffmpeg`).
 
 ## Usage
 
@@ -110,7 +112,7 @@ reels
 ### AUR (Arch Linux x86_64)
 
 ```bash
-sudo pacman -Syu ffmpeg # make sure you're on ffmpeg n8.0
+sudo pacman -Syu ffmpeg # make sure you're on ffmpeg 8+
 yay -S reels-bin
 reels
 ```
@@ -124,13 +126,13 @@ Download the latest release from [GitHub Releases](https://github.com/njyeung/re
 | Linux (x86_64) | `reels-linux-amd64` |
 | macOS (Apple Silicon) | `reels-darwin-arm64` |
 
-**macOS:** Requires `ffmpeg-full` from Homebrew — `brew install ffmpeg-full`
+**macOS:** Requires `ffmpeg-full` from Homebrew — `brew install ffmpeg-full`, or FFmpeg 8+ built from source with shared libraries enabled. The standard `brew install ffmpeg` is missing framework link flags needed for compilation.
 
 **Linux:** Requires FFmpeg 8+ (e.g. `sudo pacman -S ffmpeg` on Arch, `sudo apt install ffmpeg` on Debian/Ubuntu)
 
 ### Building from Source
 
-Requires Go 1.25+ and FFmpeg 8+ development libraries.
+Requires Go 1.25+ and FFmpeg 8+ development libraries (ffmpeg-full works for macOS).
 
 ```bash
 git clone https://github.com/njyeung/reels.git
