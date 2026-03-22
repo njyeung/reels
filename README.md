@@ -14,16 +14,16 @@
 </p>
 
 <p align="center">
-  <img src="banner.svg" alt="REELS TUI" width="100%">
+  <img src="assets/banner.svg" alt="REELS TUI" width="100%">
 </p>
 <p align="center">
-  <img src="subtitle.svg" alt="Doomscrollbrainrotmaxxing in the terminal" width="500">
+  <img src="assets/subtitle.svg" alt="Doomscrollbrainrotmaxxing in the terminal" width="500">
 </p>
 
 <p align="center">
-  <img src="screenshot-2.png" width="41%">
-  <img src="demo.gif" width="25%" />
-  <img src="screenshot-1.png" width="27%" />
+  <img src="assets/screenshot-2.png" width="41%">
+  <img src="assets/demo.gif" width="25%" />
+  <img src="assets/screenshot-1.png" width="27%" />
 </p>
 
 ---
