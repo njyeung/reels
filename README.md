@@ -128,7 +128,7 @@ Download the latest release from [GitHub Releases](https://github.com/njyeung/re
 | Linux (x86_64) | `reels-linux-amd64` |
 | macOS (Apple Silicon) | `reels-darwin-arm64` |
 
-**macOS:** Requires `ffmpeg-full` from Homebrew — `brew install ffmpeg-full`, or FFmpeg 8+ built from source with shared libraries enabled. The standard `brew install ffmpeg` is missing framework link flags needed for compilation.
+**macOS:** Requires `ffmpeg-full` from Homebrew - `brew install ffmpeg-full`. The standard `brew install ffmpeg` is missing framework link flags needed for compilation. You may build from source or use MacPorts if you know what you're doing.
 
 **Linux:** Requires FFmpeg 8+ (e.g. `sudo pacman -S ffmpeg` on Arch, `sudo apt install ffmpeg` on Debian/Ubuntu)
 
