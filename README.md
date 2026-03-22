@@ -88,15 +88,15 @@ All keybinds are configurable in `reels.conf`. Each action supports multiple bin
 
 **macOS** *requires [Homebrew](https://brew.sh)*:
 ```bash
-brew install ffmpeg-full
+# brew install ffmpeg-full    # (or build from source or MacPorts)
 npm install -g @reels/tui
 reels
 ```
 
 **Linux:**
 ```bash
-# sudo pacman -S ffmpeg        # Arch
-# sudo apt install ffmpeg      # Debian/Ubuntu
+# sudo pacman -S ffmpeg      # Arch
+# sudo apt install ffmpeg    # Debian/Ubuntu
 npm install -g @reels/tui
 reels
 ```
