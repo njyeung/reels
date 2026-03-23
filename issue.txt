@@ -1,0 +1,57 @@
+Downloads % ./reels-darwin-arm64 
+dyld[36381]: Symbol not found: _av_buffer_unref
+  Referenced from: <B4171F14-2227-39AF-EAF4-CA51438EC239> /Users/nickjyeung/Downloads/reels-darwin-arm64
+  Expected in:     <8477F707-FCE5-3244-87F2-4B68F08E50B0> /opt/homebrew/Cellar/ffmpeg/8.1/lib/libavdevice.62.3.100.dylib
+zsh: abort      ./reels-darwin-arm64
+
+  "_kVTProfileLevel_H264_High_5_0", referenced from:
+      _vtenc_configure_encoder in libavcodec.a[913](videotoolboxenc.o)
+  "_kVTProfileLevel_H264_Main_3_0", referenced from:
+      _vtenc_configure_encoder in libavcodec.a[913](videotoolboxenc.o)
+  "_kVTProfileLevel_H264_Main_3_1", referenced from:
+      _vtenc_configure_encoder in libavcodec.a[913](videotoolboxenc.o)
+  "_kVTProfileLevel_H264_Main_3_2", referenced from:
+      _vtenc_configure_encoder in libavcodec.a[913](videotoolboxenc.o)
+  "_kVTProfileLevel_H264_Main_4_0", referenced from:
+      _vtenc_configure_encoder in libavcodec.a[913](videotoolboxenc.o)
+  "_kVTProfileLevel_H264_Main_4_1", referenced from:
+      _vtenc_configure_encoder in libavcodec.a[913](videotoolboxenc.o)
+  "_kVTProfileLevel_H264_Main_5_0", referenced from:
+      _vtenc_configure_encoder in libavcodec.a[913](videotoolboxenc.o)
+  "_kVTRotation_0", referenced from:
+      _transpose_vt_config_output in libavfilter.a[347](vf_transpose_vt.o)
+  "_kVTRotation_180", referenced from:
+      _transpose_vt_config_output in libavfilter.a[347](vf_transpose_vt.o)
+  "_kVTRotation_CCW90", referenced from:
+      _transpose_vt_config_output in libavfilter.a[347](vf_transpose_vt.o)
+      _transpose_vt_config_output in libavfilter.a[347](vf_transpose_vt.o)
+  "_kVTRotation_CW90", referenced from:
+      _transpose_vt_config_output in libavfilter.a[347](vf_transpose_vt.o)
+      _transpose_vt_config_output in libavfilter.a[347](vf_transpose_vt.o)
+  "_uncompress", referenced from:
+      _id3v2_read_internal in libavformat.a[184](id3v2.o)
+      _mov_read_cmov in libavformat.a[250](mov.o)
+      _swf_read_packet in libavformat.a[457](swfdec.o)
+      _decode_frame in libavcodec.a[289](cscd.o)
+      _decode_frame in libavcodec.a[356](dxa.o)
+      _zip_uncompress in libavcodec.a[380](exr.o)
+      _pxr24_uncompress in libavcodec.a[380](exr.o)
+      ...
+  "_zlibCompileFlags", referenced from:
+      _parse_content_encoding in libavformat.a[172](http.o)
+ld: symbol(s) not found for architecture arm64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+
+(base) nickjyeung@Nicks-MacBook-Air reels % ffmpeg -version
+ffmpeg version 8.1 Copyright (c) 2000-2026 the FFmpeg developers
+built with Apple clang version 17.0.0 (clang-1700.6.4.2)
+configuration: --prefix=/opt/homebrew/Cellar/ffmpeg/8.1 --enable-shared --enable-pthreads --enable-version3 --cc=clang --host-cflags= --host-ldflags= --enable-ffplay --enable-gpl --enable-libsvtav1 --enable-libopus --enable-libx264 --enable-libmp3lame --enable-libdav1d --enable-libvpx --enable-libx265 --enable-openssl --enable-videotoolbox --enable-audiotoolbox --enable-neon
+libavutil      60. 26.100 / 60. 26.100
+libavcodec     62. 28.100 / 62. 28.100
+libavformat    62. 12.100 / 62. 12.100
+libavdevice    62.  3.100 / 62.  3.100
+libavfilter    11. 14.100 / 11. 14.100
+libswscale      9.  5.100 /  9.  5.100
+libswresample   6.  3.100 /  6.  3.100
+
+Exiting with exit code 0
