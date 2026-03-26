@@ -780,7 +780,7 @@ func (b *ChromeBackend) SendShare() {
 
 			const buttons = document.querySelectorAll('div[role="button"]');
 			for (const btn of buttons) {
-				if (btn.textContent.trim() === 'Send') {
+				if (btn.textContent.trim().toLowerCase().includes('send')) {
 					btn.setAttribute('data-reels-send-btn', 'true');
 					return true;
 				}

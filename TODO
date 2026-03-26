@@ -1,3 +1,0 @@
-when opening share reel panel and sharing reel, instagram recently updated it to say "Send separately" when selecting multiple people.
-I think they're AB testing "Send" and "Send separately", currently we do btn.textContent.trim() === 'Send', but we can just check if the 
-button contains the word "Send".
