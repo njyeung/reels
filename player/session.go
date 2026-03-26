@@ -113,10 +113,10 @@ func newPlaySession(url string, cfg sessionConfig) (*playSession, error) {
 		videoRowOffset: videoRowOffset,
 		videoColOffset: videoColOffset,
 		stopCh:         make(chan struct{}),
-		videoPktCh:     make(chan *astiav.Packet, 30),
+		videoPktCh:     make(chan *astiav.Packet, 60),
 	}
 	if audio != nil {
-		session.audioPktCh = make(chan *audioPacket, 64)
+		session.audioPktCh = make(chan *audioPacket, 128)
 	}
 
 	return session, nil
