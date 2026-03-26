@@ -265,8 +265,8 @@ func (cp *CommentsPanel) SetLoading(loading bool) {
 
 // IsAtBottom returns true if the scroll position is at the bottom of the comments list
 func (cp *CommentsPanel) IsAtBottom() bool {
-	// -3 is arbritrary, this just gives padding for the network request
-	maxScroll := len(cp.comments) - 3
+	// -5 is arbritrary, this just gives padding for the network request
+	maxScroll := len(cp.comments) - 5
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
