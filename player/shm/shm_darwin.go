@@ -6,12 +6,30 @@ package shm
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
-// Wrapper needed because shm_open is variadic on macOS and cgo cannot call
-// variadic C functions directly.
-static int shm_open_wrapper(const char *name, int oflag, mode_t mode) {
-	return shm_open(name, oflag, mode);
+// Returns 0 on success, negative on error.
+static int shm_write(const char *name, const void *data, size_t len) {
+	int fd = shm_open(name, O_CREAT | O_RDWR | O_TRUNC, 0600);
+	if (fd < 0) return -1;
+
+	if (ftruncate(fd, (off_t)len) != 0) {
+		close(fd);
+		shm_unlink(name);
+		return -2;
+	}
+
+	void *mapped = mmap(NULL, len, PROT_WRITE, MAP_SHARED, fd, 0);
+	close(fd);
+	if (mapped == MAP_FAILED) {
+		shm_unlink(name);
+		return -3;
+	}
+
+	memcpy(mapped, data, len);
+	munmap(mapped, len);
+	return 0;
 }
 */
 import "C"
@@ -19,9 +37,7 @@ import "C"
 import (
 	"fmt"
 	"sync"
-	"unsafe"
-
-	"golang.org/x/sys/unix"
+	"unsafe" // for passing Go memory to C without allocation
 )
 
 // shmNames tracks created shm object names so ShmCleanupAll can unlink them,
@@ -31,32 +47,20 @@ var shmNames struct {
 	m  map[string]struct{}
 }
 
-// ShmWrite creates a POSIX shared memory object, truncates it to len(data),
-// and writes data into it via mmap.
+// ShmWrite creates a POSIX shared memory object and writes data into it.
+// Uses a CGO call to perform shm_open, ftruncate, mmap, memcpy, and munmap
 func ShmWrite(name string, data []byte) error {
-	cname := C.CString(name)
-	defer C.free(unsafe.Pointer(cname))
-
-	fd, err := C.shm_open_wrapper(cname, C.O_CREAT|C.O_RDWR|C.O_TRUNC, 0600)
-	if fd < 0 {
-		return fmt.Errorf("shm_open %q: %w", name, err)
+	// nameBuf is zero initialized, so nameBuf[len(name)] is the null terminator
+	var nameBuf [64]byte
+	if len(name) >= len(nameBuf) {
+		return fmt.Errorf("shm name %q exceeds %d bytes", name, len(nameBuf)-1)
 	}
-	goFd := int(fd)
+	copy(nameBuf[:], name)
 
-	if err := unix.Ftruncate(goFd, int64(len(data))); err != nil {
-		unix.Close(goFd)
-		C.shm_unlink(cname)
-		return err
+	ret := C.shm_write((*C.char)(unsafe.Pointer(&nameBuf[0])), (*C.void)(unsafe.Pointer(&data[0])), C.size_t(len(data)))
+	if ret != 0 {
+		return fmt.Errorf("shm_write %q failed (code %d)", name, ret)
 	}
-
-	mapped, err := unix.Mmap(goFd, 0, len(data), unix.PROT_WRITE, unix.MAP_SHARED)
-	unix.Close(goFd)
-	if err != nil {
-		C.shm_unlink(cname)
-		return err
-	}
-	copy(mapped, data)
-	unix.Munmap(mapped)
 
 	shmNames.mu.Lock()
 	if shmNames.m == nil {

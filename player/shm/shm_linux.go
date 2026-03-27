@@ -5,18 +5,24 @@ package shm
 import (
 	"os"
 	"path/filepath"
+
+	"golang.org/x/sys/unix"
 )
 
 // ShmWrite creates (or overwrites) a POSIX shared memory object and writes
-// data to it. On Linux this is a file write to /dev/shm.
+// data to it. On Linux this is a file write to /dev/shm using raw syscalls.
 func ShmWrite(name string, data []byte) error {
 	path := "/dev/shm" + name
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	fd, err := unix.Open(path, unix.O_CREAT|unix.O_WRONLY|unix.O_TRUNC, 0600)
 	if err != nil {
 		return err
 	}
-	_, err = f.Write(data)
-	if err2 := f.Close(); err == nil {
+	if err := unix.Ftruncate(fd, int64(len(data))); err != nil {
+		unix.Close(fd)
+		return err
+	}
+	_, err = unix.Write(fd, data)
+	if err2 := unix.Close(fd); err == nil {
 		err = err2
 	}
 	return err

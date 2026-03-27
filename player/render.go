@@ -109,11 +109,7 @@ func (r *KittyRenderer) RenderImage(data []byte, format, width, height, id, row,
 	}
 
 	// Transmit image data via shared memory or direct base64
-	if r.useShm {
-		if err := r.writeImageShm(&buf, data, format, width, height, id); err != nil {
-			r.writeImageDirect(&buf, data, format, width, height, id)
-		}
-	} else {
+	if !r.useShm || r.writeImageShm(&buf, data, format, width, height, id) != nil {
 		r.writeImageDirect(&buf, data, format, width, height, id)
 	}
 
