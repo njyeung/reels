@@ -119,16 +119,42 @@ func (cp *CommentsPanel) ResizeGifs() {
 	cp.loadGifs()
 }
 
-// Scroll moves the scroll position by the given delta
-func (cp *CommentsPanel) Scroll(delta int) {
+// computeMaxScroll returns the largest scroll index such that the comments
+// from that index fill the available screen height. Prevents scrolling into
+// empty space at the bottom.
+func (cp *CommentsPanel) computeMaxScroll(width, height int) int {
+	availableLines := height - 2
+	if availableLines < 1 || len(cp.comments) == 0 {
+		return 0
+	}
+
+	lines := 0
+	for i := len(cp.comments) - 1; i >= 0; i-- {
+		comment := cp.comments[i]
+		var commentLines int
+		if _, ok := cp.gifAnims[comment.PK]; ok {
+			commentLines = 1 + cp.gifCellHeight
+		} else {
+			wrapped := wrapByWidth(strings.ReplaceAll(comment.Text, "\n", " "), width-2)
+			commentLines = 1 + len(wrapped)
+		}
+		lines += commentLines
+		if lines >= availableLines {
+			return i
+		}
+	}
+	return 0
+}
+
+// Scroll moves the scroll position by the given delta.
+// width and height are the current panel dimensions, used to prevent
+// scrolling past the point where the panel would have empty space at the bottom.
+func (cp *CommentsPanel) Scroll(delta, width, height int) {
 	newScroll := cp.scroll + delta
 	if newScroll < 0 {
 		newScroll = 0
 	}
-	maxScroll := len(cp.comments) - 2
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
+	maxScroll := cp.computeMaxScroll(width, height)
 	if newScroll > maxScroll {
 		newScroll = maxScroll
 	}
