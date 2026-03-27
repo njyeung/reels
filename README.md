@@ -60,13 +60,14 @@ reels
 - `k` - Previous reel (scroll comments when open)
 - `Space` - Pause/resume
 - `l` - Like/unlike
+- `b` - Save/Unsave
 - `e` - Toggle Navbar
 - `c` - Toggle Comments
+- `s` - Share reel via DM
+- `y` - Copy reel link to clipboard
 - `m` - Mute
 - `]` - Volume up
 - `[` - Volume down
-- `s` - Share reel via DM
-- `y` - Copy reel link to clipboard
 - `=` - Enlarge Video
 - `-` - Shrink Video
 - `?` - Help
@@ -166,6 +167,7 @@ key_reel_size_inc = =
 key_reel_size_dec = -
 key_share = s
 key_copy_link = y
+key_save = b
 key_quit = q
 key_quit = ctrl+c
 ```
