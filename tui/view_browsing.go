@@ -84,7 +84,12 @@ func (m Model) viewBrowsing() string {
 		}
 	}
 
-	rest := " " + likeCount + "   💬 " + commentCount + "   " + shareIcon + "   " + playPauseIcon + "   " + muteIcon
+	saveIcon := "⚐"
+	if m.currentReel != nil && m.currentReel.Saved {
+		saveIcon = "⚑"
+	}
+
+	rest := " " + likeCount + "   💬 " + commentCount + "   " + saveIcon + "   " + shareIcon + "   " + playPauseIcon + "   " + muteIcon
 	statusContent := heartIcon + rest
 	contentWidth := 2 + runewidth.StringWidth(rest)
 
@@ -325,34 +330,48 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case slices.Contains(config.KeysLike, key):
 		if !m.comments.IsOpen() && !m.share.IsOpen() && m.currentReel != nil {
-			m.currentReel.Liked = !m.currentReel.Liked
-			go m.backend.ToggleLike()
+			if !m.backend.IsSyncing() {
+				m.currentReel.Liked = !m.currentReel.Liked
+				go m.backend.ToggleLike()
+			}
+		}
+
+	case slices.Contains(config.KeysSave, key):
+		if !m.comments.IsOpen() && !m.share.IsOpen() && m.currentReel != nil {
+			if !m.backend.IsSyncing() {
+				m.currentReel.Saved = !m.currentReel.Saved
+				go m.backend.ToggleSave()
+			}
 		}
 
 	case slices.Contains(config.KeysComments, key):
-		// Toggle comments
-		if m.comments.IsOpen() {
-			m.comments.Close()
-			m.closePanelLayout()
-			go m.backend.CloseComments()
-		} else if m.currentReel != nil && !m.currentReel.CommentsDisabled && !m.share.IsOpen() && !m.help.IsOpen() {
-			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
+		if !m.backend.IsSyncing() {
+			if m.comments.IsOpen() {
+				// close comments
+				m.comments.Close()
+				m.closePanelLayout()
+				go m.backend.CloseComments()
+			} else if m.currentReel != nil && !m.currentReel.CommentsDisabled && !m.share.IsOpen() && !m.help.IsOpen() {
+				// open comments
+				m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
 
-			// Open comments for current reel
-			m.comments.Open(m.currentReel.PK)
-			m.updateVideoPosition()
-			m.updateImages()
+				// Open comments for current reel
+				m.comments.Open(m.currentReel.PK)
+				m.updateVideoPosition()
+				m.updateImages()
 
-			// Use cached comments if available
-			if m.currentReel.Comments != nil {
-				m.comments.SetComments(m.currentReel.PK, m.currentReel.Comments)
-				m.updateCommentGifs()
+				// Use cached comments if available
+				if m.currentReel.Comments != nil {
+					m.comments.SetComments(m.currentReel.PK, m.currentReel.Comments)
+					m.updateCommentGifs()
+				}
+
+				// Always open in browser (for Instagram's algorithm)
+				go m.backend.OpenComments()
+				m.player.RedrawVideo()
 			}
-
-			// Always open in browser (for Instagram's algorithm)
-			go m.backend.OpenComments()
-			m.player.RedrawVideo()
 		}
+
 	case m.share.IsOpen() && slices.Contains(config.KeysPause, key):
 		if m.shareSending {
 			return m, nil
@@ -363,20 +382,24 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case slices.Contains(config.KeysShare, key):
-		if m.share.IsOpen() {
-			if m.shareSending {
-				return m, nil
+		if !m.backend.IsSyncing() {
+			if m.share.IsOpen() {
+				// close panel
+				if m.shareSending {
+					return m, nil
+				}
+				// Send to selected friends; close UI when backend finishes.
+				m.shareSending = true
+				return m, m.sendShare()
+			} else if m.currentReel != nil && m.currentReel.CanViewerReshare && !m.comments.IsOpen() && !m.help.IsOpen() {
+				//open panel
+				m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
+				m.share.Open()
+				m.updateVideoPosition()
+				m.updateImages()
+				go m.backend.OpenSharePanel()
+				m.player.RedrawVideo()
 			}
-			// Send to selected friends; close UI when backend finishes.
-			m.shareSending = true
-			return m, m.sendShare()
-		} else if m.currentReel != nil && m.currentReel.CanViewerReshare && !m.comments.IsOpen() && !m.help.IsOpen() {
-			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
-			m.share.Open()
-			m.updateVideoPosition()
-			m.updateImages()
-			go m.backend.OpenSharePanel()
-			m.player.RedrawVideo()
 		}
 	case key == "?":
 		if m.help.IsOpen() {

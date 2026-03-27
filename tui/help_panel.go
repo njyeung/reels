@@ -50,6 +50,7 @@ func (hp *HelpPanel) buildEntries() {
 		{displayKeys(config.KeysComments), "comments"},
 		{displayKeys(config.KeysShare), "share via DM"},
 		{displayKeys(config.KeysCopyLink), "copy link"},
+		{displayKeys(config.KeysSave), "bookmark"},
 		{displayKeys(config.KeysNavbar), "toggle navbar"},
 		{displayKeys(config.KeysVolUp), "volume up"},
 		{displayKeys(config.KeysVolDown), "volume down"},

@@ -40,6 +40,7 @@ type Settings struct {
 	KeysQuit        []string
 	KeysShare       []string
 	KeysCopyLink    []string
+	KeysSave        []string
 }
 
 var Config Settings
@@ -197,6 +198,7 @@ func defaultSettings() Settings {
 		KeysReelSizeDec:  []string{"-"},
 		KeysShare:        []string{"s"},
 		KeysCopyLink:     []string{"y"},
+		KeysSave:         []string{"b"},
 		KeysQuit:         []string{"q", "ctrl+c"},
 	}
 
@@ -281,6 +283,7 @@ func LoadSettings(configDir string) {
 	loadKey(conf, "key_quit", &s.KeysQuit)
 	loadKey(conf, "key_share", &s.KeysShare)
 	loadKey(conf, "key_copy_link", &s.KeysCopyLink)
+	loadKey(conf, "key_save", &s.KeysSave)
 
 	Config = s
 }
@@ -322,6 +325,7 @@ func writeConf(path string, s Settings) error {
 	writeKeys(&b, "key_reel_size_inc", s.KeysReelSizeInc)
 	writeKeys(&b, "key_reel_size_dec", s.KeysReelSizeDec)
 	writeKeys(&b, "key_share", s.KeysShare)
+	writeKeys(&b, "key_save", s.KeysSave)
 	writeKeys(&b, "key_quit", s.KeysQuit)
 
 	return os.WriteFile(path, []byte(b.String()), 0644)
