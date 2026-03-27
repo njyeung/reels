@@ -292,6 +292,7 @@ func (b *ChromeBackend) SyncTo(index int) error {
 		b.syncCancel()
 	}
 	ctx, cancel := context.WithCancel(b.ctx)
+	b.syncCtx = ctx
 	b.syncCancel = cancel
 	b.syncMu.Unlock()
 
@@ -402,6 +403,10 @@ func (b *ChromeBackend) scrollUp() error {
 
 // ToggleLike clicks the like button for the current reel
 func (b *ChromeBackend) ToggleLike() (bool, error) {
+	if b.IsSyncing() {
+		return false, fmt.Errorf("Still syncing to reel")
+	}
+
 	// Get the current reel's PK first
 	pk, err := b.getCurrentPK()
 	if err != nil {
@@ -468,8 +473,81 @@ func (b *ChromeBackend) ToggleLike() (bool, error) {
 	return true, nil
 }
 
+// ToggleSave clicks the bookmark/save button for the current reel
+func (b *ChromeBackend) ToggleSave() (bool, error) {
+	if b.IsSyncing() {
+		return false, fmt.Errorf("Still syncing to reel")
+	}
+
+	pk, err := b.getCurrentPK()
+	if err != nil {
+		return false, err
+	}
+
+	// Clear any previous marker, then find the save button for the visible video
+	js := `
+		(() => {
+			document.querySelectorAll('[data-reels-save-btn]').forEach(el => {
+				el.removeAttribute('data-reels-save-btn');
+			});
+
+			const videos = document.querySelectorAll('video[playsinline]');
+			for (const video of videos) {
+				const rect = video.getBoundingClientRect();
+				const viewportHeight = window.innerHeight;
+				const videoCenter = rect.top + rect.height / 2;
+				if (videoCenter > 0 && videoCenter < viewportHeight) {
+					let parent = video.parentElement;
+					for (let i = 0; i < 15; i++) {
+						if (!parent) break;
+						const svg = parent.querySelector('svg[aria-label="Save"], svg[aria-label="Remove"]');
+						if (svg) {
+							const btn = svg.closest('[role="button"]');
+							if (btn) {
+								btn.setAttribute('data-reels-save-btn', 'true');
+								return true;
+							}
+						}
+						parent = parent.parentElement;
+					}
+				}
+			}
+			return false;
+		})()
+	`
+	var found bool
+	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &found)); err != nil {
+		return false, err
+	}
+	if !found {
+		return false, nil
+	}
+
+	if err := chromedp.Run(b.ctx,
+		chromedp.Click(`[data-reels-save-btn="true"]`, chromedp.ByQuery),
+	); err != nil {
+		return false, err
+	}
+
+	// Toggle saved in the stored reel
+	b.reelsMu.Lock()
+	for i := range b.orderedReels {
+		if b.orderedReels[i].PK == pk {
+			b.orderedReels[i].Saved = !b.orderedReels[i].Saved
+			break
+		}
+	}
+	b.reelsMu.Unlock()
+
+	return true, nil
+}
+
 // OpenComments opens the comments panel for the current reel
 func (b *ChromeBackend) OpenComments() {
+	if b.IsSyncing() {
+		return
+	}
+
 	pk, err := b.getCurrentPK()
 	if err != nil {
 		return
@@ -478,8 +556,21 @@ func (b *ChromeBackend) OpenComments() {
 	b.clickCommentsButton()
 }
 
+func (b *ChromeBackend) IsSyncing() bool {
+	b.syncMu.Lock()
+	defer b.syncMu.Unlock()
+	if b.syncCtx != nil && b.syncCtx.Err() == nil {
+		return true
+	}
+	return false
+}
+
 // CloseComments closes the comments panel UI
 func (b *ChromeBackend) CloseComments() {
+	if b.IsSyncing() {
+		return
+	}
+
 	b.clickCloseButton()
 }
 
@@ -622,6 +713,10 @@ func (b *ChromeBackend) clickCommentsButton() {
 // OpenSharePanel clicks the share button to open Instagram's share modal,
 // then scrapes the friend list from the DOM.
 func (b *ChromeBackend) OpenSharePanel() {
+	if b.IsSyncing() {
+		return
+	}
+
 	js := `
 		(() => {
 			// Clear old markers first
@@ -772,6 +867,10 @@ func (b *ChromeBackend) ToggleShareFriend(index int) {
 // SendShare clicks the Send button in the share modal.
 // Instagram closes the modal immediately on successful send.
 func (b *ChromeBackend) SendShare() {
+	if b.IsSyncing() {
+		return
+	}
+
 	js := `
 		(() => {
 			document.querySelectorAll('[data-reels-send-btn]').forEach(el => {

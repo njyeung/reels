@@ -22,6 +22,7 @@ type ChromeBackend struct {
 	shareFriends []Friend
 
 	syncMu     sync.Mutex
+	syncCtx    context.Context
 	syncCancel context.CancelFunc
 
 	events chan Event
@@ -72,6 +73,12 @@ type Backend interface {
 
 	// ToggleLike likes/unlikes the current reel
 	ToggleLike() (bool, error)
+
+	// ToggleSave bookmarks/unbookmarks the current reel
+	ToggleSave() (bool, error)
+
+	// IsSyncing returns true if the backend is still scrolling to a reel, false otherwise
+	IsSyncing() bool
 
 	// GetCommentsReelPK returns which reel we're fetching comments for
 	GetCommentsReelPK() string
@@ -137,6 +144,7 @@ type Reel struct {
 	Username           string
 	Caption            string
 	Liked              bool
+	Saved              bool
 	LikeCount          int
 	IsVerified         bool
 	CommentCount       int
