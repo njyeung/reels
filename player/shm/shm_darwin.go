@@ -57,7 +57,7 @@ func ShmWrite(name string, data []byte) error {
 	}
 	copy(nameBuf[:], name)
 
-	ret := C.shm_write((*C.char)(unsafe.Pointer(&nameBuf[0])), (*C.void)(unsafe.Pointer(&data[0])), C.size_t(len(data)))
+	ret := C.shm_write((*C.char)(unsafe.Pointer(&nameBuf[0])), unsafe.Pointer(&data[0]), C.size_t(len(data)))
 	if ret != 0 {
 		return fmt.Errorf("shm_write %q failed (code %d)", name, ret)
 	}
