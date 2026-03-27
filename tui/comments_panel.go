@@ -18,6 +18,10 @@ type CommentsPanel struct {
 	// Which reel these comments belong to
 	reelPK string
 
+	// Panel dimensions
+	width  int
+	height int
+
 	// GIF state
 	gifAnims      map[string]*player.GifAnimation
 	gifCellHeight int
@@ -119,42 +123,39 @@ func (cp *CommentsPanel) ResizeGifs() {
 	cp.loadGifs()
 }
 
-// computeMaxScroll returns the largest scroll index such that the comments
-// from that index fill the available screen height. Prevents scrolling into
-// empty space at the bottom.
-func (cp *CommentsPanel) computeMaxScroll(width, height int) int {
-	availableLines := height - 2
-	if availableLines < 1 || len(cp.comments) == 0 {
-		return 0
-	}
-
-	lines := 0
-	for i := len(cp.comments) - 1; i >= 0; i-- {
-		comment := cp.comments[i]
-		var commentLines int
-		if _, ok := cp.gifAnims[comment.PK]; ok {
-			commentLines = 1 + cp.gifCellHeight
-		} else {
-			wrapped := wrapByWidth(strings.ReplaceAll(comment.Text, "\n", " "), width-2)
-			commentLines = 1 + len(wrapped)
-		}
-		lines += commentLines
-		if lines >= availableLines {
-			return i
-		}
-	}
-	return 0
-}
-
-// Scroll moves the scroll position by the given delta.
-// width and height are the current panel dimensions, used to prevent
+// Scroll moves the scroll position by the given delta, clamping to prevent
 // scrolling past the point where the panel would have empty space at the bottom.
-func (cp *CommentsPanel) Scroll(delta, width, height int) {
+func (cp *CommentsPanel) Scroll(delta int) {
 	newScroll := cp.scroll + delta
 	if newScroll < 0 {
 		newScroll = 0
 	}
-	maxScroll := cp.computeMaxScroll(width, height)
+
+	// Compute max scroll: walk backwards from the last comment, accumulating
+	// line heights until we fill the panel.
+	maxScroll := 0
+	availableLines := cp.height - 2
+	if availableLines >= 1 && len(cp.comments) > 0 {
+		lines := 0
+		for i := len(cp.comments) - 1; i >= 0; i-- {
+			comment := cp.comments[i]
+			if _, ok := cp.gifAnims[comment.PK]; ok {
+				lines += 1 + cp.gifCellHeight
+			} else {
+				wrapped := wrapByWidth(strings.ReplaceAll(comment.Text, "\n", " "), cp.width-2)
+				lines += 1 + len(wrapped)
+			}
+			if lines == availableLines {
+				maxScroll = i
+				break
+			}
+			if lines > availableLines {
+				maxScroll = i + 1
+				break
+			}
+		}
+	}
+
 	if newScroll > maxScroll {
 		newScroll = maxScroll
 	}
@@ -171,6 +172,9 @@ func (cp *CommentsPanel) View(width, height int, padding string) string {
 	if !cp.isOpen || len(cp.comments) == 0 {
 		return ""
 	}
+
+	cp.width = width
+	cp.height = height
 
 	var b strings.Builder
 

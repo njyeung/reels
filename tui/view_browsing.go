@@ -245,9 +245,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		// If comments open, scroll down in comments
 		if m.comments.IsOpen() {
-			commentsPanelWidth := player.VideoWidthChars
-			commentsPanelHeight := max(m.height-((m.videoRow-2)+1+player.VideoHeightChars+1+2), 1)
-			m.comments.Scroll(1, commentsPanelWidth, commentsPanelHeight)
+			m.comments.Scroll(1)
 			m.updateCommentGifs()
 			// Fetch more comments when scrolled to bottom (if more exist)
 			if m.currentReel != nil && m.comments.IsAtBottom() && !m.comments.loading && len(m.currentReel.Comments) < m.currentReel.CommentCount {
@@ -290,9 +288,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		// If comments open, scroll up in comments
 		if m.comments.IsOpen() {
-			commentsPanelWidth := player.VideoWidthChars
-			commentsPanelHeight := max(m.height-((m.videoRow-2)+1+player.VideoHeightChars+1+2), 1)
-			m.comments.Scroll(-1, commentsPanelWidth, commentsPanelHeight)
+			m.comments.Scroll(-1)
 			m.updateCommentGifs()
 			return m, nil
 		}
