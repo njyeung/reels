@@ -462,9 +462,9 @@ func (m *Model) startPlayback(index int) tea.Cmd {
 				pfp = loaded
 			}
 		}
-		go func() {
-			m.player.Play(videoPath)
-		}()
+		if err := m.player.Play(videoPath); err != nil {
+			return videoErrorMsg{err}
+		}
 		return videoReadyMsg{index: index, pfp: pfp}
 	}
 }

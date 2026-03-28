@@ -184,38 +184,34 @@ func (p *AVPlayer) VideoCenterOffset() (rowOffset, colOffset int) {
 	return
 }
 
-// Play starts playing from cache files (loops until Stop is called)
+// Play initializes a play session and starts the render loop in a background goroutine.
+// It returns once the session is ready (or on error). The render loop runs until Stop is called.
 func (p *AVPlayer) Play(videoPath string) error {
 	p.playMu.Lock()
-	defer p.playMu.Unlock()
 
 	p.playing.Store(true)
 	p.paused.Store(false)
 
-	for p.playing.Load() {
-		err := p.playOnce(videoPath)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// playOnce plays the media file once
-func (p *AVPlayer) playOnce(videoPath string) error {
-	cfg := p.sessionConfig()
-	session, err := newPlaySession(videoPath, cfg)
+	session, err := p.initSession(videoPath)
 	if err != nil {
+		p.playMu.Unlock()
 		return err
 	}
 
-	p.setSession(session)
-	defer func() {
-		p.clearSession(session)
-		session.cleanup()
-	}()
+	go p.playbackLoop(videoPath, session)
+	return nil
+}
 
-	// Restore GIF slots from previous loop iteration
+// initSession creates a configured play session ready for rendering.
+func (p *AVPlayer) initSession(videoPath string) (*playSession, error) {
+	cfg := p.sessionConfig()
+	session, err := newPlaySession(videoPath, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	p.setSession(session)
+
 	p.gifSlotsMu.Lock()
 	slots := p.gifSlots
 	p.gifSlotsMu.Unlock()
@@ -230,7 +226,29 @@ func (p *AVPlayer) playOnce(videoPath string) error {
 		session.setVisibleImages(imageSlots)
 	}
 
-	return session.run(p)
+	return session, nil
+}
+
+// playbackLoop runs the current session, then loops by creating new sessions.
+// Holds playMu for its entire duration so Close() can wait for playback to finish.
+func (p *AVPlayer) playbackLoop(videoPath string, session *playSession) {
+	defer p.playMu.Unlock()
+
+	for {
+		session.run(p)
+		p.clearSession(session)
+		session.cleanup()
+
+		if !p.playing.Load() {
+			return
+		}
+
+		var err error
+		session, err = p.initSession(videoPath)
+		if err != nil {
+			return
+		}
+	}
 }
 
 // Stop stops current playback
