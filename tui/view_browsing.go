@@ -414,10 +414,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case slices.Contains(config.KeysNavbar, key):
-		showNavbar, err := m.backend.ToggleNavbar()
-		if err != nil {
-			// do nothing since this is only a minor failure
-		}
+		showNavbar := m.backend.ToggleNavbar()
 		m.showNavbar = showNavbar
 
 	case slices.Contains(config.KeysReelSizeInc, key):

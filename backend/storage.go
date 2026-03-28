@@ -367,7 +367,7 @@ func (b *ChromeBackend) SetReelSize(width, height int) error {
 }
 
 // ToggleNavbar updates navbar state to !state, persists to disk, and returns the new state of the navbar
-func (b *ChromeBackend) ToggleNavbar() (bool, error) {
+func (b *ChromeBackend) ToggleNavbar() bool {
 	settingsMu.Lock()
 	Config.ShowNavbar = !Config.ShowNavbar
 	showNavbar := Config.ShowNavbar
@@ -376,7 +376,7 @@ func (b *ChromeBackend) ToggleNavbar() (bool, error) {
 
 	path := filepath.Join(b.configDir, "reels.conf")
 	go writeConf(path, snapshot)
-	return showNavbar, nil
+	return showNavbar
 }
 
 // SetVolume updates volume and persists to disk

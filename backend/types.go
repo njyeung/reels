@@ -59,7 +59,7 @@ type Backend interface {
 
 	// ToggleNavbar toggles navbar visibility and persists the state.
 	// Returns true if navbar should be shown, false if hidden.
-	ToggleNavbar() (bool, error)
+	ToggleNavbar() bool
 
 	// SetVolume updates volume and persists to disk
 	SetVolume(vol float64) error
