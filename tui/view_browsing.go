@@ -395,7 +395,6 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				//open panel
 				m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
 				m.share.Open()
-				m.updateVideoPosition()
 				m.updateImages()
 				go m.backend.OpenSharePanel()
 				m.player.RedrawVideo()
@@ -408,7 +407,6 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if !m.comments.IsOpen() && !m.share.IsOpen() {
 			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
 			m.help.Open()
-			m.updateVideoPosition()
 			m.updateImages()
 			m.player.RedrawVideo()
 		}
@@ -495,7 +493,6 @@ func (m Model) sendShare() tea.Cmd {
 // closePanelLayout restores the reel size and video position after a panel (comments/share) is closed.
 func (m *Model) closePanelLayout() {
 	m.resizeReel(backend.GetSettings().ReelSizeStep * backend.GetSettings().PanelShrinkSteps)
-	m.updateVideoPosition()
 	m.player.ClearGifs()
 	m.updateImages()
 	m.player.RedrawVideo()
