@@ -234,84 +234,19 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch {
 	case slices.Contains(config.KeysNext, key):
-		// If help panel open, scroll down
-		if m.help.IsOpen() {
-			m.help.Scroll(1)
-			return m, nil
+		if consumed, cmd := m.scrollPanel(1); consumed {
+			return m, cmd
 		}
-		// If share panel open, move cursor down
-		if m.share.IsOpen() {
-			if m.shareSending {
-				return m, nil
-			}
-			m.share.MoveCursor(1)
-			m.updateImages()
-			return m, nil
-		}
-		// If comments open, scroll down in comments
-		if m.comments.IsOpen() {
-			m.comments.Scroll(1)
-			m.updateCommentGifs()
-			// Fetch more comments when scrolled to bottom (if more exist)
-			if m.currentReel != nil && m.comments.ShouldFetchMore() && !m.comments.loading && len(m.currentReel.Comments) < m.currentReel.CommentCount {
-				m.comments.SetLoading(true)
-				go m.backend.FetchMoreComments()
-			}
-			return m, nil
-		}
-		// Otherwise navigate to next reel
-		if m.currentReel != nil && m.status != statusLoading {
-			nextIndex := m.currentReel.Index + 1
-			if nextIndex <= m.backend.GetTotal() {
-				m.player.Stop()
-
-				m.status = statusLoading
-
-				m.comments.Clear()
-				if info, err := m.backend.GetReel(nextIndex); err == nil {
-					m.currentReel = info
-				}
-				go m.backend.SyncTo(nextIndex)
-				return m, m.startPlayback(nextIndex)
-			}
+		if cmd := m.navigateToReel(1); cmd != nil {
+			return m, cmd
 		}
 
 	case slices.Contains(config.KeysPrevious, key):
-		// If help panel open, scroll up
-		if m.help.IsOpen() {
-			m.help.Scroll(-1)
-			return m, nil
+		if consumed, cmd := m.scrollPanel(-1); consumed {
+			return m, cmd
 		}
-		// If share panel open, move cursor up
-		if m.share.IsOpen() {
-			if m.shareSending {
-				return m, nil
-			}
-			m.share.MoveCursor(-1)
-			m.updateImages()
-			return m, nil
-		}
-		// If comments open, scroll up in comments
-		if m.comments.IsOpen() {
-			m.comments.Scroll(-1)
-			m.updateCommentGifs()
-			return m, nil
-		}
-		// Otherwise navigate to previous reel
-		if m.currentReel != nil && m.status != statusLoading {
-			prevIndex := m.currentReel.Index - 1
-			if prevIndex >= 1 {
-				m.player.Stop()
-
-				m.status = statusLoading
-
-				m.comments.Clear()
-				if info, err := m.backend.GetReel(prevIndex); err == nil {
-					m.currentReel = info
-				}
-				go m.backend.SyncTo(prevIndex)
-				return m, m.startPlayback(prevIndex)
-			}
+		if cmd := m.navigateToReel(-1); cmd != nil {
+			return m, cmd
 		}
 
 	case slices.Contains(config.KeysMute, key):
@@ -329,7 +264,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case slices.Contains(config.KeysLike, key):
-		if !m.comments.IsOpen() && !m.share.IsOpen() && m.currentReel != nil {
+		if !m.panelOpen() && m.currentReel != nil {
 			if !m.backend.IsSyncing() {
 				m.currentReel.Liked = !m.currentReel.Liked
 				go m.backend.ToggleLike()
@@ -337,7 +272,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case slices.Contains(config.KeysSave, key):
-		if !m.comments.IsOpen() && !m.share.IsOpen() && m.currentReel != nil {
+		if !m.panelOpen() && m.currentReel != nil {
 			if !m.backend.IsSyncing() {
 				m.currentReel.Saved = !m.currentReel.Saved
 				go m.backend.ToggleSave()
@@ -351,7 +286,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.comments.Close()
 				m.closePanelLayout()
 				go m.backend.CloseComments()
-			} else if m.currentReel != nil && !m.currentReel.CommentsDisabled && !m.share.IsOpen() && !m.help.IsOpen() {
+			} else if m.currentReel != nil && !m.currentReel.CommentsDisabled && !m.panelOpen() {
 				// open comments
 				m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
 				m.comments.Open(m.currentReel.PK)
@@ -386,7 +321,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				// Send to selected friends; close UI when backend finishes.
 				m.shareSending = true
 				return m, m.sendShare()
-			} else if m.currentReel != nil && m.currentReel.CanViewerReshare && !m.comments.IsOpen() && !m.help.IsOpen() {
+			} else if m.currentReel != nil && m.currentReel.CanViewerReshare && !m.panelOpen() {
 				//open panel
 				m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
 				m.share.Open()
@@ -398,7 +333,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.help.IsOpen() {
 			m.help.Close()
 			m.closePanelLayout()
-		} else if !m.comments.IsOpen() && !m.share.IsOpen() {
+		} else if !m.panelOpen() {
 			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
 			m.help.Open()
 			m.player.RedrawVideo()
@@ -481,9 +416,62 @@ func (m Model) sendShare() tea.Cmd {
 	}
 }
 
+// panelOpen returns true if any overlay panel (comments, share, help) is open.
+func (m Model) panelOpen() bool {
+	return m.comments.IsOpen() || m.share.IsOpen() || m.help.IsOpen()
+}
+
+// scrollPanel dispatches scroll/cursor movement to the active panel.
+// Returns true if a panel consumed the input.
+func (m *Model) scrollPanel(direction int) (bool, tea.Cmd) {
+	if m.help.IsOpen() {
+		m.help.Scroll(direction)
+		return true, nil
+	}
+	if m.share.IsOpen() {
+		if m.shareSending {
+			return true, nil
+		}
+		m.share.MoveCursor(direction)
+		m.updateImages()
+		return true, nil
+	}
+	if m.comments.IsOpen() {
+		m.comments.Scroll(direction)
+		m.updateCommentGifs()
+		if direction > 0 && m.currentReel != nil && m.comments.ShouldFetchMore() &&
+			!m.comments.loading && len(m.currentReel.Comments) < m.currentReel.CommentCount {
+			m.comments.SetLoading(true)
+			go m.backend.FetchMoreComments()
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+// navigateToReel moves to a reel at currentIndex+direction if in bounds and not already loading.
+func (m *Model) navigateToReel(direction int) tea.Cmd {
+	if m.currentReel == nil || m.status == statusLoading {
+		return nil
+	}
+	index := m.currentReel.Index + direction
+	if index < 1 || index > m.backend.GetTotal() {
+		return nil
+	}
+	m.player.Stop()
+	m.status = statusLoading
+	m.comments.Clear()
+	if info, err := m.backend.GetReel(index); err == nil {
+		m.currentReel = info
+	}
+	go m.backend.SyncTo(index)
+	return m.startPlayback(index)
+}
+
 // closePanelLayout restores the reel size and video position after a panel (comments/share) is closed.
 func (m *Model) closePanelLayout() {
-	m.resizeReel(backend.GetSettings().ReelSizeStep * backend.GetSettings().PanelShrinkSteps)
+	s := backend.GetSettings()
+	m.resizeReel(s.ReelSizeStep * s.PanelShrinkSteps)
 	m.player.ClearGifs()
 	m.player.RedrawVideo()
 }
