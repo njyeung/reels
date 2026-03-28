@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.5]
+- Add arm Linux support
+- Add save button
+- Optimize shared memory writing
+- Fix: Disable actions (liking, opening panels) triggering while SyncTo is working
+- Fix: Instagram's new send button
+- Fix: comment prefetching to adjust to new comments layout
+- Fix: video centering on non-16:9 reels
+- Fix: video ready signal not firing at the right time
+
 ## [1.2.4]
 
 - Use @rpath for macOS FFmpeg linking to support broader install locations
