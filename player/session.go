@@ -17,8 +17,6 @@ type playSession struct {
 
 	// Cell positions for image placement (1-indexed)
 	videoRow, videoCol int
-	// Centering offsets for non-9:16 videos within the bounding box
-	videoRowOffset, videoColOffset int
 
 	audioPktCh chan *audioPacket
 	videoPktCh chan *astiav.Packet
@@ -67,20 +65,6 @@ func newPlaySession(url string, cfg sessionConfig) (*playSession, error) {
 	dstW, dstH := fitSize(srcW, srcH, cfg.width, cfg.height)
 	video.SetSize(dstW, dstH)
 
-	// Center the actual video within the 9:16 bounding box when aspect ratios differ.
-	// on an actual 9:16 video, these offsets should be 0.
-	videoRowOffset, videoColOffset := 0, 0
-	if cols, rows, termW, termH, err := GetTerminalSize(); err == nil && cols > 0 && rows > 0 {
-		cellW := termW / cols
-		cellH := termH / rows
-		if cellW > 0 {
-			videoColOffset = (cfg.width - dstW) / 2 / cellW
-		}
-		if cellH > 0 {
-			videoRowOffset = (cfg.height - dstH) / 2 / cellH
-		}
-	}
-
 	var audio *AudioPlayer
 	if demuxer.HasAudio() {
 		audio, err = NewAudioPlayer(demuxer.AudioCodecParameters())
@@ -108,10 +92,8 @@ func newPlaySession(url string, cfg sessionConfig) (*playSession, error) {
 		audio:          audio,
 		video:          video,
 		renderer:       renderer,
-		videoRow:       cfg.videoRow + videoRowOffset,
-		videoCol:       cfg.videoCol + videoColOffset,
-		videoRowOffset: videoRowOffset,
-		videoColOffset: videoColOffset,
+		videoRow:       cfg.videoRow,
+		videoCol:       cfg.videoCol,
 		stopCh:         make(chan struct{}),
 		videoPktCh:     make(chan *astiav.Packet, 60),
 	}

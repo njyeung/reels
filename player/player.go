@@ -21,7 +21,7 @@ type AVPlayer struct {
 	paused         atomic.Bool
 	muted          atomic.Bool
 	needsRedrawVid atomic.Bool
-	volume  atomic.Value // float64, 0.0–1.0
+	volume         atomic.Value // float64, 0.0–1.0
 
 	playMu   sync.Mutex
 	configMu sync.Mutex
@@ -136,6 +136,7 @@ func (p *AVPlayer) SetSize(width, height int) {
 
 // SetVideoPosition sets the 1-indexed terminal (row, col) where the video is rendered.
 // The TUI is the source of truth for video position and calls this whenever the layout changes.
+// The caller is responsible for including any centering offsets (see VideoCenterOffset).
 func (p *AVPlayer) SetVideoPosition(row, col int) {
 	p.configMu.Lock()
 	p.videoRow = row
@@ -143,9 +144,44 @@ func (p *AVPlayer) SetVideoPosition(row, col int) {
 	p.configMu.Unlock()
 
 	p.withSession(func(s *playSession) {
-		s.videoRow = row + s.videoRowOffset
-		s.videoCol = col + 1 + s.videoColOffset
+		s.videoRow = row
+		s.videoCol = col + 1
 	})
+}
+
+// VideoCenterOffset returns the (row, col) offset needed to center the actual video
+// content within the 9:16 bounding box. Most reel videos are exactly 9:16, so the
+// offset is (0, 0). But when a video has a different aspect ratio (e.g. 1:1 or 16:9),
+// it gets scaled to fit inside the bounding box.
+//
+// Returns (0, 0) if there is no active session or the video perfectly fills the box.
+func (p *AVPlayer) VideoCenterOffset() (rowOffset, colOffset int) {
+	p.withSession(func(s *playSession) {
+		if s.video == nil {
+			return
+		}
+		srcW, srcH := s.video.SourceSize()
+
+		p.configMu.Lock()
+		width, height := p.width, p.height
+		p.configMu.Unlock()
+
+		dstW, dstH := fitSize(srcW, srcH, width, height)
+
+		cols, rows, termW, termH, err := GetTerminalSize()
+		if err != nil || cols == 0 || rows == 0 {
+			return
+		}
+		cellW := termW / cols
+		cellH := termH / rows
+		if cellW > 0 {
+			colOffset = (width - dstW) / 2 / cellW
+		}
+		if cellH > 0 {
+			rowOffset = (height - dstH) / 2 / cellH
+		}
+	})
+	return
 }
 
 // Play starts playing from cache files (loops until Stop is called)

@@ -551,9 +551,12 @@ func (m *Model) updateVideoPosition() {
 	if m.comments.IsOpen() || m.share.IsOpen() || m.help.IsOpen() {
 		row = 5
 	}
+
 	m.videoRow = row
 	m.videoCol = col
-	m.player.SetVideoPosition(row, col)
+	// Adjust for non-9:16 videos that don't fill the bounding box.
+	rowOff, colOff := m.player.VideoCenterOffset()
+	m.player.SetVideoPosition(row+rowOff, col+colOff)
 }
 
 func (m *Model) updateImages() {
