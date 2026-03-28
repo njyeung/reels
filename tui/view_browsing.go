@@ -357,7 +357,6 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 				// Open comments for current reel
 				m.comments.Open(m.currentReel.PK)
-				m.updateVideoPosition()
 				m.updateImages()
 
 				// Use cached comments if available
