@@ -77,7 +77,7 @@ All keybinds are configurable in `reels.conf`. Each action supports multiple bin
 
 ## Installation
 
-### npm (macOS ARM64 / Linux x86_64)
+### npm (macOS ARM64 / Linux x86_64 & ARM64)
 
 **macOS** *requires [Homebrew](https://brew.sh)*:
 ```bash
@@ -94,7 +94,7 @@ npm install -g @reels/tui
 reels
 ```
 
-### Homebrew (macOS ARM64 / Linux x86_64)
+### Homebrew (macOS ARM64 / Linux x86_64 & ARM64)
 
 ```bash
 brew tap njyeung/tap
@@ -102,7 +102,7 @@ brew install reels
 reels
 ```
 
-### AUR (Arch Linux x86_64)
+### AUR (Arch Linux x86_64 & ARM64)
 
 ```bash
 sudo pacman -Syu ffmpeg # make sure you're on ffmpeg 8+
@@ -117,6 +117,7 @@ Download the latest release from [GitHub Releases](https://github.com/njyeung/re
 | Platform | Binary |
 |----------|--------|
 | Linux (x86_64) | `reels-linux-amd64` |
+| Linux (ARM64) | `reels-linux-arm64` |
 | macOS (Apple Silicon) | `reels-darwin-arm64` |
 
 **macOS:** Requires `ffmpeg-full` from Homebrew - `brew install ffmpeg-full`. The standard `brew install ffmpeg` is missing framework link flags needed for compilation. You may build from source or use MacPorts if you know what you're doing.

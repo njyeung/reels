@@ -11,28 +11,38 @@ permissions:
 jobs:
   build-linux:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+          - arch: arm64
+            platform: linux/arm64
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Build Docker image with FFmpeg 8
         run: |
-          docker build -f Dockerfile.build -t reels-builder .
+          docker build --platform ${{ matrix.platform }} -f Dockerfile.build -t reels-builder .
 
       - name: Build binary in container
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          docker run --rm -v ${{ github.workspace }}:/app reels-builder \
-            sh -c "go build -buildvcs=false -ldflags '-X main.Version=$VERSION' -o reels-linux-amd64 ."
+          docker run --rm --platform ${{ matrix.platform }} -v ${{ github.workspace }}:/app reels-builder \
+            sh -c "go build -buildvcs=false -ldflags '-X main.Version=$VERSION' -o reels-linux-${{ matrix.arch }} ."
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: reels-linux-amd64
-          path: reels-linux-amd64
+          name: reels-linux-${{ matrix.arch }}
+          path: reels-linux-${{ matrix.arch }}
 
   build-macos:
     runs-on: macos-latest
@@ -64,7 +74,7 @@ jobs:
           go build -ldflags "-X main.Version=$VERSION" -o reels-darwin-arm64 .
 
           # Rewrite dylib references to use @rpath so the binary works with any
-          # FFmpeg 8+ installation, not just ffmpeg-full from Homebrew.
+          # FFmpeg 8+ installation
           for dylib_path in $(otool -L reels-darwin-arm64 | grep "Cellar/ffmpeg\|/opt/homebrew" | awk '{print $1}'); do
             filename=$(basename "$dylib_path")
             stable_name=$(echo "$filename" | sed -E 's/(lib[a-z]+\.[0-9]+)\.[0-9]+\.[0-9]+\.dylib/\1.dylib/')
@@ -123,6 +133,7 @@ jobs:
         with:
           files: |
             artifacts/reels-linux-amd64/reels-linux-amd64
+            artifacts/reels-linux-arm64/reels-linux-arm64
             artifacts/reels-darwin-arm64/reels-darwin-arm64
             artifacts/reels-*.tar.gz
           body: ${{ steps.changelog.outputs.found == 'true' && steps.changelog.outputs.body || '' }}
