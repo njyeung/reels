@@ -123,6 +123,35 @@ func (cp *CommentsPanel) ResizeGifs() {
 	cp.loadGifs()
 }
 
+// maxScroll computes the maximum scroll index: the first comment index such
+// that all comments from that index to the end exactly fill (or overflow) the
+// panel. This prevents scrolling past the point where the panel would have
+// empty space at the bottom.
+func (cp *CommentsPanel) maxScroll() int {
+	availableLines := cp.height - 2
+	if availableLines < 1 || len(cp.comments) == 0 {
+		return 0
+	}
+
+	lines := 0
+	for i := len(cp.comments) - 1; i >= 0; i-- {
+		comment := cp.comments[i]
+		if _, ok := cp.gifAnims[comment.PK]; ok {
+			lines += 1 + cp.gifCellHeight
+		} else {
+			wrapped := wrapByWidth(strings.ReplaceAll(comment.Text, "\n", " "), cp.width-2)
+			lines += 1 + len(wrapped)
+		}
+		if lines == availableLines {
+			return i
+		}
+		if lines > availableLines {
+			return i + 1
+		}
+	}
+	return 0
+}
+
 // Scroll moves the scroll position by the given delta, clamping to prevent
 // scrolling past the point where the panel would have empty space at the bottom.
 func (cp *CommentsPanel) Scroll(delta int) {
@@ -131,33 +160,8 @@ func (cp *CommentsPanel) Scroll(delta int) {
 		newScroll = 0
 	}
 
-	// Compute max scroll: walk backwards from the last comment, accumulating
-	// line heights until we fill the panel.
-	maxScroll := 0
-	availableLines := cp.height - 2
-	if availableLines >= 1 && len(cp.comments) > 0 {
-		lines := 0
-		for i := len(cp.comments) - 1; i >= 0; i-- {
-			comment := cp.comments[i]
-			if _, ok := cp.gifAnims[comment.PK]; ok {
-				lines += 1 + cp.gifCellHeight
-			} else {
-				wrapped := wrapByWidth(strings.ReplaceAll(comment.Text, "\n", " "), cp.width-2)
-				lines += 1 + len(wrapped)
-			}
-			if lines == availableLines {
-				maxScroll = i
-				break
-			}
-			if lines > availableLines {
-				maxScroll = i + 1
-				break
-			}
-		}
-	}
-
-	if newScroll > maxScroll {
-		newScroll = maxScroll
+	if max := cp.maxScroll(); newScroll > max {
+		newScroll = max
 	}
 	cp.scroll = newScroll
 }
@@ -293,14 +297,13 @@ func (cp *CommentsPanel) SetLoading(loading bool) {
 	cp.loading = loading
 }
 
-// IsAtBottom returns true if the scroll position is at the bottom of the comments list
-func (cp *CommentsPanel) IsAtBottom() bool {
-	// -5 is arbritrary, this just gives padding for the network request
-	maxScroll := len(cp.comments) - 5
-	if maxScroll < 0 {
-		maxScroll = 0
+// ShouldFetchMore returns true if the scroll position is near the visual bottom
+func (cp *CommentsPanel) ShouldFetchMore() bool {
+	threshold := cp.maxScroll() - 5
+	if threshold < 0 {
+		threshold = 0
 	}
-	return cp.scroll >= maxScroll
+	return cp.scroll >= threshold
 }
 
 // CanAccept returns true if the panel can accept comments for the given reel

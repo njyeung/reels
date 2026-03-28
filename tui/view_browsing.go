@@ -253,7 +253,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.comments.Scroll(1)
 			m.updateCommentGifs()
 			// Fetch more comments when scrolled to bottom (if more exist)
-			if m.currentReel != nil && m.comments.IsAtBottom() && !m.comments.loading && len(m.currentReel.Comments) < m.currentReel.CommentCount {
+			if m.currentReel != nil && m.comments.ShouldFetchMore() && !m.comments.loading && len(m.currentReel.Comments) < m.currentReel.CommentCount {
 				m.comments.SetLoading(true)
 				go m.backend.FetchMoreComments()
 			}
