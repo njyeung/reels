@@ -354,11 +354,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			} else if m.currentReel != nil && !m.currentReel.CommentsDisabled && !m.share.IsOpen() && !m.help.IsOpen() {
 				// open comments
 				m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
-
-				// Open comments for current reel
 				m.comments.Open(m.currentReel.PK)
-				m.updateImages()
-
 				// Use cached comments if available
 				if m.currentReel.Comments != nil {
 					m.comments.SetComments(m.currentReel.PK, m.currentReel.Comments)
@@ -394,7 +390,6 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				//open panel
 				m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
 				m.share.Open()
-				m.updateImages()
 				go m.backend.OpenSharePanel()
 				m.player.RedrawVideo()
 			}
@@ -406,7 +401,6 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else if !m.comments.IsOpen() && !m.share.IsOpen() {
 			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
 			m.help.Open()
-			m.updateImages()
 			m.player.RedrawVideo()
 		}
 
@@ -416,11 +410,9 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case slices.Contains(config.KeysReelSizeInc, key):
 		m.resizeReel(config.ReelSizeStep)
-		m.updateImages()
 
 	case slices.Contains(config.KeysReelSizeDec, key):
 		m.resizeReel(-config.ReelSizeStep)
-		m.updateImages()
 
 	case slices.Contains(config.KeysVolUp, key):
 		vol := min(m.player.Volume()+0.1, 1.0)
@@ -493,7 +485,6 @@ func (m Model) sendShare() tea.Cmd {
 func (m *Model) closePanelLayout() {
 	m.resizeReel(backend.GetSettings().ReelSizeStep * backend.GetSettings().PanelShrinkSteps)
 	m.player.ClearGifs()
-	m.updateImages()
 	m.player.RedrawVideo()
 }
 
@@ -515,6 +506,7 @@ func (m *Model) resizeReel(delta int) {
 	player.ComputeVideoCharacterDimensions(m.videoWidthPx, m.videoHeightPx)
 	m.player.SetSize(m.videoWidthPx, m.videoHeightPx)
 	m.updateVideoPosition()
+	m.updateImages()
 }
 
 // updateCommentGifs recomputes visible GIF slots and passes them to the player.
