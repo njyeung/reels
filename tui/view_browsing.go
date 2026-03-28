@@ -234,16 +234,16 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	switch {
 	case slices.Contains(config.KeysNext, key):
-		if consumed, cmd := m.scrollPanel(1); consumed {
-			return m, cmd
+		if m.scrollPanel(1) {
+			return m, nil
 		}
 		if cmd := m.navigateToReel(1); cmd != nil {
 			return m, cmd
 		}
 
 	case slices.Contains(config.KeysPrevious, key):
-		if consumed, cmd := m.scrollPanel(-1); consumed {
-			return m, cmd
+		if m.scrollPanel(-1) {
+			return m, nil
 		}
 		if cmd := m.navigateToReel(-1); cmd != nil {
 			return m, cmd
@@ -423,18 +423,18 @@ func (m Model) panelOpen() bool {
 
 // scrollPanel dispatches scroll/cursor movement to the active panel.
 // Returns true if a panel consumed the input.
-func (m *Model) scrollPanel(direction int) (bool, tea.Cmd) {
+func (m *Model) scrollPanel(direction int) bool {
 	if m.help.IsOpen() {
 		m.help.Scroll(direction)
-		return true, nil
+		return true
 	}
 	if m.share.IsOpen() {
 		if m.shareSending {
-			return true, nil
+			return true
 		}
 		m.share.MoveCursor(direction)
 		m.updateImages()
-		return true, nil
+		return true
 	}
 	if m.comments.IsOpen() {
 		m.comments.Scroll(direction)
@@ -444,9 +444,9 @@ func (m *Model) scrollPanel(direction int) (bool, tea.Cmd) {
 			m.comments.SetLoading(true)
 			go m.backend.FetchMoreComments()
 		}
-		return true, nil
+		return true
 	}
-	return false, nil
+	return false
 }
 
 // navigateToReel moves to a reel at currentIndex+direction if in bounds and not already loading.
