@@ -321,7 +321,8 @@ func (p *AVPlayer) Skip(seconds float64) {
 				target += dur
 			}
 		}
-		s.seek(target)
+
+		s.Seek(target)
 	})
 }
 
