@@ -288,8 +288,9 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				go m.backend.CloseComments()
 			} else if m.currentReel != nil && !m.currentReel.CommentsDisabled && !m.panelOpen() {
 				// open comments
-				m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
 				m.comments.Open(m.currentReel.PK)
+				m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
+
 				// Use cached comments if available
 				if m.currentReel.Comments != nil {
 					m.comments.SetComments(m.currentReel.PK, m.currentReel.Comments)
@@ -323,8 +324,8 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, m.sendShare()
 			} else if m.currentReel != nil && m.currentReel.CanViewerReshare && !m.panelOpen() {
 				//open panel
-				m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
 				m.share.Open()
+				m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
 				go m.backend.OpenSharePanel()
 				m.player.RedrawVideo()
 			}
@@ -334,8 +335,8 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.help.Close()
 			m.closePanelLayout()
 		} else if !m.panelOpen() {
-			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
 			m.help.Open()
+			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
 			m.player.RedrawVideo()
 		}
 
@@ -345,9 +346,11 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case slices.Contains(config.KeysReelSizeInc, key):
 		m.resizeReel(config.ReelSizeStep)
+		m.player.RedrawVideo()
 
 	case slices.Contains(config.KeysReelSizeDec, key):
 		m.resizeReel(-config.ReelSizeStep)
+		m.player.RedrawVideo()
 
 	case slices.Contains(config.KeysVolUp, key):
 		vol := min(m.player.Volume()+0.1, 1.0)
@@ -365,6 +368,12 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.shareConfirmed = true
 			return m, m.queueShareReset()
 		}
+
+	case key == "left":
+		m.player.Skip(-5)
+
+	case key == "right":
+		m.player.Skip(5)
 	}
 
 	return m, nil
@@ -391,9 +400,14 @@ func (m *Model) startPlayback(index int) tea.Cmd {
 }
 
 func (m Model) prefetch(index int) {
-	nextIndex := index + 1
-	if nextIndex <= m.backend.GetTotal() {
-		m.backend.Download(nextIndex)
+	toDownload1 := index + 1
+	toDownload2 := index + 2
+
+	if toDownload1 <= m.backend.GetTotal() {
+		m.backend.Download(index)
+	}
+	if toDownload2 <= m.backend.GetTotal() {
+		m.backend.Download(index)
 	}
 }
 

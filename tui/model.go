@@ -397,7 +397,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.reelPFP = msg.pfp
 		m.updateVideoPosition()
 		m.updateImages()
-		go m.prefetch(msg.index + 1)
+		go m.prefetch(msg.index)
 		return m, nil
 
 	case videoErrorMsg:

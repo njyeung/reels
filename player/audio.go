@@ -278,6 +278,15 @@ func (a *AudioPlayer) Pause() {
 	a.paused.Store(!a.paused.Load())
 }
 
+// Seek clears buffered audio samples and resets the clock to the given position.
+func (a *AudioPlayer) Seek(seconds float64) {
+	a.buffMu.Lock()
+	a.sampleBuf = a.sampleBuf[:0]
+	a.buffMu.Unlock()
+
+	a.clock.Store(seconds)
+}
+
 // Close releases all resources
 func (a *AudioPlayer) Close() {
 	a.mu.Lock()

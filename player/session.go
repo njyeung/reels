@@ -9,6 +9,26 @@ import (
 	"github.com/asticode/go-astiav"
 )
 
+// seekPhase tracks the two-phase state machine used to discard stale frames
+// after a seek without relying on avcodec_flush_buffers.
+//
+// Phase 1 (seekPhaseDiscard): discard frames until we see one with PTS <= target.
+//   - On a backward seek the decoder may still output stale buffered frames
+//     whose PTS is near the old (higher) position. Discarding while PTS > target
+//     eats all of that garbage.
+//
+// Phase 2 (seekPhaseSkip): skip frames until we see one with PTS > target.
+//   - The demuxer seeked to a keyframe K <= target, so the first fresh frames
+//     have PTS in [K, target]. We fast-forward past them.
+//   - The first frame with PTS > target is the one we display.
+type seekPhase int
+
+const (
+	seekPhaseNone    seekPhase = iota // not seeking
+	seekPhaseDiscard                  // phase 1: discard stale frames (PTS > target)
+	seekPhaseSkip                     // phase 2: skip keyframe run-up (PTS <= target)
+)
+
 type playSession struct {
 	demuxer  *Demuxer
 	audio    *AudioPlayer
@@ -28,6 +48,17 @@ type playSession struct {
 
 	stopCh   chan struct{}
 	stopOnce sync.Once
+
+	seekCh chan float64
+
+	// Two-phase seek state machine (accessed only from videoRenderLoop).
+	// seekDone carries the target from performSeek → videoRenderLoop.
+	seekDone   chan float64
+	seekState  seekPhase
+	seekTarget float64
+
+	// Audio seek: skip pre-target audio packets after a seek.
+	audioSeekTarget chan float64
 }
 
 type audioPacket struct {
@@ -88,14 +119,17 @@ func newPlaySession(url string, cfg sessionConfig) (*playSession, error) {
 	}
 
 	session := &playSession{
-		demuxer:        demuxer,
-		audio:          audio,
-		video:          video,
-		renderer:       renderer,
-		videoRow:       cfg.videoRow,
-		videoCol:       cfg.videoCol,
-		stopCh:         make(chan struct{}),
-		videoPktCh:     make(chan *astiav.Packet, 60),
+		demuxer:    demuxer,
+		audio:      audio,
+		video:      video,
+		renderer:   renderer,
+		videoRow:   cfg.videoRow,
+		videoCol:   cfg.videoCol,
+		stopCh:          make(chan struct{}),
+		seekCh:          make(chan float64, 1),
+		seekDone:        make(chan float64, 1),
+		audioSeekTarget: make(chan float64, 1),
+		videoPktCh:      make(chan *astiav.Packet, 60),
 	}
 	if audio != nil {
 		session.audioPktCh = make(chan *audioPacket, 128)
@@ -158,14 +192,94 @@ func (s *playSession) cleanup() {
 	}
 }
 
-// audioDecodeLoop runs in a separate goroutine to decode audio packets
+// audioDecodeLoop runs in a separate goroutine to decode audio packets.
+// After a seek, pre-target packets are skipped so the audio content
+// matches the clock position set by audio.Seek().
 func (s *playSession) audioDecodeLoop() {
+	skipUntil := -1.0 // no active skip
+
 	for apkt := range s.audioPktCh {
 		if apkt == nil {
 			continue
 		}
+
+		// Check for a new seek target
+		select {
+		case t := <-s.audioSeekTarget:
+			skipUntil = t
+		default:
+		}
+
+		if skipUntil >= 0 && apkt.pts < skipUntil {
+			apkt.pkt.Free()
+			continue
+		}
+		skipUntil = -1.0
+
 		s.audio.DecodePacket(apkt.pkt, apkt.pts)
 		apkt.pkt.Free()
+	}
+}
+
+// seek sends a seek request to the demux loop. Non-blocking; latest target wins.
+func (s *playSession) seek(target float64) {
+	// Drain any pending seek so we can guarantee the send succeeds
+	select {
+	case <-s.seekCh:
+	default:
+	}
+	select {
+	case s.seekCh <- target:
+	default:
+	}
+}
+
+// performSeek drains buffered packets, seeks the demuxer, and resets audio state.
+// Must only be called from the demux loop.
+func (s *playSession) performSeek(target float64, p *AVPlayer) {
+	s.drainChannels()
+
+	if err := s.demuxer.Seek(target); err != nil {
+		return
+	}
+
+	// Signal the video render loop to enter the two-phase state machine.
+	select {
+	case <-s.seekDone:
+	default:
+	}
+	s.seekDone <- target
+
+	// Tell the audio decode loop to skip pre-target packets.
+	if s.audio != nil {
+		select {
+		case <-s.audioSeekTarget:
+		default:
+		}
+		s.audioSeekTarget <- target
+		s.audio.Seek(target)
+	}
+}
+
+// drainChannels empties videoPktCh and audioPktCh, freeing all buffered packets.
+// Must only be called from the demux loop.
+func (s *playSession) drainChannels() {
+	if s.videoPktCh != nil {
+		drainCh(s.videoPktCh, func(pkt *astiav.Packet) { pkt.Free() })
+	}
+	if s.audioPktCh != nil {
+		drainCh(s.audioPktCh, func(pkt *audioPacket) { pkt.pkt.Free() })
+	}
+}
+
+func drainCh[T any](ch <-chan T, free func(T)) {
+	for {
+		select {
+		case v := <-ch:
+			free(v)
+		default:
+			return
+		}
 	}
 }
 
@@ -188,6 +302,9 @@ func (s *playSession) demuxLoop(p *AVPlayer) {
 		select {
 		case <-s.stopCh:
 			return
+		case target := <-s.seekCh:
+			s.performSeek(target, p)
+			continue
 		default:
 		}
 
@@ -202,6 +319,10 @@ func (s *playSession) demuxLoop(p *AVPlayer) {
 		if isVideo {
 			select {
 			case s.videoPktCh <- pkt:
+			case target := <-s.seekCh:
+				pkt.Free()
+				s.performSeek(target, p)
+				continue
 			case <-s.stopCh:
 				pkt.Free()
 				return
@@ -214,6 +335,10 @@ func (s *playSession) demuxLoop(p *AVPlayer) {
 
 			select {
 			case s.audioPktCh <- &audioPacket{pkt: clonedPkt, pts: pts}:
+			case target := <-s.seekCh:
+				clonedPkt.Free()
+				s.performSeek(target, p)
+				continue
 			case <-s.stopCh:
 				clonedPkt.Free()
 				return
@@ -224,12 +349,35 @@ func (s *playSession) demuxLoop(p *AVPlayer) {
 	}
 }
 
-// videoRenderLoop processes video packets and renders frames
+// videoRenderLoop processes video packets and renders frames.
+//
+// After a seek, instead of relying on avcodec_flush_buffers (which go-astiav
+// does not expose), we run a two-phase state machine:
+//
+//	Phase 1 (seekPhaseDiscard): decode but discard frames while PTS > target.
+//	  Eats stale buffered frames whose PTS belongs to the old position.
+//
+//	Phase 2 (seekPhaseSkip): decode but discard frames while PTS <= target.
+//	  Fast-forwards through the keyframe run-up to the seek point.
+//
+// The first frame with PTS > target after phase 2 is displayed.
 func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 	for pkt := range s.videoPktCh {
+		if pkt == nil {
+			continue
+		}
+
 		if !p.playing.Load() {
 			pkt.Free()
 			continue
+		}
+
+		// Check for a new seek signal from performSeek
+		select {
+		case t := <-s.seekDone:
+			s.seekTarget = t
+			s.seekState = seekPhaseDiscard
+		default:
 		}
 
 		redraw := false
@@ -254,6 +402,14 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 				pkt.Free()
 				return nil
 			}
+
+			// Re-check for seek signal while paused
+			select {
+			case t := <-s.seekDone:
+				s.seekTarget = t
+				s.seekState = seekPhaseDiscard
+			default:
+			}
 		}
 
 		frame, err := s.video.DecodePacket(pkt)
@@ -269,38 +425,51 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 			continue
 		}
 
-		// sync to audio clock (skip frame if behind, wait if ahead)
+		// Two-phase seek state machine
+		switch s.seekState {
+		case seekPhaseDiscard:
+			// Phase 1: discard stale frames until we see PTS <= target
+			if frame.PTS > s.seekTarget {
+				continue
+			}
+			s.seekState = seekPhaseSkip
+			fallthrough
+		case seekPhaseSkip:
+			// Phase 2: skip keyframe run-up until PTS > target
+			if frame.PTS <= s.seekTarget {
+				continue
+			}
+			s.seekState = seekPhaseNone
+		}
+
+		// Sync to audio clock (skip frame if behind, wait if ahead)
 		if s.audio.IsPlaying() {
 			audioTime := s.audio.Time()
 			diff := frame.PTS - audioTime
 
 			if diff > SyncThreshold {
-				time.Sleep(time.Duration(diff * float64(time.Second) * 0.2)) // proportional correction
+				time.Sleep(time.Duration(diff * float64(time.Second) * 0.2))
 			} else if diff < -SyncThreshold {
 				continue
 			}
 		}
 
-		// render all layers in one synchronized update to avoid flickering
+		// Render all layers in one synchronized update to avoid flickering
 		s.renderer.BeginSync()
 
 		keep := map[int]bool{VideoImageID: true}
 
-		// render video
 		if err := s.renderer.RenderImage(frame.RGB, 24, frame.Width, frame.Height, VideoImageID, s.videoRow, s.videoCol); err != nil {
 			s.renderer.EndSync()
 			return fmt.Errorf("render error: %w", err)
 		}
 
-		// render gifs and static images
 		if err := s.renderOverlays(keep); err != nil {
 			s.renderer.EndSync()
 			return err
 		}
 
-		// Remove any images that weren't rendered this frame.
 		s.renderer.Prune(keep)
-
 		s.renderer.EndSync()
 	}
 
