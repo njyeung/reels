@@ -7,7 +7,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/njyeung/reels/backend"
 	"github.com/njyeung/reels/player"
 	"github.com/njyeung/reels/player/shm"
@@ -128,7 +127,7 @@ func NewModel(userDataDir, cacheDir, configDir string, output io.Writer, version
 
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("205"))
+	s.Style = yellow500
 
 	p := player.NewAVPlayer()
 	p.SetSize(playerWidth, playerHeight)

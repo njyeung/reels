@@ -139,7 +139,7 @@ func (sp *SharePanel) View(width, height int, padding string) string {
 
 	var b strings.Builder
 
-	header := panelTitleStyle.Render("Share To")
+	header := purple400.Bold(true).Underline(true).Render("Share To")
 	b.WriteString(padding + header + "\n")
 	availableLines := height - 2
 	if availableLines < 1 {
@@ -165,13 +165,13 @@ func (sp *SharePanel) View(width, height int, padding string) string {
 			if line == sharePfpCellHeight/2 {
 				var nameText string
 				if i == sp.cursor && sp.selected[i] {
-					nameText = friendSelectedCursorStyle.Render(friend.Name)
+					nameText = yellow500.Underline(true).Render(friend.Name)
 				} else if i == sp.cursor {
-					nameText = friendCursorStyle.Render(friend.Name)
+					nameText = pink500.Underline(true).Render(friend.Name)
 				} else if sp.selected[i] {
-					nameText = friendSelectedStyle.Render(friend.Name)
+					nameText = yellow300.Render(friend.Name)
 				} else {
-					nameText = usernameStyle.Render(friend.Name)
+					nameText = pink300.Render(friend.Name)
 				}
 				b.WriteString(padding + pfpPadding + nameText + "\n")
 			} else {

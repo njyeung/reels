@@ -82,7 +82,7 @@ func (hp *HelpPanel) View(width, height int, padding string) string {
 
 	var b strings.Builder
 
-	header := panelTitleStyle.Render("Help")
+	header := purple400.Bold(true).Underline(true).Render("Help")
 	b.WriteString(padding + header + "\n")
 	availableLines := height - 2
 	if availableLines < 1 {
@@ -93,7 +93,7 @@ func (hp *HelpPanel) View(width, height int, padding string) string {
 
 	for i := hp.scroll; i < len(hp.entries) && i-hp.scroll < availableLines; i++ {
 		entry := hp.entries[i]
-		line := navStyle.Render(entry.keys + ": " + entry.action)
+		line := gray500.Render(entry.keys + ": " + entry.action)
 		b.WriteString(padding + line + "\n")
 	}
 

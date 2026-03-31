@@ -11,24 +11,12 @@ import (
 	"github.com/asticode/go-astiav"
 )
 
-// seekPhase tracks the two-phase state machine used to discard stale frames
-// after a seek without relying on avcodec_flush_buffers.
-//
-// Phase 1 (seekPhaseDiscard): discard frames until we see one with PTS <= target.
-//   - On a backward seek the decoder may still output stale buffered frames
-//     whose PTS is near the old (higher) position. Discarding while PTS > target
-//     eats all of that garbage.
-//
-// Phase 2 (seekPhaseSkip): skip frames until we see one with PTS > target.
-//   - The demuxer seeked to a keyframe K <= target, so the first fresh frames
-//     have PTS in [K, target]. We fast-forward past them.
-//   - The first frame with PTS > target is the one we display.
 type seekPhase int
 
 const (
-	seekPhaseNone    seekPhase = iota // not seeking
-	seekPhaseDiscard                  // phase 1: discard stale frames (PTS > target)
-	seekPhaseSkip                     // phase 2: skip keyframe run-up (PTS <= target)
+	seekPhaseNone seekPhase = iota // not seeking
+	seekPhaseDiscard
+	seekPhaseSkip
 )
 
 type playSession struct {
@@ -51,13 +39,9 @@ type playSession struct {
 	stopCh   chan struct{}
 	stopOnce sync.Once
 
-	seekCh chan float64
-
-	// Seek notification: performSeek stores the target PTS in seekPTS,
-	// then increments seekGen. Consumer loops (video render, audio decode)
-	// detect new seeks by comparing seekGen against a local counter.
+	seekCh  chan float64
 	seekGen atomic.Int64
-	seekPTS atomic.Uint64 // float64 bits via math.Float64bits
+	seekPTS atomic.Uint64
 }
 
 type audioPacket struct {
@@ -453,6 +437,9 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 			}
 		}
 
+		// Draw progress bar on the frame
+		s.drawProgressBar(frame)
+
 		// Render all layers in one synchronized update to avoid flickering
 		s.renderer.BeginSync()
 
@@ -473,6 +460,28 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 	}
 
 	return nil
+}
+
+// drawProgressBar overlays a thin progress bar on the bottom 2 rows of the frame.
+func (s *playSession) drawProgressBar(frame *Frame) {
+	duration := s.demuxer.Duration()
+	if duration <= 0 {
+		return
+	}
+	barWidthPx := int(frame.PTS / duration * float64(frame.Width))
+	bpp := 3
+	stride := frame.Width * bpp
+	for row := frame.Height - 3; row < frame.Height; row++ {
+		offset := row * stride
+		for x := 0; x < frame.Width; x++ {
+			px := offset + x*bpp
+			if x < barWidthPx {
+				frame.RGB[px], frame.RGB[px+1], frame.RGB[px+2] = 255, 255, 255
+			} else {
+				frame.RGB[px], frame.RGB[px+1], frame.RGB[px+2] = 80, 80, 80
+			}
+		}
+	}
 }
 
 // renderOverlays renders gifs and static images into the given keep map.

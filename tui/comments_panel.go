@@ -183,7 +183,7 @@ func (cp *CommentsPanel) View(width, height int, padding string) string {
 	var b strings.Builder
 
 	// Header
-	header := panelTitleStyle.Render("Comments")
+	header := purple400.Bold(true).Underline(true).Render("Comments")
 	b.WriteString(padding + header + "\n")
 	availableLines := height - 2
 	if availableLines < 1 {
@@ -196,9 +196,9 @@ func (cp *CommentsPanel) View(width, height int, padding string) string {
 		comment := cp.comments[i]
 
 		// Username with verified badge
-		userPart := usernameStyle.Render("@" + comment.Username)
+		userPart := pink200.Bold(true).Render("@" + comment.Username)
 		if comment.IsVerified {
-			userPart += " " + verifiedStyle.Render("✓")
+			userPart += " " + blue500.Render("✓")
 		}
 
 		// For GIF comments, require room for username + full cp.gifCellHeight
@@ -225,7 +225,7 @@ func (cp *CommentsPanel) View(width, height int, padding string) string {
 				if linesUsed >= availableLines {
 					break
 				}
-				b.WriteString(padding + "  " + commentTextStyle.Render(line) + "\n")
+				b.WriteString(padding + "  " + gray100.Render(line) + "\n")
 				linesUsed++
 			}
 		}

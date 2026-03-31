@@ -141,12 +141,12 @@ func (p *AVPlayer) SetSize(width, height int) {
 func (p *AVPlayer) SetVideoPosition(row, col int) {
 	p.configMu.Lock()
 	p.videoRow = row
-	p.videoCol = col + 1
+	p.videoCol = col
 	p.configMu.Unlock()
 
 	p.withSession(func(s *playSession) {
 		s.videoRow = row
-		s.videoCol = col + 1
+		s.videoCol = col
 	})
 }
 
