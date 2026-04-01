@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.6]
+- Adding seeking and progress overlay
+- Add separate open/close binds for comments, share, and help panels. Configurable in reels.conf 
+- Updated colors to align with instagram's colors a bit more
+- Fix: video dimension and position calculations (off by one)
+- Fix: prefetch index
+- Fix: Removed redundant calls to updateVideoPosition
+
 ## [1.2.5]
 - Add arm Linux support
 - Add save button
