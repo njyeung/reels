@@ -61,19 +61,19 @@ reels
 |-----------------|---------|--------|
 | `key_next` | `j` | Next reel (scrolls panels when open) |
 | `key_previous` | `k` | Previous reel (scrolls panels when open) |
-| `key_seek_backward` | `h` | Seek backward |
-| `key_seek_forward` | `l` | Seek forward |
+| `key_seek_backward` | `h` | Seek backward by 5 seconds |
+| `key_seek_forward` | `l` | Seek forward by 5 seconds |
 | `key_like` | `space` | Like/unlike |
-| `key_share_select` | `space` | Select friend in share panel, overrides any other bind while share panel is open |
-| `key_pause` | `p` | Pause/resume |
-| `key_save` | `b` | Save/Unsave |
-| `key_navbar` | `e` | Toggle friendly navbar |
+| `key_share_select` | `space` | Select friend in share panel. Overrides any other bind while share panel is open |
+| `key_pause` | `p` | Pause/resume current reel |
+| `key_save` | `b` | Save/Unsave (bookmark) current reel |
+| `key_navbar` | `e` | Toggle navbar, a condensed version of the help menu |
 | `key_comments_open` | `c` | Open comments |
 | `key_comments_close` | `C` | Close comments |
-| `key_share_open` | `s` | Open share panel |
+| `key_share_open` | `s` | Open share panel. Allows you to share reels with instagram's suggested top friends. |
 | `key_share_close` | `S` | Close Share panel & sends to friends' DMs (if any are selected) |
 | `key_copy_link` | `y` | Copy reel link to clipboard |
-| `key_mute` | `m` | Mute |
+| `key_mute` | `m` | Mute current reel |
 | `key_vol_up` | `]` | Volume up |
 | `key_vol_down` | `[` | Volume down |
 | `key_reel_size_inc` | `=` | Enlarge video |
