@@ -3,6 +3,7 @@ package player
 import (
 	_ "image/jpeg"
 	"io"
+	"math"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -140,12 +141,12 @@ func (p *AVPlayer) SetSize(width, height int) {
 func (p *AVPlayer) SetVideoPosition(row, col int) {
 	p.configMu.Lock()
 	p.videoRow = row
-	p.videoCol = col + 1
+	p.videoCol = col
 	p.configMu.Unlock()
 
 	p.withSession(func(s *playSession) {
 		s.videoRow = row
-		s.videoCol = col + 1
+		s.videoCol = col
 	})
 }
 
@@ -304,6 +305,25 @@ func (p *AVPlayer) Pause() {
 // IsPaused returns current pause state
 func (p *AVPlayer) IsPaused() bool {
 	return p.paused.Load()
+}
+
+// Skip seeks playback by the given number of seconds (positive = forward, negative = backward).
+func (p *AVPlayer) Skip(seconds float64) {
+	p.withSession(func(s *playSession) {
+		current := float64(0)
+		if s.audio != nil {
+			current = s.audio.Time()
+		}
+		target := current + seconds
+		if dur := s.demuxer.Duration(); dur > 0 {
+			target = math.Mod(target, dur) // loop back around
+			if target < 0 {
+				target += dur
+			}
+		}
+
+		s.Seek(target)
+	})
 }
 
 // RedrawVideo signals the render loop to advance one frame while paused,

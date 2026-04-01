@@ -25,8 +25,8 @@ func ComputeVideoCharacterDimensions(videoWidthPx, videoHeightPx int) {
 	cellW := termW / cols
 	cellH := termH / rows
 
-	VideoWidthChars = ((videoWidthPx + cellW - 1) / cellW) + 1
-	VideoHeightChars = ((videoHeightPx + cellH - 1) / cellH) + 1
+	VideoWidthChars = (videoWidthPx + cellW - 1) / cellW
+	VideoHeightChars = (videoHeightPx + cellH - 1) / cellH
 }
 
 // ComputeVideoCenterPosition computes the 1-indexed (row, col) to center the video in the terminal.

@@ -1,6 +1,11 @@
 package tui
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/njyeung/reels/tui/colors"
+)
 
 func (m Model) viewLogin() string {
 	if m.width == 0 || m.height == 0 {
@@ -8,21 +13,21 @@ func (m Model) viewLogin() string {
 	}
 
 	var title, instructions, statusLine string
-	help := navStyle.Render("q: quit")
+	help := gray600.Render("q: quit")
 
 	if m.flags.LoginMode {
 		// Headed mode: user is logging in via browser
 		if m.loginSuccess {
-			title = titleStyle.Render("Login successful!")
-			instructions = importantStyle.Render("IMPORTANT") + "\nTell Instagram to " + importantStyle.Render("save your login info") + " for next time\nThen restart the app without --login."
+			title = pink400.Bold(true).Render("Login successful!")
+			instructions = lipgloss.NewStyle().Bold(true).Foreground(colors.Yellow300Color).Background(colors.Red700Color).Padding(0, 1).Render("IMPORTANT") + "\nTell Instagram to " + lipgloss.NewStyle().Bold(true).Foreground(colors.Yellow300Color).Background(colors.Red700Color).Padding(0, 1).Render("save your login info") + " for next time\nThen restart the app without --login."
 		} else {
-			title = titleStyle.Render("Manual login")
+			title = pink400.Bold(true).Render("Manual login")
 			instructions = "Please log in to Instagram in the browser window."
 			statusLine = m.spinner.View() + " Waiting for login..."
 		}
 	} else {
 		// Normal mode: tell user to restart with --login
-		title = titleStyle.Render("Login required")
+		title = pink400.Bold(true).Render("Login required")
 		instructions = "Please restart the app with --login to log in:\n\n    reels --login"
 	}
 

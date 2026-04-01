@@ -2,11 +2,21 @@ package player
 
 import (
 	"fmt"
+	"math"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/asticode/go-astiav"
+)
+
+type seekPhase int
+
+const (
+	seekPhaseNone seekPhase = iota // not seeking
+	seekPhaseDiscard
+	seekPhaseSkip
 )
 
 type playSession struct {
@@ -28,6 +38,10 @@ type playSession struct {
 
 	stopCh   chan struct{}
 	stopOnce sync.Once
+
+	seekCh  chan float64
+	seekGen atomic.Int64
+	seekPTS atomic.Uint64
 }
 
 type audioPacket struct {
@@ -88,18 +102,21 @@ func newPlaySession(url string, cfg sessionConfig) (*playSession, error) {
 	}
 
 	session := &playSession{
-		demuxer:        demuxer,
-		audio:          audio,
-		video:          video,
-		renderer:       renderer,
-		videoRow:       cfg.videoRow,
-		videoCol:       cfg.videoCol,
-		stopCh:         make(chan struct{}),
-		videoPktCh:     make(chan *astiav.Packet, 60),
+		demuxer:    demuxer,
+		audio:      audio,
+		video:      video,
+		renderer:   renderer,
+		videoRow:   cfg.videoRow,
+		videoCol:   cfg.videoCol,
+		stopCh:     make(chan struct{}),
+		seekCh:     make(chan float64, 1),
+		videoPktCh: make(chan *astiav.Packet, 60),
 	}
 	if audio != nil {
 		session.audioPktCh = make(chan *audioPacket, 128)
 	}
+	session.seekGen.Store(0)
+	session.seekPTS.Store(0)
 
 	return session, nil
 }
@@ -158,14 +175,83 @@ func (s *playSession) cleanup() {
 	}
 }
 
-// audioDecodeLoop runs in a separate goroutine to decode audio packets
+// audioDecodeLoop runs in a separate goroutine to decode audio packets.
 func (s *playSession) audioDecodeLoop() {
+	// Audio doesn't suffer from the same decoder internal buffer problem that video does.
+	// After the audio channel is drained, there are no stale packets. Fresh packets
+	// after a seek is guaranteed < skipUntil, so we skip them
+
+	var lastSeekGen int64 = 0
+	var skipUntil float64 = -1.0
+
 	for apkt := range s.audioPktCh {
 		if apkt == nil {
 			continue
 		}
+
+		// Check for a new seek
+		if gen := s.seekGen.Load(); gen != lastSeekGen {
+			lastSeekGen = gen
+			skipUntil = math.Float64frombits(s.seekPTS.Load())
+		}
+
+		if skipUntil >= 0 && apkt.pts < skipUntil {
+			apkt.pkt.Free()
+			continue
+		} else {
+			skipUntil = -1.0
+		}
+
 		s.audio.DecodePacket(apkt.pkt, apkt.pts)
 		apkt.pkt.Free()
+	}
+}
+
+// seek sends a seek request to the demux loop
+func (s *playSession) Seek(target float64) {
+	// Drain any pending seek
+	drainCh(s.seekCh, func(float64) {})
+
+	// inject seek request into demux loop
+	s.seekCh <- target
+}
+
+// performSeek drains buffered packets, seeks the demuxer, and resets audio state.
+// Must only be called from the demux loop.
+func (s *playSession) performSeek(target float64) {
+
+	if s.videoPktCh != nil {
+		drainCh(s.videoPktCh, func(pkt *astiav.Packet) { pkt.Free() })
+	}
+	if s.audioPktCh != nil {
+		drainCh(s.audioPktCh, func(pkt *audioPacket) { pkt.pkt.Free() })
+	}
+
+	if err := s.demuxer.Seek(target); err != nil {
+		return
+	}
+
+	// Publish the new seek target, then bump the generation counter.
+	// Consumer loops detect the new seek by comparing seekGen against
+	// their local counter. The atomic increment acts as a release barrier,
+	// making the seekPTS store visible to any goroutine that observes the
+	// new seekGen value.
+	s.seekPTS.Store(math.Float64bits(target))
+	s.seekGen.Add(1)
+
+	if s.audio != nil {
+		s.audio.Seek(target)
+	}
+}
+
+func drainCh[T any](ch <-chan T, free func(T)) {
+	for {
+		select {
+		case v := <-ch:
+			free(v)
+		default:
+			return
+		}
 	}
 }
 
@@ -188,6 +274,9 @@ func (s *playSession) demuxLoop(p *AVPlayer) {
 		select {
 		case <-s.stopCh:
 			return
+		case target := <-s.seekCh:
+			s.performSeek(target)
+			continue
 		default:
 		}
 
@@ -202,6 +291,10 @@ func (s *playSession) demuxLoop(p *AVPlayer) {
 		if isVideo {
 			select {
 			case s.videoPktCh <- pkt:
+			case target := <-s.seekCh:
+				pkt.Free()
+				s.performSeek(target)
+				continue
 			case <-s.stopCh:
 				pkt.Free()
 				return
@@ -214,6 +307,10 @@ func (s *playSession) demuxLoop(p *AVPlayer) {
 
 			select {
 			case s.audioPktCh <- &audioPacket{pkt: clonedPkt, pts: pts}:
+			case target := <-s.seekCh:
+				clonedPkt.Free()
+				s.performSeek(target)
+				continue
 			case <-s.stopCh:
 				clonedPkt.Free()
 				return
@@ -224,13 +321,54 @@ func (s *playSession) demuxLoop(p *AVPlayer) {
 	}
 }
 
-// videoRenderLoop processes video packets and renders frames
+// videoRenderLoop processes video packets and renders frames.
 func (s *playSession) videoRenderLoop(p *AVPlayer) error {
+	// Since avcodec_flush_buffers is not exposed by go-astiav, we handle
+	// stale packets from ffmpeg using a state machine.
+	// Note: We ask FFmpeg seeks to the closest frame BEFORE the target.
+	//
+	// Scenarios:
+	//
+	// Seek forwards:
+	// 		We will also get stale packets from the old position of a PTS < target.
+	// 		Then, we will get packets with a PTS <= target.
+	// Seek backwards:
+	// 		We will get stale packets with a PTS > target.
+	// 		Fresh packets have a PTS <= target
+	//
+	// We can handle both scenarios with a state machine:
+	//
+	// Phase 1 (seekPhaseDiscard): decode but discard frames while PTS > target.
+	//		Eats stale buffered frames whose PTS belongs to the old position.
+	//		Case 1 instantly falls through this since target will be ahead of PTS.
+	//
+	// Phase 2 (seekPhaseSkip): decode but discard frames while PTS <= target.
+	//		Fast forwards since the fresh packets from FFmpeg will give us
+	//		frames with PTS <= target
+	//
+	var lastSeekGen int64 = 0
+	var seekState seekPhase = seekPhaseNone
+	var seekTarget float64 = 0
+
+	checkSeek := func() {
+		if gen := s.seekGen.Load(); gen != lastSeekGen {
+			lastSeekGen = gen
+			seekTarget = math.Float64frombits(s.seekPTS.Load())
+			seekState = seekPhaseDiscard
+		}
+	}
+
 	for pkt := range s.videoPktCh {
+		if pkt == nil {
+			continue
+		}
+
 		if !p.playing.Load() {
 			pkt.Free()
 			continue
 		}
+
+		checkSeek()
 
 		redraw := false
 		for p.paused.Load() {
@@ -254,6 +392,8 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 				pkt.Free()
 				return nil
 			}
+
+			checkSeek()
 		}
 
 		frame, err := s.video.DecodePacket(pkt)
@@ -269,42 +409,79 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 			continue
 		}
 
-		// sync to audio clock (skip frame if behind, wait if ahead)
+		switch seekState {
+		case seekPhaseDiscard:
+			// Phase 1: discard stale frames until we see PTS <= target
+			if frame.PTS > seekTarget {
+				continue
+			}
+			seekState = seekPhaseSkip
+			fallthrough
+		case seekPhaseSkip:
+			// Phase 2: skip frames until PTS > target
+			if frame.PTS <= seekTarget {
+				continue
+			}
+			seekState = seekPhaseNone
+		}
+
+		// Sync to audio clock (skip frame if behind, wait if ahead)
 		if s.audio.IsPlaying() {
 			audioTime := s.audio.Time()
 			diff := frame.PTS - audioTime
 
 			if diff > SyncThreshold {
-				time.Sleep(time.Duration(diff * float64(time.Second) * 0.2)) // proportional correction
+				time.Sleep(time.Duration(diff * float64(time.Second) * 0.2))
 			} else if diff < -SyncThreshold {
 				continue
 			}
 		}
 
-		// render all layers in one synchronized update to avoid flickering
+		// Draw progress bar on the frame
+		s.drawProgressBar(frame)
+
+		// Render all layers in one synchronized update to avoid flickering
 		s.renderer.BeginSync()
 
 		keep := map[int]bool{VideoImageID: true}
 
-		// render video
 		if err := s.renderer.RenderImage(frame.RGB, 24, frame.Width, frame.Height, VideoImageID, s.videoRow, s.videoCol); err != nil {
 			s.renderer.EndSync()
 			return fmt.Errorf("render error: %w", err)
 		}
 
-		// render gifs and static images
 		if err := s.renderOverlays(keep); err != nil {
 			s.renderer.EndSync()
 			return err
 		}
 
-		// Remove any images that weren't rendered this frame.
 		s.renderer.Prune(keep)
-
 		s.renderer.EndSync()
 	}
 
 	return nil
+}
+
+// drawProgressBar overlays a thin progress bar on the bottom 4 rows of the frame.
+func (s *playSession) drawProgressBar(frame *Frame) {
+	duration := s.demuxer.Duration()
+	if duration <= 0 {
+		return
+	}
+	barWidthPx := int(frame.PTS / duration * float64(frame.Width))
+	bpp := 3
+	stride := frame.Width * bpp
+	for row := frame.Height - 4; row < frame.Height; row++ {
+		offset := row * stride
+		for x := 0; x < frame.Width; x++ {
+			px := offset + x*bpp
+			if x < barWidthPx {
+				frame.RGB[px], frame.RGB[px+1], frame.RGB[px+2] = 215, 215, 215
+			} else {
+				frame.RGB[px], frame.RGB[px+1], frame.RGB[px+2] = 90, 90, 90
+			}
+		}
+	}
 }
 
 // renderOverlays renders gifs and static images into the given keep map.

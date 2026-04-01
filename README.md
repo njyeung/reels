@@ -56,24 +56,34 @@ reels
 - `--login` - Open browser window to log in to Instagram
 
 ### Controls
-- `j` - Next reel (scroll comments when open)
-- `k` - Previous reel (scroll comments when open)
-- `Space` - Pause/resume
-- `l` - Like/unlike
-- `b` - Save/Unsave
-- `e` - Toggle Navbar
-- `c` - Toggle Comments
-- `s` - Share reel via DM
-- `y` - Copy reel link to clipboard
-- `m` - Mute
-- `]` - Volume up
-- `[` - Volume down
-- `=` - Enlarge Video
-- `-` - Shrink Video
-- `?` - Help
-- `q` - Quit
 
-All keybinds are configurable in `reels.conf`. Each action supports multiple binds.
+| reels.conf bind | Default | Action |
+|-----------------|---------|--------|
+| `key_next` | `j` | Next reel (scrolls panels when open) |
+| `key_previous` | `k` | Previous reel (scrolls panels when open) |
+| `key_seek_backward` | `h` | Seek backward |
+| `key_seek_forward` | `l` | Seek forward |
+| `key_like` | `space` | Like/unlike |
+| `key_share_select` | `space` | Select friend in share panel, overrides any other bind while share panel is open |
+| `key_pause` | `p` | Pause/resume |
+| `key_save` | `b` | Save/Unsave |
+| `key_navbar` | `e` | Toggle friendly navbar |
+| `key_comments_open` | `c` | Open comments |
+| `key_comments_close` | `C` | Close comments |
+| `key_share_open` | `s` | Open share panel |
+| `key_share_close` | `S` | Close Share panel & sends to friends' DMs (if any are selected) |
+| `key_copy_link` | `y` | Copy reel link to clipboard |
+| `key_mute` | `m` | Mute |
+| `key_vol_up` | `]` | Volume up |
+| `key_vol_down` | `[` | Volume down |
+| `key_reel_size_inc` | `=` | Enlarge video |
+| `key_reel_size_dec` | `-` | Shrink video |
+| `key_help_open` | `?` | Help panel shows the current keybinds |
+| `key_help_close`| `?` | Close help panel |
+| `key_quit` | `q` | Quit |
+| `key_quit` | `ctrl+c` | Quit |
+
+All keybinds are configurable in `reels.conf`. Each action supports multiple binds. Open/close pairs (like `key_comments_open` and `key_comments_close`) can be bound to the same key to toggle.
 
 ## Installation
 
@@ -157,18 +167,25 @@ panel_shrink_steps = 4  # how many reel_size_steps to shrink when opening a pane
 # Configurable keybinds (multiple binds per action supported)
 key_next = j
 key_previous = k
-key_pause = space
+key_pause = p
 key_mute = m
-key_like = l
-key_comments = c
+key_like = space
 key_navbar = e
 key_vol_up = ]
 key_vol_down = [
 key_reel_size_inc = =
 key_reel_size_dec = -
-key_share = s
 key_copy_link = y
 key_save = b
+key_seek_forward = l
+key_seek_backward = h
+key_share_open = s
+key_share_close = S
+key_share_select = space
+key_comments_open = c
+key_comments_close = C
+key_help_open = ?
+key_help_close = ?
 key_quit = q
 key_quit = ctrl+c
 ```

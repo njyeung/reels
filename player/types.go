@@ -28,6 +28,9 @@ type Player interface {
 	// IsMuted returns current mute state
 	IsMuted() bool
 
+	// Skip seeks playback by the given number of seconds (positive = forward, negative = backward)
+	Skip(seconds float64)
+
 	// Close releases all resources
 	Close()
 

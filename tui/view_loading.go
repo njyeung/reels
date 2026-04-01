@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
+	"github.com/njyeung/reels/tui/colors"
 )
 
 const loadingBarWidth = 34
@@ -25,13 +26,13 @@ func (m Model) viewLoading() string {
 	var barStyle lipgloss.Style
 	if m.updateAvailable != "" {
 		barText = fmt.Sprintf("Update available: v%s ➞ v%s", m.version, m.updateAvailable)
-		barStyle = loadingUpdateStyle
+		barStyle = lipgloss.NewStyle().Bold(true).Foreground(colors.Yellow400Color).Background(colors.Gray900Color)
 	} else if len(m.loadingMessages) > 0 {
 		barText = m.loadingMessages[m.loadingMsgIndex]
 		if m.loadingFadeStep > 0 {
-			barStyle = loadingMsgStyle.Foreground(lipgloss.Color(loadingFadeColor(m.loadingFadeStep)))
+			barStyle = lipgloss.NewStyle().Background(colors.Gray900Color).Foreground(lipgloss.Color(loadingFadeColor(m.loadingFadeStep)))
 		} else {
-			barStyle = loadingMsgStyle
+			barStyle = lipgloss.NewStyle().Foreground(colors.Gray400Color).Background(colors.Gray900Color)
 		}
 	}
 
@@ -87,7 +88,7 @@ func renderLoadingScreen(width, height int, barText string, barStyle lipgloss.St
 			}
 			left := pad / 2
 			right := pad - left
-			line = strings.Repeat(" ", left) + titleStyle.Render(text) + strings.Repeat(" ", right)
+			line = strings.Repeat(" ", left) + pink400.Bold(true).Render(text) + strings.Repeat(" ", right)
 
 		case y == barRow:
 			bar := renderLoadingBar(barText, barStyle, scrollOffset)
@@ -118,9 +119,9 @@ func renderLoadingBar(text string, style lipgloss.Style, scrollOffset int) strin
 		pad := loadingBarWidth - textWidth
 		left := pad / 2
 		right := pad - left
-		return loadingBarStyle.Render(strings.Repeat(" ", left)) +
+		return lipgloss.NewStyle().Background(colors.Gray900Color).Render(strings.Repeat(" ", left)) +
 			style.Render(text) +
-			loadingBarStyle.Render(strings.Repeat(" ", right))
+			lipgloss.NewStyle().Background(colors.Gray900Color).Render(strings.Repeat(" ", right))
 	}
 
 	// Marquee scroll: duplicate text with gap for seamless loop
@@ -192,18 +193,18 @@ func (m Model) loadingFadeTick() tea.Cmd {
 	})
 }
 
-// loadingFadeColor returns the ANSI color for the current fade step.
-// Steps 1-6: fade out (245 -> 236), steps 7-12: fade in (236 -> 245).
+// loadingFadeColor returns the hex color for the current fade step.
+// Steps 1-6: fade out (gray400 -> gray800), steps 7-12: fade in (gray800 -> gray400).
 func loadingFadeColor(step int) string {
-	grays := [7]int{245, 244, 242, 241, 239, 237, 236}
+	grays := [7]string{"#A8A8A8", "#949494", "#808080", "#6B6B6B", "#555555", "#363636", "#262626"}
 	switch {
 	case step <= 0:
-		return "245"
+		return "#A8A8A8"
 	case step <= 6:
-		return fmt.Sprintf("%d", grays[step])
+		return grays[step]
 	case step <= 12:
-		return fmt.Sprintf("%d", grays[12-step])
+		return grays[12-step]
 	default:
-		return "245"
+		return "#A8A8A8"
 	}
 }

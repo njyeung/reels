@@ -141,6 +141,25 @@ func (d *Demuxer) PTSToSeconds(pts int64, isVideo bool) float64 {
 	return float64(pts) * float64(tb.Num()) / float64(tb.Den())
 }
 
+// Seek seeks to the given position in seconds
+func (d *Demuxer) Seek(seconds float64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if d.closed {
+		return fmt.Errorf("demuxer closed")
+	}
+
+	tb := d.videoTimeBase
+	ts := int64(seconds * float64(tb.Den()) / float64(tb.Num()))
+
+	return d.formatCtx.SeekFrame(d.videoIdx, ts, astiav.NewSeekFlags(astiav.SeekFlagBackward))
+}
+
+func (d *Demuxer) Duration() float64 {
+	return float64(d.formatCtx.Duration()) / float64(astiav.TimeBase)
+}
+
 // Close releases all resources
 func (d *Demuxer) Close() {
 	d.mu.Lock()

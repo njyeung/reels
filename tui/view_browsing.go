@@ -25,7 +25,7 @@ func (m Model) viewBrowsing() string {
 
 	var b strings.Builder
 
-	// Layout: (videoRow-2) blank lines + status(1) + video(videoHeightChars) + separator(1) + username(1) + music(1) + caption
+	// Layout: (videoRow-2) blank lines + status(1) + video(videoHeightChars+1) + username(1) + music(1) + caption
 	startCol := m.videoCol - 1
 	if startCol < 0 {
 		startCol = 0
@@ -42,10 +42,9 @@ func (m Model) viewBrowsing() string {
 	//
 	// reel video
 	//
-	// separator bar
 	// username
-	// blank line
-	maxPanelLines := max(m.height-(topPad+1+videoHeightChars+1+2), 1)
+	// music
+	maxPanelLines := max(m.height-(topPad+1+(videoHeightChars+1)+2), 1)
 
 	b.WriteString(strings.Repeat("\n", max(topPad-1, 0)))
 
@@ -80,7 +79,7 @@ func (m Model) viewBrowsing() string {
 		if !m.shareConfirmed {
 			shareIcon = "↗"
 		} else {
-			shareIcon = friendSelectedStyle.Render("✔")
+			shareIcon = yellow300.Render("✔")
 		}
 	}
 
@@ -100,22 +99,18 @@ func (m Model) viewBrowsing() string {
 			statusContent = string(runes[:len(runes)-1]) + m.spinner.View()
 		}
 	}
-	b.WriteString(padding + statusContent + "\n")
+	b.WriteString(padding + gray300.Render(statusContent) + "\n")
 
-	b.WriteString(strings.Repeat("\n", videoHeightChars))
-
-	// Separator line
-	separator := strings.Repeat("─", videoWidthChars)
-	b.WriteString(padding + separator + "\n")
+	b.WriteString(strings.Repeat("\n", videoHeightChars+1))
 
 	// UI area
 	if m.currentReel != nil {
 		// Verified badge + username
 		var userLine string
 		if m.currentReel.IsVerified {
-			userLine = pfpPadding + usernameStyle.Render("@"+m.currentReel.Username) + " " + verifiedStyle.Render("✓")
+			userLine = pfpPadding + pink400.Bold(true).Render("@"+m.currentReel.Username) + " " + blue500.Render("✓")
 		} else {
-			userLine = pfpPadding + usernameStyle.Render("@"+m.currentReel.Username)
+			userLine = pfpPadding + pink400.Bold(true).Render("@"+m.currentReel.Username)
 		}
 		b.WriteString(padding + userLine + "\n")
 
@@ -141,7 +136,7 @@ func (m Model) viewBrowsing() string {
 				musicText = truncateByWidth(string(scrollRunes[offset:]), maxMusicWidth)
 			}
 
-			musicLine := pfpPadding + musicStyle.Render(musicText)
+			musicLine := pfpPadding + purple200.Italic(true).Render(musicText)
 			b.WriteString(padding + musicLine + "\n")
 		} else {
 			b.WriteString("\n")
@@ -177,7 +172,7 @@ func (m Model) viewBrowsing() string {
 				captionLines = captionLines[:maxPanelLines]
 			}
 			for _, line := range captionLines {
-				b.WriteString(padding + captionStyle.Render(line) + "\n")
+				b.WriteString(padding + gray100.Render(line) + "\n")
 			}
 
 			// navbar (only when comments not open)
@@ -185,9 +180,9 @@ func (m Model) viewBrowsing() string {
 				b.WriteString("\n")
 
 				config := backend.GetSettings()
-				nav1 := navStyle.Render(displayKeys(config.KeysNext) + ": next  " + displayKeys(config.KeysPrevious) + ": prev")
-				nav2 := navStyle.Render(displayKeys(config.KeysQuit) + ": quit  " + displayKeys(config.KeysNavbar) + ": hide navbar")
-				nav3 := navStyle.Render("?: help")
+				nav1 := gray500.Render(displayKeys(config.KeysNext) + ": next  " + displayKeys(config.KeysPrevious) + ": prev")
+				nav2 := gray500.Render(displayKeys(config.KeysQuit) + ": quit  " + displayKeys(config.KeysNavbar) + ": hide navbar")
+				nav3 := gray500.Render("?: help")
 				b.WriteString(padding + nav1 + "\n")
 				b.WriteString(padding + nav2 + "\n")
 				b.WriteString(padding + nav3 + "\n")
@@ -233,6 +228,14 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
 	switch {
+	// Share select takes priority over other keys when share panel is open
+	case m.share.IsOpen() && slices.Contains(config.KeysShareSelect, key):
+		if m.shareSending {
+			return m, nil
+		}
+		m.share.ToggleSelected()
+		go m.backend.ToggleShareFriend(m.share.CursorIndex())
+		return m, nil
 	case slices.Contains(config.KeysNext, key):
 		if m.scrollPanel(1) {
 			return m, nil
@@ -255,7 +258,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-	case !m.share.IsOpen() && slices.Contains(config.KeysPause, key):
+	case slices.Contains(config.KeysPause, key):
 		m.player.Pause()
 		if m.player.IsPaused() {
 			m.status = statusPaused
@@ -279,63 +282,49 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case slices.Contains(config.KeysComments, key):
+	case m.comments.IsOpen() && slices.Contains(config.KeysCommentsClose, key):
 		if !m.backend.IsSyncing() {
-			if m.comments.IsOpen() {
-				// close comments
-				m.comments.Close()
-				m.closePanelLayout()
-				go m.backend.CloseComments()
-			} else if m.currentReel != nil && !m.currentReel.CommentsDisabled && !m.panelOpen() {
-				// open comments
-				m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
-				m.comments.Open(m.currentReel.PK)
-				// Use cached comments if available
-				if m.currentReel.Comments != nil {
-					m.comments.SetComments(m.currentReel.PK, m.currentReel.Comments)
-					m.updateCommentGifs()
-				}
-
-				// Always open in browser (for Instagram's algorithm)
-				go m.backend.OpenComments()
-				m.player.RedrawVideo()
-			}
-		}
-
-	case m.share.IsOpen() && slices.Contains(config.KeysPause, key):
-		if m.shareSending {
-			return m, nil
-		}
-		// Toggle friend selection in both TUI and browser
-		m.share.ToggleSelected()
-		go m.backend.ToggleShareFriend(m.share.CursorIndex())
-		return m, nil
-
-	case slices.Contains(config.KeysShare, key):
-		if !m.backend.IsSyncing() {
-			if m.share.IsOpen() {
-				// close panel
-				if m.shareSending {
-					return m, nil
-				}
-				// Send to selected friends; close UI when backend finishes.
-				m.shareSending = true
-				return m, m.sendShare()
-			} else if m.currentReel != nil && m.currentReel.CanViewerReshare && !m.panelOpen() {
-				//open panel
-				m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
-				m.share.Open()
-				go m.backend.OpenSharePanel()
-				m.player.RedrawVideo()
-			}
-		}
-	case key == "?":
-		if m.help.IsOpen() {
-			m.help.Close()
+			m.comments.Close()
 			m.closePanelLayout()
-		} else if !m.panelOpen() {
+			go m.backend.CloseComments()
+		}
+
+	case !m.comments.IsOpen() && slices.Contains(config.KeysCommentsOpen, key):
+		if !m.backend.IsSyncing() && m.currentReel != nil && !m.currentReel.CommentsDisabled && !m.panelOpen() {
+			m.comments.Open(m.currentReel.PK)
 			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
+
+			if m.currentReel.Comments != nil {
+				m.comments.SetComments(m.currentReel.PK, m.currentReel.Comments)
+				m.updateCommentGifs()
+			}
+
+			go m.backend.OpenComments()
+			m.player.RedrawVideo()
+		}
+
+	case m.share.IsOpen() && slices.Contains(config.KeysShareClose, key):
+		if !m.shareSending {
+			m.shareSending = true
+			return m, m.sendShare()
+		}
+
+	case !m.share.IsOpen() && slices.Contains(config.KeysShareOpen, key):
+		if !m.backend.IsSyncing() && m.currentReel != nil && m.currentReel.CanViewerReshare && !m.panelOpen() {
+			m.share.Open()
+			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
+			go m.backend.OpenSharePanel()
+			m.player.RedrawVideo()
+		}
+
+	case m.help.IsOpen() && slices.Contains(config.KeysHelpClose, key):
+		m.help.Close()
+		m.closePanelLayout()
+
+	case !m.help.IsOpen() && slices.Contains(config.KeysHelpOpen, key):
+		if !m.panelOpen() {
 			m.help.Open()
+			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
 			m.player.RedrawVideo()
 		}
 
@@ -345,9 +334,11 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case slices.Contains(config.KeysReelSizeInc, key):
 		m.resizeReel(config.ReelSizeStep)
+		m.player.RedrawVideo()
 
 	case slices.Contains(config.KeysReelSizeDec, key):
 		m.resizeReel(-config.ReelSizeStep)
+		m.player.RedrawVideo()
 
 	case slices.Contains(config.KeysVolUp, key):
 		vol := min(m.player.Volume()+0.1, 1.0)
@@ -365,6 +356,12 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.shareConfirmed = true
 			return m, m.queueShareReset()
 		}
+
+	case slices.Contains(config.KeysSeekBackward, key):
+		m.player.Skip(-5)
+
+	case slices.Contains(config.KeysSeekForward, key):
+		m.player.Skip(5)
 	}
 
 	return m, nil
@@ -391,9 +388,14 @@ func (m *Model) startPlayback(index int) tea.Cmd {
 }
 
 func (m Model) prefetch(index int) {
-	nextIndex := index + 1
-	if nextIndex <= m.backend.GetTotal() {
-		m.backend.Download(nextIndex)
+	toDownload1 := index + 1
+	toDownload2 := index + 2
+
+	if toDownload1 <= m.backend.GetTotal() {
+		m.backend.Download(index)
+	}
+	if toDownload2 <= m.backend.GetTotal() {
+		m.backend.Download(index)
 	}
 }
 
@@ -506,8 +508,8 @@ func (m Model) updateCommentGifs() {
 
 	videoHeightChars := player.VideoHeightChars
 	videoWidthChars := player.VideoWidthChars
-	commentsBaseRow := m.videoRow + videoHeightChars + 2
-	maxCaptionLines := max(m.height-(m.videoRow+videoHeightChars+2), 1)
+	commentsBaseRow := m.videoRow + (videoHeightChars + 1) + 1
+	maxCaptionLines := max(m.height-(m.videoRow+(videoHeightChars+1)+1), 1)
 
 	slots := m.comments.VisibleGifSlots(videoWidthChars, maxCaptionLines, commentsBaseRow, m.videoCol)
 	if len(slots) > 0 {
@@ -543,8 +545,8 @@ func (m *Model) updateImages() {
 	if m.share.IsOpen() {
 		videoHeightChars := player.VideoHeightChars
 		videoWidthChars := player.VideoWidthChars
-		fixedLines := max(m.height-(m.videoRow+videoHeightChars+2), 1)
-		shareBaseRow := m.videoRow + videoHeightChars + 2
+		fixedLines := max(m.height-(m.videoRow+(videoHeightChars+1)+1), 1)
+		shareBaseRow := m.videoRow + (videoHeightChars + 1) + 1
 		slots = append(slots, m.share.VisiblePfpSlots(videoWidthChars, fixedLines, shareBaseRow, m.videoCol)...)
 	}
 
