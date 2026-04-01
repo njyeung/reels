@@ -47,8 +47,13 @@ func (hp *HelpPanel) buildEntries() {
 		{displayKeys(config.KeysPause), "pause"},
 		{displayKeys(config.KeysLike), "like"},
 		{displayKeys(config.KeysMute), "mute"},
-		{displayKeys(config.KeysComments), "comments"},
-		{displayKeys(config.KeysShare), "share via DM"},
+		{displayKeys(config.KeysSeekForward), "seek forward"},
+		{displayKeys(config.KeysSeekBackward), "seek backward"},
+		{displayKeys(config.KeysCommentsOpen), "open comments"},
+		{displayKeys(config.KeysCommentsClose), "close comments"},
+		{displayKeys(config.KeysShareOpen), "share via DM"},
+		{displayKeys(config.KeysShareClose), "send & close share"},
+		{displayKeys(config.KeysShareSelect), "select friend"},
 		{displayKeys(config.KeysCopyLink), "copy link"},
 		{displayKeys(config.KeysSave), "bookmark"},
 		{displayKeys(config.KeysNavbar), "toggle navbar"},
@@ -56,6 +61,7 @@ func (hp *HelpPanel) buildEntries() {
 		{displayKeys(config.KeysVolDown), "volume down"},
 		{displayKeys(config.KeysReelSizeInc), "enlarge video"},
 		{displayKeys(config.KeysReelSizeDec), "shrink video"},
+		{displayKeys(config.KeysHelpOpen), "help"},
 		{displayKeys(config.KeysQuit), "quit"},
 	}
 }

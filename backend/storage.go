@@ -26,21 +26,31 @@ type Settings struct {
 	GifCellHeight    int
 	PanelShrinkSteps int
 
-	KeysNext        []string
-	KeysPrevious    []string
-	KeysMute        []string
-	KeysPause       []string
-	KeysLike        []string
-	KeysComments    []string
-	KeysNavbar      []string
-	KeysReelSizeInc []string
-	KeysReelSizeDec []string
-	KeysVolUp       []string
-	KeysVolDown     []string
-	KeysQuit        []string
-	KeysShare       []string
-	KeysCopyLink    []string
-	KeysSave        []string
+	KeysNext         []string
+	KeysPrevious     []string
+	KeysMute         []string
+	KeysPause        []string
+	KeysLike         []string
+	KeysNavbar       []string
+	KeysReelSizeInc  []string
+	KeysReelSizeDec  []string
+	KeysVolUp        []string
+	KeysVolDown      []string
+	KeysQuit         []string
+	KeysCopyLink     []string
+	KeysSave         []string
+	KeysSeekForward  []string
+	KeysSeekBackward []string
+
+	KeysShareOpen   []string
+	KeysShareClose  []string
+	KeysShareSelect []string
+
+	KeysCommentsOpen  []string
+	KeysCommentsClose []string
+
+	KeysHelpOpen  []string
+	KeysHelpClose []string
 }
 
 var Config Settings
@@ -187,19 +197,29 @@ func defaultSettings() Settings {
 		PanelShrinkSteps: 4,
 		KeysNext:         []string{"j"},
 		KeysPrevious:     []string{"k"},
-		KeysPause:        []string{" "},
+		KeysPause:        []string{"p"},
 		KeysMute:         []string{"m"},
-		KeysLike:         []string{"l"},
-		KeysComments:     []string{"c"},
+		KeysLike:         []string{" "},
 		KeysNavbar:       []string{"e"},
-		KeysVolUp:        []string{"]"},
-		KeysVolDown:      []string{"["},
 		KeysReelSizeInc:  []string{"="},
 		KeysReelSizeDec:  []string{"-"},
-		KeysShare:        []string{"s"},
+		KeysVolUp:        []string{"]"},
+		KeysVolDown:      []string{"["},
+		KeysQuit:         []string{"q", "ctrl+c"},
 		KeysCopyLink:     []string{"y"},
 		KeysSave:         []string{"b"},
-		KeysQuit:         []string{"q", "ctrl+c"},
+		KeysSeekForward:  []string{"l"},
+		KeysSeekBackward: []string{"h"},
+
+		KeysShareOpen:   []string{"s"},
+		KeysShareClose:  []string{"S"},
+		KeysShareSelect: []string{" "},
+
+		KeysCommentsOpen:  []string{"c"},
+		KeysCommentsClose: []string{"C"},
+
+		KeysHelpOpen:  []string{"?"},
+		KeysHelpClose: []string{"?"},
 	}
 
 	if goruntime.GOOS == "darwin" {
@@ -274,16 +294,23 @@ func LoadSettings(configDir string) {
 	loadKey(conf, "key_pause", &s.KeysPause)
 	loadKey(conf, "key_mute", &s.KeysMute)
 	loadKey(conf, "key_like", &s.KeysLike)
-	loadKey(conf, "key_comments", &s.KeysComments)
 	loadKey(conf, "key_navbar", &s.KeysNavbar)
 	loadKey(conf, "key_vol_up", &s.KeysVolUp)
 	loadKey(conf, "key_vol_down", &s.KeysVolDown)
 	loadKey(conf, "key_reel_size_inc", &s.KeysReelSizeInc)
 	loadKey(conf, "key_reel_size_dec", &s.KeysReelSizeDec)
 	loadKey(conf, "key_quit", &s.KeysQuit)
-	loadKey(conf, "key_share", &s.KeysShare)
 	loadKey(conf, "key_copy_link", &s.KeysCopyLink)
 	loadKey(conf, "key_save", &s.KeysSave)
+	loadKey(conf, "key_seek_forward", &s.KeysSeekForward)
+	loadKey(conf, "key_seek_backward", &s.KeysSeekBackward)
+	loadKey(conf, "key_share_open", &s.KeysShareOpen)
+	loadKey(conf, "key_share_close", &s.KeysShareClose)
+	loadKey(conf, "key_share_select", &s.KeysShareSelect)
+	loadKey(conf, "key_comments_open", &s.KeysCommentsOpen)
+	loadKey(conf, "key_comments_close", &s.KeysCommentsClose)
+	loadKey(conf, "key_help_open", &s.KeysHelpOpen)
+	loadKey(conf, "key_help_close", &s.KeysHelpClose)
 
 	Config = s
 }
@@ -318,15 +345,23 @@ func writeConf(path string, s Settings) error {
 	writeKeys(&b, "key_pause", s.KeysPause)
 	writeKeys(&b, "key_mute", s.KeysMute)
 	writeKeys(&b, "key_like", s.KeysLike)
-	writeKeys(&b, "key_comments", s.KeysComments)
 	writeKeys(&b, "key_navbar", s.KeysNavbar)
 	writeKeys(&b, "key_vol_up", s.KeysVolUp)
 	writeKeys(&b, "key_vol_down", s.KeysVolDown)
 	writeKeys(&b, "key_reel_size_inc", s.KeysReelSizeInc)
 	writeKeys(&b, "key_reel_size_dec", s.KeysReelSizeDec)
-	writeKeys(&b, "key_share", s.KeysShare)
+	writeKeys(&b, "key_copy_link", s.KeysCopyLink)
 	writeKeys(&b, "key_save", s.KeysSave)
 	writeKeys(&b, "key_quit", s.KeysQuit)
+	writeKeys(&b, "key_seek_forward", s.KeysSeekForward)
+	writeKeys(&b, "key_seek_backward", s.KeysSeekBackward)
+	writeKeys(&b, "key_share_open", s.KeysShareOpen)
+	writeKeys(&b, "key_share_close", s.KeysShareClose)
+	writeKeys(&b, "key_share_select", s.KeysShareSelect)
+	writeKeys(&b, "key_comments_open", s.KeysCommentsOpen)
+	writeKeys(&b, "key_comments_close", s.KeysCommentsClose)
+	writeKeys(&b, "key_help_open", s.KeysHelpOpen)
+	writeKeys(&b, "key_help_close", s.KeysHelpClose)
 
 	return os.WriteFile(path, []byte(b.String()), 0644)
 }

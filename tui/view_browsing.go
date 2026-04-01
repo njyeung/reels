@@ -228,6 +228,14 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
 	switch {
+	// Share select takes priority over other keys when share panel is open
+	case m.share.IsOpen() && slices.Contains(config.KeysShareSelect, key):
+		if m.shareSending {
+			return m, nil
+		}
+		m.share.ToggleSelected()
+		go m.backend.ToggleShareFriend(m.share.CursorIndex())
+		return m, nil
 	case slices.Contains(config.KeysNext, key):
 		if m.scrollPanel(1) {
 			return m, nil
@@ -250,7 +258,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-	case !m.share.IsOpen() && slices.Contains(config.KeysPause, key):
+	case slices.Contains(config.KeysPause, key):
 		m.player.Pause()
 		if m.player.IsPaused() {
 			m.status = statusPaused
@@ -274,62 +282,47 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case slices.Contains(config.KeysComments, key):
+	case m.comments.IsOpen() && slices.Contains(config.KeysCommentsClose, key):
 		if !m.backend.IsSyncing() {
-			if m.comments.IsOpen() {
-				// close comments
-				m.comments.Close()
-				m.closePanelLayout()
-				go m.backend.CloseComments()
-			} else if m.currentReel != nil && !m.currentReel.CommentsDisabled && !m.panelOpen() {
-				// open comments
-				m.comments.Open(m.currentReel.PK)
-				m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
-
-				// Use cached comments if available
-				if m.currentReel.Comments != nil {
-					m.comments.SetComments(m.currentReel.PK, m.currentReel.Comments)
-					m.updateCommentGifs()
-				}
-
-				// Always open in browser (for Instagram's algorithm)
-				go m.backend.OpenComments()
-				m.player.RedrawVideo()
-			}
-		}
-
-	case m.share.IsOpen() && slices.Contains(config.KeysPause, key):
-		if m.shareSending {
-			return m, nil
-		}
-		// Toggle friend selection in both TUI and browser
-		m.share.ToggleSelected()
-		go m.backend.ToggleShareFriend(m.share.CursorIndex())
-		return m, nil
-
-	case slices.Contains(config.KeysShare, key):
-		if !m.backend.IsSyncing() {
-			if m.share.IsOpen() {
-				// close panel
-				if m.shareSending {
-					return m, nil
-				}
-				// Send to selected friends; close UI when backend finishes.
-				m.shareSending = true
-				return m, m.sendShare()
-			} else if m.currentReel != nil && m.currentReel.CanViewerReshare && !m.panelOpen() {
-				//open panel
-				m.share.Open()
-				m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
-				go m.backend.OpenSharePanel()
-				m.player.RedrawVideo()
-			}
-		}
-	case key == "?":
-		if m.help.IsOpen() {
-			m.help.Close()
+			m.comments.Close()
 			m.closePanelLayout()
-		} else if !m.panelOpen() {
+			go m.backend.CloseComments()
+		}
+
+	case !m.comments.IsOpen() && slices.Contains(config.KeysCommentsOpen, key):
+		if !m.backend.IsSyncing() && m.currentReel != nil && !m.currentReel.CommentsDisabled && !m.panelOpen() {
+			m.comments.Open(m.currentReel.PK)
+			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
+
+			if m.currentReel.Comments != nil {
+				m.comments.SetComments(m.currentReel.PK, m.currentReel.Comments)
+				m.updateCommentGifs()
+			}
+
+			go m.backend.OpenComments()
+			m.player.RedrawVideo()
+		}
+
+	case m.share.IsOpen() && slices.Contains(config.KeysShareClose, key):
+		if !m.shareSending {
+			m.shareSending = true
+			return m, m.sendShare()
+		}
+
+	case !m.share.IsOpen() && slices.Contains(config.KeysShareOpen, key):
+		if !m.backend.IsSyncing() && m.currentReel != nil && m.currentReel.CanViewerReshare && !m.panelOpen() {
+			m.share.Open()
+			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
+			go m.backend.OpenSharePanel()
+			m.player.RedrawVideo()
+		}
+
+	case m.help.IsOpen() && slices.Contains(config.KeysHelpClose, key):
+		m.help.Close()
+		m.closePanelLayout()
+
+	case !m.help.IsOpen() && slices.Contains(config.KeysHelpOpen, key):
+		if !m.panelOpen() {
 			m.help.Open()
 			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
 			m.player.RedrawVideo()
@@ -364,10 +357,10 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.queueShareReset()
 		}
 
-	case key == "left":
+	case slices.Contains(config.KeysSeekBackward, key):
 		m.player.Skip(-5)
 
-	case key == "right":
+	case slices.Contains(config.KeysSeekForward, key):
 		m.player.Skip(5)
 	}
 
