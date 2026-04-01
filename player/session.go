@@ -462,7 +462,7 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 	return nil
 }
 
-// drawProgressBar overlays a thin progress bar on the bottom 2 rows of the frame.
+// drawProgressBar overlays a thin progress bar on the bottom 4 rows of the frame.
 func (s *playSession) drawProgressBar(frame *Frame) {
 	duration := s.demuxer.Duration()
 	if duration <= 0 {
@@ -471,14 +471,14 @@ func (s *playSession) drawProgressBar(frame *Frame) {
 	barWidthPx := int(frame.PTS / duration * float64(frame.Width))
 	bpp := 3
 	stride := frame.Width * bpp
-	for row := frame.Height - 3; row < frame.Height; row++ {
+	for row := frame.Height - 4; row < frame.Height; row++ {
 		offset := row * stride
 		for x := 0; x < frame.Width; x++ {
 			px := offset + x*bpp
 			if x < barWidthPx {
-				frame.RGB[px], frame.RGB[px+1], frame.RGB[px+2] = 255, 255, 255
+				frame.RGB[px], frame.RGB[px+1], frame.RGB[px+2] = 215, 215, 215
 			} else {
-				frame.RGB[px], frame.RGB[px+1], frame.RGB[px+2] = 80, 80, 80
+				frame.RGB[px], frame.RGB[px+1], frame.RGB[px+2] = 90, 90, 90
 			}
 		}
 	}
