@@ -51,6 +51,8 @@ func (b *ChromeBackend) Start(headless bool) error {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.UserDataDir(b.userDataDir),
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
+		chromedp.Flag("remote-debugging-port", "6767"),
+		chromedp.Flag("remote-allow-origins", "*"),
 	)
 	if headless {
 		opts = append(opts, chromedp.Flag("headless", "new"))

@@ -1,3 +1,6 @@
 .reels
 reels
 .claude/
+tests/venv/
+tests/__pycache__/
+tests/harness/__pycache__/
