@@ -124,6 +124,9 @@ Pre-built binaries ship with FFmpeg statically linked. For development, dynamica
 **Linux:** Requires FFmpeg 8+ development libraries from your package manager (e.g. `sudo pacman -S ffmpeg` on Arch, `sudo apt install ffmpeg` on Debian/Ubuntu). This usually works fine as long as your packages are updated.
 
 ```bash
+# brew install ffmpeg-full      on macOS
+# sudo apt install ffmpeg       on Linux
+# ffmpeg -version               should be 8+
 git clone https://github.com/njyeung/reels.git
 cd reels
 go build -o reels .
