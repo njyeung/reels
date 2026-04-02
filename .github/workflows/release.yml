@@ -33,7 +33,7 @@ jobs:
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           docker run --rm -v ${{ github.workspace }}:/app reels-builder \
-            sh -c "go build -buildvcs=false -ldflags '-X main.Version=$VERSION' -o reels-linux-${{ matrix.arch }} ."
+            go build -buildvcs=false -ldflags "-s -w -X main.Version=$VERSION" -o reels-linux-${{ matrix.arch }} .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

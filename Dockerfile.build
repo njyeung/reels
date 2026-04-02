@@ -1,6 +1,7 @@
 FROM golang:1.25-bookworm
 
 # Install build dependencies
+# libasound2-dev: dynamic ALSA - universally present on Linux so its ok we dynamically link this
 RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
@@ -9,27 +10,27 @@ RUN apt-get update && apt-get install -y \
     yasm \
     pkg-config \
     libasound2-dev \
-    libx264-dev \
-    libx265-dev \
-    libvpx-dev \
-    libmp3lame-dev \
-    libopus-dev \
-    libvorbis-dev \
-    libtool \
-    libva-dev \
-    libvdpau-dev \
     texinfo \
     wget \
     zlib1g-dev \
-    libjxl-dev \
-    libwebp-dev \
-    libaom-dev \
-    libdav1d-dev \
-    libsvtav1enc-dev \
+    meson \
+    ninja-build \
     && rm -rf /var/lib/apt/lists/*
 
-# Build FFmpeg 8.0.1 from source with full codec support
 WORKDIR /tmp
+
+# Build dav1d as static lib
+RUN git clone --depth 1 --branch 1.5.1 https://code.videolan.org/videolan/dav1d.git && \
+    cd dav1d && \
+    meson setup build --default-library=static --prefix=/usr/local \
+        --buildtype=release -Denable_tools=false -Denable_tests=false && \
+    ninja -C build && \
+    ninja -C build install
+
+# Build FFmpeg 8.0.1
+# static, decode-only, minimal codecs
+# Built-in decoders (h264, hevc, vp9, aac, mp3, opus, vorbis) need no external libs
+# Only dav1d is added for faster AV1 decoding
 RUN wget https://ffmpeg.org/releases/ffmpeg-8.0.1.tar.xz && \
     tar xf ffmpeg-8.0.1.tar.xz && \
     cd ffmpeg-8.0.1 && \
@@ -37,29 +38,33 @@ RUN wget https://ffmpeg.org/releases/ffmpeg-8.0.1.tar.xz && \
         --prefix=/usr/local \
         --enable-gpl \
         --enable-version3 \
-        --enable-libx264 \
-        --enable-libx265 \
-        --enable-libvpx \
-        --enable-libmp3lame \
-        --enable-libopus \
-        --enable-libvorbis \
-        --enable-libjxl \
-        --enable-libwebp \
-        --enable-libaom \
         --enable-libdav1d \
-        --enable-libsvtav1 \
-        --enable-shared \
-        --disable-static \
+        --enable-static \
+        --disable-shared \
         --disable-doc \
-        --disable-debug && \
+        --disable-debug \
+        --disable-programs \
+        --disable-encoders \
+        --disable-muxers \
+        --disable-devices \
+        --disable-filters \
+        --enable-filter=aresample \
+        --enable-filter=scale \
+        --enable-filter=null \
+        --enable-filter=anull \
+        --disable-network \
+        --disable-autodetect \
+        --enable-pthreads \
+        --enable-zlib && \
     make -j$(nproc) && \
     make install && \
     ldconfig && \
-    cd / && rm -rf /tmp/ffmpeg-8.0.1*
+    cd / && rm -rf /tmp/ffmpeg-8.0.1* /tmp/dav1d
 
-# Set up environment
-ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:$PKG_CONFIG_PATH
-ENV LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
+# Bake CGO flags into the image
+ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig
 ENV CGO_ENABLED=1
+ENV CGO_CFLAGS="-I/usr/local/include"
+ENV CGO_LDFLAGS="-L/usr/local/lib -L/usr/local/lib/x86_64-linux-gnu -lavdevice -lavformat -lavcodec -ldav1d -ldl -lz -lavfilter -lm -lswscale -lswresample -lavutil -lm -latomic -pthread -lasound -lz -lm -ldl -lpthread"
 
 WORKDIR /app
