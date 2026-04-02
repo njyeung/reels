@@ -38,7 +38,6 @@ You need a terminal that supports the **Kitty graphics protocol**:
 ### Browser
 Chrome, Chromium, or Brave must be installed. The app uses headless browser automation to interact with Instagram.
 
-
 ## Usage
 
 ```bash
