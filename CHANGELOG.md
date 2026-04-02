@@ -28,7 +28,6 @@
 - Fix rendering loop responsiveness when paused for gifs and images
 - Fix spelling
 
-
 ## [1.2.3]
 
 - Fix loading text jitter
