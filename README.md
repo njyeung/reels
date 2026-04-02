@@ -38,12 +38,6 @@ You need a terminal that supports the **Kitty graphics protocol**:
 ### Browser
 Chrome, Chromium, or Brave must be installed. The app uses headless browser automation to interact with Instagram.
 
-### FFmpeg
-**macOS:** 
-Requires [`ffmpeg-full`](https://formulae.brew.sh/formula/ffmpeg-full) from Homebrew - `brew install ffmpeg-full`. The standard `brew install ffmpeg` will **not work**. You may also build FFmpeg 8+ from [`source`](https://github.com/ffmpeg/ffmpeg) or use [`MacPorts`](https://ports.macports.org/port/ffmpeg/), as long as the **Apple framework dependencies (VideoToolbox, AudioToolbox, etc.) are properly included**. The Homebrew install method handles installing `ffmpeg-full` **automatically**; if installing via npm, you must have `ffmpeg-full` with the proper Apple framework dependencies **installed separately** (either via homebrew, source, or MacPorts).
-
-**Linux:** 
-Any FFmpeg 8+ from your package manager (e.g. `pacman -S ffmpeg`, `apt install ffmpeg`).
 
 ## Usage
 
@@ -89,17 +83,7 @@ All keybinds are configurable in `reels.conf`. Each action supports multiple bin
 
 ### npm (macOS ARM64 / Linux x86_64 & ARM64)
 
-**macOS** *requires [Homebrew](https://brew.sh)*:
 ```bash
-# brew install ffmpeg-full    # (or build from source or MacPorts)
-npm install -g @reels/tui
-reels
-```
-
-**Linux:**
-```bash
-# sudo pacman -S ffmpeg      # Arch
-# sudo apt install ffmpeg    # Debian/Ubuntu
 npm install -g @reels/tui
 reels
 ```
@@ -115,7 +99,6 @@ reels
 ### AUR (Arch Linux x86_64 & ARM64)
 
 ```bash
-sudo pacman -Syu ffmpeg # make sure you're on ffmpeg 8+
 yay -S reels-bin
 reels
 ```
@@ -130,13 +113,15 @@ Download the latest release from [GitHub Releases](https://github.com/njyeung/re
 | Linux (ARM64) | `reels-linux-arm64` |
 | macOS (Apple Silicon) | `reels-darwin-arm64` |
 
-**macOS:** Requires `ffmpeg-full` from Homebrew - `brew install ffmpeg-full`. The standard `brew install ffmpeg` is missing framework link flags needed for compilation. You may build from source or use MacPorts if you know what you're doing.
+### Building from Source (For dDvelopers)
 
-**Linux:** Requires FFmpeg 8+ (e.g. `sudo pacman -S ffmpeg` on Arch, `sudo apt install ffmpeg` on Debian/Ubuntu)
+Requires Go 1.25+ and FFmpeg 8+ development libraries.
 
-### Building from Source
+Pre-built binaries ship with FFmpeg statically linked. For development, dynamically linking against a system FFmpeg makes building and iteration faster (simply `go build -o reels`). You can still build using docker, but I highly recommend installing the correct versions of FFmpeg following the directions below:
 
-Requires Go 1.25+ and FFmpeg 8+ development libraries (ffmpeg-full works for macOS).
+**macOS:** Requires `ffmpeg-full` from [Homebrew](https://brew.sh) (`brew install ffmpeg-full`), [MacPorts](https://ports.macports.org/port/ffmpeg/), or FFmpeg 8+ built from [source](https://github.com/ffmpeg/ffmpeg). The standard `brew install ffmpeg` is missing required framework link flags.
+
+**Linux:** Requires FFmpeg 8+ development libraries from your package manager (e.g. `sudo pacman -S ffmpeg` on Arch, `sudo apt install ffmpeg` on Debian/Ubuntu). This usually works fine as long as your packages are updated.
 
 ```bash
 git clone https://github.com/njyeung/reels.git
