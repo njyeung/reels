@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.2.7]
+- Statically link ffmpeg for Linux and macOS
+- No longer requires ffmpeg as a prerequisite
+
 ## [1.2.6]
 - Adding seeking and progress overlay
 - Add separate open/close binds for comments, share, and help panels. Configurable in reels.conf 
@@ -23,7 +27,6 @@
 - Use @rpath for macOS FFmpeg linking to support broader install locations
 - Fix rendering loop responsiveness when paused for gifs and images
 - Fix spelling
-
 
 ## [1.2.3]
 

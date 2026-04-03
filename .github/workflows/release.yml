@@ -33,7 +33,7 @@ jobs:
         run: |
           VERSION=${GITHUB_REF_NAME#v}
           docker run --rm -v ${{ github.workspace }}:/app reels-builder \
-            sh -c "go build -buildvcs=false -ldflags '-X main.Version=$VERSION' -o reels-linux-${{ matrix.arch }} ."
+            go build -buildvcs=false -ldflags "-s -w -X main.Version=$VERSION" -o reels-linux-${{ matrix.arch }} .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -52,38 +52,58 @@ jobs:
         with:
           go-version: '1.25'
 
-      - name: Install dependencies
+      - name: Install build tools
         run: |
-          brew update
-          brew install ffmpeg-full
-          brew upgrade ffmpeg-full 2>/dev/null || true
-          echo "PKG_CONFIG_PATH=$(brew --prefix ffmpeg-full)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
-          echo "LDFLAGS=-L$(brew --prefix ffmpeg-full)/lib" >> $GITHUB_ENV
-          echo "CFLAGS=-I$(brew --prefix ffmpeg-full)/include" >> $GITHUB_ENV
-          echo "CGO_LDFLAGS=-L$(brew --prefix ffmpeg-full)/lib" >> $GITHUB_ENV
-          echo "CGO_CFLAGS=-I$(brew --prefix ffmpeg-full)/include" >> $GITHUB_ENV
+          brew install meson nasm
+
+      - name: Build dav1d 1.5.1 (static)
+        run: |
+          git clone --depth 1 --branch 1.5.1 https://code.videolan.org/videolan/dav1d.git /tmp/dav1d
+          cd /tmp/dav1d
+          meson setup build --default-library=static --prefix=/usr/local \
+              --buildtype=release -Denable_tools=false -Denable_tests=false
+          ninja -C build
+          sudo ninja -C build install
+
+      - name: Build FFmpeg 8.0.1 (static, decode-only, minimal)
+        run: |
+          curl -sL https://ffmpeg.org/releases/ffmpeg-8.0.1.tar.xz -o /tmp/ffmpeg-8.0.1.tar.xz
+          tar xf /tmp/ffmpeg-8.0.1.tar.xz -C /tmp
+          cd /tmp/ffmpeg-8.0.1
+          ./configure \
+              --prefix=/usr/local \
+              --enable-gpl \
+              --enable-version3 \
+              --enable-libdav1d \
+              --enable-static \
+              --disable-shared \
+              --disable-doc \
+              --disable-debug \
+              --disable-programs \
+              --disable-encoders \
+              --disable-muxers \
+              --disable-devices \
+              --disable-filters \
+              --enable-filter=aresample \
+              --enable-filter=scale \
+              --enable-filter=null \
+              --enable-filter=anull \
+              --disable-network \
+              --disable-autodetect \
+              --enable-pthreads \
+              --enable-zlib
+          make -j$(sysctl -n hw.ncpu)
+          sudo make install
 
       - name: Build
         env:
           CGO_ENABLED: 1
+          PKG_CONFIG_PATH: /usr/local/lib/pkgconfig
+          CGO_CFLAGS: "-I/usr/local/include"
+          CGO_LDFLAGS: "-L/usr/local/lib -lavdevice -lavformat -lavcodec -ldav1d -lz -lavfilter -lm -lswscale -lswresample -lavutil -pthread"
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          go build -ldflags "-X main.Version=$VERSION" -o reels-darwin-arm64 .
-
-          # Rewrite dylib references to use @rpath so the binary works with any
-          # FFmpeg 8+ installation
-          for dylib_path in $(otool -L reels-darwin-arm64 | grep "Cellar/ffmpeg\|/opt/homebrew" | awk '{print $1}'); do
-            filename=$(basename "$dylib_path")
-            stable_name=$(echo "$filename" | sed -E 's/(lib[a-z]+\.[0-9]+)\.[0-9]+\.[0-9]+\.dylib/\1.dylib/')
-            echo "Rewriting: $dylib_path -> @rpath/$stable_name"
-            install_name_tool -change "$dylib_path" "@rpath/$stable_name" reels-darwin-arm64
-          done
-
-          # Add search paths for common FFmpeg install locations
-          install_name_tool -add_rpath /opt/homebrew/opt/ffmpeg-full/lib reels-darwin-arm64
-          install_name_tool -add_rpath /opt/homebrew/opt/ffmpeg/lib reels-darwin-arm64
-          install_name_tool -add_rpath /usr/local/lib reels-darwin-arm64
-          install_name_tool -add_rpath /opt/homebrew/lib reels-darwin-arm64
+          go build -ldflags "-s -w -X main.Version=$VERSION" -o reels-darwin-arm64 .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
