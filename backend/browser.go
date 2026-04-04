@@ -47,8 +47,15 @@ func (b *ChromeBackend) Start(headless bool) error {
 		return fmt.Errorf("failed to create user data dir: %w", err)
 	}
 
+	// Find or download Chrome
+	execPath, err := EnsureChromium(b.userDataDir)
+	if err != nil {
+		return fmt.Errorf("chrome not found: %w", err)
+	}
+
 	// Chrome options
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
+		chromedp.ExecPath(execPath),
 		chromedp.UserDataDir(b.userDataDir),
 		chromedp.Flag("disable-blink-features", "AutomationControlled"),
 		chromedp.Flag("remote-debugging-port", "6767"),

@@ -3,5 +3,9 @@ package tui
 import "fmt"
 
 func (m Model) viewError() string {
-	return fmt.Sprintf("\n\n	An error occurred\n\n	Press q to quit.\n")
+	msg := "An error occurred"
+	if m.lastErr != nil {
+		msg += "\n\n\t" + m.lastErr.Error()
+	}
+	return fmt.Sprintf("\n\n\t%s\n\n\tPress q to quit.\n", msg)
 }
