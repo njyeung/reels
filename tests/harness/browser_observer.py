@@ -1,8 +1,3 @@
-"""
-Connects to Chrome's DevTools Protocol on port 6767
-to observe browser state independently of the reels app.
-"""
-
 import json
 import websocket
 import requests
