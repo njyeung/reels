@@ -29,7 +29,7 @@
     }
   </style>
 
-  <rect width="700" height="150" rx="10"/>
+  <rect width="700" height="150" rx="10" fill="none"/>
 
   <g clip-path="url(#viewport)">
     <g class="marquee">
