@@ -36,7 +36,7 @@ You need a terminal that supports the **Kitty graphics protocol**:
 - [Konsole](https://konsole.kde.org/)
 
 ### Chrome (LINUX ARM64 ONLY)
-Chrome is automatically downloaded on first run if no system Chrome/Chromium is found; No action is needed for most platforms. The exception is Linux ARM64, where Chrome For Testing isn't available yet ([coming Q2 2026!](https://blog.chromium.org/2026/03/bringing-chrome-to-arm64-linux-devices.html)). If you are on Linux ARM64, you'll need to install Chrome manually before running Reels.
+Chrome is automatically downloaded on first run if no system Chrome/Chromium is found; No action is needed for most platforms. The exception is Linux ARM64, where Chrome For Testing isn't available yet ([coming Q2 2026!](https://blog.chromium.org/2026/03/bringing-chrome-to-arm64-linux-devices.html)). If you are on Linux ARM64, you'll need to install Chromium manually before running Reels.
 
 ## Usage
 
