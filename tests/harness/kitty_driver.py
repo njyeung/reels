@@ -6,76 +6,89 @@ and sending keystrokes via Kitty's remote control protocol.
 import subprocess
 import time
 import json
+import os
+import random
 
+from consts import PROJECT_ROOT, KITTY_SOCKET_PATH
 
-SOCKET_PATH = "/tmp/reels-test.sock"
+class KittyDriver:
+    def __init__(self):
+        self.proc = None
 
+    def get_text(self) -> str:
+        res = subprocess.run(
+            [
+                "kitten", "@",
+                "--to", f"unix:{KITTY_SOCKET_PATH}",
+                "get-text",
+                "--match", "title:reels-test",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        return res.stdout
 
-def build_binary(repo_root: str) -> str:
-    """Build the reels binary, return path to it."""
-    binary = f"{repo_root}/reels"
-    result = subprocess.run(
-        ["go", "build", "-o", binary, "."],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"go build failed:\n{result.stderr}")
-    return binary
+    def send_key(self, key: str):
+        delay = random.uniform(0.2, 1)
+        time.sleep(delay)
+        subprocess.run(
+            [
+                "kitten", "@",
+                "--to", f"unix:{KITTY_SOCKET_PATH}",
+                "send-text",
+                "--match", "title:reels-test",
+                key,
+            ],
+            capture_output=True,
+            text=True,
+        )
+    
+    def __enter__(self):
+        # build the binary
+        binary = os.path.join(PROJECT_ROOT, "reels")
+        res = subprocess.run(
+            ["go", "build", "-o", binary, "."],
+            cwd=PROJECT_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        if res.returncode != 0:
+            raise RuntimeError(f"go build failed:\n{res.stderr}")
+        
+        # start program on kitty
+        args = [binary, "--headed"]
 
+        self.proc = subprocess.Popen(
+            [
+                "kitty",
+                "--listen-on", f"unix:{KITTY_SOCKET_PATH}",
+                "--override", "allow_remote_control=yes",
+                "--title", "reels-test",
+                *args,
+            ],
+        )
+        time.sleep(2)
 
-def launch_app(binary: str) -> subprocess.Popen:
-    """
-    Spawn a new Kitty window running the reels binary.
-    Returns the Popen handle for the Kitty OS window.
-    """
-    args = [binary, "--headed"]
+        # Wait for app to finish sync cycle.
+        # The loading screen (view_loading.go) shows the REELS ASCII logo.
+        # Once the first reel loads, it shows @username.
+        # We poll the terminal text until we find an @.
+        synced = False
+        for _ in range(60):
+            text = self.get_text()
+            if "@" in text:
+                synced = True
+                break
+            time.sleep(2)
+        if not synced:
+            raise TimeoutError("App did not finish loading within 60 seconds")
 
-    proc = subprocess.Popen(
-        [
-            "kitty",
-            "--listen-on", f"unix:{SOCKET_PATH}",
-            "--override", "allow_remote_control=yes",
-            "--title", "reels-test",
-            *args,
-        ],
-    )
-    time.sleep(2)
-    return proc
+        return self
 
-
-def send_key(key: str):
-    """
-    Send a keystroke to the reels Kitty window.
-    Uses kitty's remote control protocol over the unix socket.
-    """
-    subprocess.run(
-        [
-            "kitten", "@",
-            "--to", f"unix:{SOCKET_PATH}",
-            "send-text",
-            "--match", "title:reels-test",
-            key,
-        ],
-        capture_output=True,
-        text=True,
-    )
-
-
-def send_key_with_delay(key: str, base_delay: float = 1.0):
-    """Send a key, then wait with a human-like delay."""
-    import random
-    send_key(key)
-    delay = base_delay + random.uniform(0, 0.5)
-    time.sleep(delay)
-
-
-def close_app(proc: subprocess.Popen):
-    """Send 'q' to quit, then clean up."""
-    try:
-        send_key("q")
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        proc.terminate()
-        proc.wait(timeout=3)
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            self.send_key("q")
+            self.proc.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            self.proc.terminate()
+            self.proc.wait(timeout=3)

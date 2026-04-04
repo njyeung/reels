@@ -112,7 +112,7 @@ Download the latest release from [GitHub Releases](https://github.com/njyeung/re
 | Linux (ARM64) | `reels-linux-arm64` |
 | macOS (Apple Silicon) | `reels-darwin-arm64` |
 
-### Building from Source (For dDvelopers)
+### Building from Source (For Developers)
 
 Requires Go 1.25+ and FFmpeg 8+ development libraries.
 
