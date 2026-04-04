@@ -25,6 +25,9 @@ class ReelsTestHarness:
     def get_screen(self) -> str:
         return self.kitty.get_text()
 
+    def get_url(self) -> str:
+        return self.browser.get_current_url()
+
     # --- Terminal assertions ---
 
     def assert_on_screen(self, text: str, timeout: int):
@@ -50,15 +53,23 @@ class ReelsTestHarness:
     # --- Browser assertions ---
 
     def assert_url_contains(self, substring: str, timeout: int):
-        """Poll browser URL until it contains `substring`."""
         deadline = time.time() + timeout
         while time.time() < deadline:
-            url = self.browser.get_current_url()
-            if substring in url:
+            if substring in self.browser.get_current_url():
                 return
             time.sleep(1)
         raise AssertionError(
             f"URL did not contain '{substring}' within {timeout}s"
+        )
+
+    def assert_url_changed(self, old_url: str, timeout: int):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if self.browser.get_current_url() != old_url:
+                return
+            time.sleep(1)
+        raise AssertionError(
+            f"URL was still '{old_url}' after {timeout}s"
         )
 
     # --- TODO: future browser JS assertions ---

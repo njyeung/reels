@@ -45,7 +45,7 @@ class BrowserObserver:
         resp.raise_for_status()
         targets = resp.json()
         for target in targets:
-            if "instagram.com" in target["url"]:
+            if target.get("type") == "page" and "instagram.com" in target["url"]:
                 url = target["webSocketDebuggerUrl"]
         
         self._ws = websocket.create_connection(url)
