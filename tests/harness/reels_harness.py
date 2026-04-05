@@ -1,6 +1,8 @@
+import subprocess
 import time
-from kitty_driver import KittyDriver
-from browser_observer import BrowserObserver
+import random
+from harness.kitty_driver import KittyDriver
+from harness.browser_observer import BrowserObserver
 
 
 class ReelsTestHarness:
@@ -27,6 +29,14 @@ class ReelsTestHarness:
 
     def get_url(self) -> str:
         return self.browser.get_current_url()
+
+    def get_clipboard(self) -> str:
+        res = subprocess.run(
+            ["wl-paste", "--no-newline"],
+            capture_output=True,
+            text=True,
+        )
+        return res.stdout
 
     # --- Terminal assertions ---
 
@@ -85,3 +95,5 @@ class ReelsTestHarness:
     def assert_comments_open(self, timeout: int):
         # TODO: evaluate JS to check if the comments panel is open in the browser DOM
         raise NotImplementedError
+
+    

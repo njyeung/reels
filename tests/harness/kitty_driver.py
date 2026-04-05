@@ -1,8 +1,3 @@
-"""
-Drives the reels TUI by spawning it in a Kitty terminal window
-and sending keystrokes via Kitty's remote control protocol.
-"""
-
 import subprocess
 import time
 import json
@@ -28,8 +23,6 @@ class KittyDriver:
         return res.stdout
 
     def send_key(self, key: str):
-        delay = random.uniform(0.2, 1)
-        time.sleep(delay)
         subprocess.run(
             [
                 "kitten", "@",
@@ -64,6 +57,7 @@ class KittyDriver:
                 "--title", "reels-test",
                 *args,
             ],
+            stderr=subprocess.DEVNULL,
         )
         time.sleep(2)
 
