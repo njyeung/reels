@@ -28,6 +28,9 @@ type (
 	}
 	musicTickMsg         struct{}
 	shareResetMsg        struct{}
+	volumeHoldMsg        struct{ gen int }
+	volumeFadeTickMsg    struct{}
+	volumeResetMsg       struct{}
 	shareSentMsg         struct{}
 	versionCheckMsg      struct{ latest string }
 	loadingMsgsMsg       struct{ messages []string }
@@ -98,6 +101,10 @@ type Model struct {
 	// share button switches to a different emoji for 1s when clicked
 	shareConfirmed bool
 	shareSending   bool
+
+	// volume indicator: 0=hidden, 1=visible (holding), 2-7=fading out
+	volumeFadeStep int
+	volumeGen      int
 
 	reelPFP *player.PFP
 
@@ -375,6 +382,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.musicScrollOffset++
 		}
 		return m, m.musicTick()
+
+	case volumeHoldMsg:
+		// Stale tick from a previous volume press
+		if msg.gen != m.volumeGen {
+			return m, nil
+		}
+		// Hold period over, start fading out
+		if m.volumeFadeStep == 1 {
+			m.volumeFadeStep = 2
+			return m, m.volumeFadeTick()
+		}
+		return m, nil
+
+	case volumeFadeTickMsg:
+		if m.volumeFadeStep < 2 {
+			return m, nil
+		}
+		m.volumeFadeStep++
+		if m.volumeFadeStep > 7 {
+			m.volumeFadeStep = 0
+			return m, nil
+		}
+		return m, m.volumeFadeTick()
 
 	case shareResetMsg:
 		m.shareConfirmed = false

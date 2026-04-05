@@ -36,6 +36,9 @@ type playSession struct {
 	imagesMu    sync.Mutex
 	visibleImgs []visibleImage
 
+	wallFallbackStartTime time.Time // wall-clock origin for no-audio sync
+	wallFallbackStartPTS  float64   // PTS offset at wall-clock origin
+
 	stopCh   chan struct{}
 	stopOnce sync.Once
 
@@ -125,13 +128,17 @@ func (s *playSession) run(p *AVPlayer) error {
 	var demuxWg sync.WaitGroup
 	var audioWg sync.WaitGroup
 
-	audioWg.Add(1)
-	go func() {
-		defer audioWg.Done()
-		s.audioDecodeLoop()
-	}()
-
-	s.audio.Start()
+	if s.audio != nil {
+		audioWg.Add(1)
+		go func() {
+			defer audioWg.Done()
+			s.audioDecodeLoop()
+		}()
+		s.audio.Start()
+	} else {
+		s.wallFallbackStartTime = time.Now()
+		s.wallFallbackStartPTS = 0
+	}
 
 	demuxWg.Add(1)
 	go func() {
@@ -241,6 +248,9 @@ func (s *playSession) performSeek(target float64) {
 
 	if s.audio != nil {
 		s.audio.Seek(target)
+	} else {
+		s.wallFallbackStartTime = time.Now()
+		s.wallFallbackStartPTS = target
 	}
 }
 
@@ -426,9 +436,18 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 		}
 
 		// Sync to audio clock (skip frame if behind, wait if ahead)
-		if s.audio.IsPlaying() {
+		if s.audio != nil && s.audio.IsPlaying() {
 			audioTime := s.audio.Time()
 			diff := frame.PTS - audioTime
+
+			if diff > SyncThreshold {
+				time.Sleep(time.Duration(diff * float64(time.Second) * 0.2))
+			} else if diff < -SyncThreshold {
+				continue
+			}
+		} else if s.audio == nil {
+			elapsed := time.Since(s.wallFallbackStartTime).Seconds()
+			diff := frame.PTS - s.wallFallbackStartPTS - elapsed
 
 			if diff > SyncThreshold {
 				time.Sleep(time.Duration(diff * float64(time.Second) * 0.2))

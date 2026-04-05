@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 	"github.com/njyeung/reels/backend"
 	"github.com/njyeung/reels/player"
@@ -37,7 +38,8 @@ func (m Model) viewBrowsing() string {
 
 	// total height of screen subtracting the following:
 	//
-	// the top padding,
+	// the top padding (volume status if avaialble),
+	//
 	// likes, comments, share, loading line
 	//
 	// reel video
@@ -46,7 +48,19 @@ func (m Model) viewBrowsing() string {
 	// music
 	maxPanelLines := max(m.height-(topPad+1+(videoHeightChars+1)+2), 1)
 
-	b.WriteString(strings.Repeat("\n", max(topPad-1, 0)))
+	if m.volumeFadeStep > 0 && topPad >= 3 {
+		b.WriteString(strings.Repeat("\n", max(topPad-3, 0)))
+		vol := m.player.Volume()
+		barWidth := videoWidthChars - 1
+		filled := int(vol*float64(barWidth) + 0.5)
+		fadeColor := lipgloss.Color(volumeFadeColor(m.volumeFadeStep))
+		filledStyle := lipgloss.NewStyle().Foreground(fadeColor)
+		emptyStyle := lipgloss.NewStyle().Foreground(fadeColor).Faint(true)
+		volBar := filledStyle.Render(strings.Repeat("█", filled)) + emptyStyle.Render(strings.Repeat("░", barWidth-filled))
+		b.WriteString(padding + volBar + "\n\n")
+	} else {
+		b.WriteString(strings.Repeat("\n", max(topPad-1, 0)))
+	}
 
 	// Status line - heart, like count, comment count, play/pause, mute icons
 	// positioned on the right side of video
@@ -92,8 +106,8 @@ func (m Model) viewBrowsing() string {
 	statusContent := heartIcon + rest
 	contentWidth := 2 + runewidth.StringWidth(rest)
 
-	if contentWidth < videoWidthChars {
-		statusContent = statusContent + strings.Repeat(" ", videoWidthChars-contentWidth)
+	if contentWidth < videoWidthChars-1 {
+		statusContent = statusContent + strings.Repeat(" ", videoWidthChars-1-contentWidth)
 		if m.status == statusLoading || m.comments.loading {
 			runes := []rune(statusContent)
 			statusContent = string(runes[:len(runes)-1]) + m.spinner.View()
@@ -344,11 +358,17 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		vol := min(m.player.Volume()+0.1, 1.0)
 		m.player.SetVolume(vol)
 		go m.backend.SetVolume(vol)
+		m.volumeFadeStep = 1
+		m.volumeGen++
+		return m, m.volumeHoldTick()
 
 	case slices.Contains(config.KeysVolDown, key):
 		vol := max(m.player.Volume()-0.1, 0.0)
 		m.player.SetVolume(vol)
 		go m.backend.SetVolume(vol)
+		m.volumeFadeStep = 1
+		m.volumeGen++
+		return m, m.volumeHoldTick()
 
 	case slices.Contains(config.KeysCopyLink, key):
 		if m.currentReel != nil && m.currentReel.Code != "" {
@@ -409,6 +429,29 @@ func (m Model) queueShareReset() tea.Cmd {
 	return tea.Tick(1*time.Second, func(t time.Time) tea.Msg {
 		return shareResetMsg{}
 	})
+}
+
+func (m Model) volumeHoldTick() tea.Cmd {
+	gen := m.volumeGen
+	return tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
+		return volumeHoldMsg{gen: gen}
+	})
+}
+
+func (m Model) volumeFadeTick() tea.Cmd {
+	return tea.Tick(60*time.Millisecond, func(t time.Time) tea.Msg {
+		return volumeFadeTickMsg{}
+	})
+}
+
+// volumeFadeColor returns the hex color for the volume fade-out.
+// Step 1 = full brightness (gray300), steps 2-7 fade to background.
+func volumeFadeColor(step int) string {
+	colors := [8]string{"#C7C7C7", "#C7C7C7", "#A8A8A8", "#808080", "#6B6B6B", "#555555", "#363636", "#262626"}
+	if step < 0 || step >= len(colors) {
+		return "#262626"
+	}
+	return colors[step]
 }
 
 func (m Model) sendShare() tea.Cmd {
