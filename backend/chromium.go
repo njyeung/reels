@@ -146,14 +146,12 @@ func downloadChrome(destDir, platform string) error {
 	tmpPath := tmp.Name()
 	defer os.Remove(tmpPath)
 
-	written, err := io.Copy(tmp, resp.Body)
+	_, err = io.Copy(tmp, resp.Body)
 	if err != nil {
 		tmp.Close()
 		return fmt.Errorf("download interrupted: %w", err)
 	}
 	tmp.Close()
-
-	fmt.Fprintf(os.Stderr, "Downloaded %d MB, extracting...\n", written/(1024*1024))
 
 	if err := os.MkdirAll(destDir, 0755); err != nil {
 		return err
