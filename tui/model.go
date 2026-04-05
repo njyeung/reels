@@ -103,6 +103,7 @@ type Model struct {
 
 	version         string
 	updateAvailable string
+	lastErr         error
 
 	loadingMessages  []string
 	loadingMsgIndex  int
@@ -339,6 +340,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case backendErrorMsg:
+		m.lastErr = msg.err
 		m.state = stateError
 		return m, nil
 

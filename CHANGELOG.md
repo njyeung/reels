@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.2.8]
+- Auto install Chrome if not found on system (except for Linux ARM64)
+- Black box test harness, does not introduce any new code into user binary
+
 ## [1.2.7]
 - Statically link ffmpeg for Linux and macOS
 - No longer requires ffmpeg as a prerequisite
