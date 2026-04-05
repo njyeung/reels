@@ -21,7 +21,7 @@ func (m Model) viewBrowsing() string {
 	}
 
 	// Video dimensions from player package (computed at startup)
-	videoWidthChars := player.VideoWidthChars
+	videoWidthChars := player.VideoWidthChars - 1
 	videoHeightChars := player.VideoHeightChars
 
 	var b strings.Builder
@@ -550,7 +550,7 @@ func (m Model) updateCommentGifs() {
 	}
 
 	videoHeightChars := player.VideoHeightChars
-	videoWidthChars := player.VideoWidthChars
+	videoWidthChars := player.VideoWidthChars - 1
 	commentsBaseRow := m.videoRow + (videoHeightChars + 1) + 1
 	maxCaptionLines := max(m.height-(m.videoRow+(videoHeightChars+1)+1), 1)
 
@@ -587,7 +587,7 @@ func (m *Model) updateImages() {
 
 	if m.share.IsOpen() {
 		videoHeightChars := player.VideoHeightChars
-		videoWidthChars := player.VideoWidthChars
+		videoWidthChars := player.VideoWidthChars - 1
 		fixedLines := max(m.height-(m.videoRow+(videoHeightChars+1)+1), 1)
 		shareBaseRow := m.videoRow + (videoHeightChars + 1) + 1
 		slots = append(slots, m.share.VisiblePfpSlots(videoWidthChars, fixedLines, shareBaseRow, m.videoCol)...)
