@@ -186,7 +186,7 @@ func (m Model) viewBrowsing() string {
 				captionLines = captionLines[:maxPanelLines]
 			}
 			for _, line := range captionLines {
-				b.WriteString(padding + gray100.Render(line) + "\n")
+				b.WriteString(padding + gray300.Render(line) + "\n")
 			}
 
 			// navbar (only when comments not open)
@@ -194,9 +194,9 @@ func (m Model) viewBrowsing() string {
 				b.WriteString("\n")
 
 				config := backend.GetSettings()
-				nav1 := gray500.Render(displayKeys(config.KeysNext) + ": next  " + displayKeys(config.KeysPrevious) + ": prev")
-				nav2 := gray500.Render(displayKeys(config.KeysQuit) + ": quit  " + displayKeys(config.KeysNavbar) + ": hide navbar")
-				nav3 := gray500.Render("?: help")
+				nav1 := gray600.Render(displayKeys(config.KeysNext) + ": next  " + displayKeys(config.KeysPrevious) + ": prev")
+				nav2 := gray600.Render(displayKeys(config.KeysQuit) + ": quit  " + displayKeys(config.KeysNavbar) + ": hide navbar")
+				nav3 := gray600.Render("?: help")
 				b.WriteString(padding + nav1 + "\n")
 				b.WriteString(padding + nav2 + "\n")
 				b.WriteString(padding + nav3 + "\n")
