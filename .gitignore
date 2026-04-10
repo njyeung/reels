@@ -3,4 +3,5 @@ reels
 .claude/
 tests/venv/
 tests/__pycache__/
+try-retreival/*.json
 tests/harness/__pycache__/
