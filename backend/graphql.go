@@ -131,7 +131,7 @@ func (b *ChromeBackend) extractComments(resp *commentsResponse) []Comment {
 		return comments
 	}
 
-	data := b.fetchURLs(gifURLs)
+	data := b.fetchURLs(b.ctx, gifURLs)
 	for i, idx := range gifIndices {
 		if i >= len(data) || data[i] == nil {
 			continue

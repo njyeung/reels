@@ -368,6 +368,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.share.SetFriends(m.backend.GetShareFriends())
 				m.updateImages()
 			}
+		case backend.EventDMReelsReady:
+			// DM reels fetched in background — TUI can display notification later
 		}
 		return m, m.listenForEvents
 

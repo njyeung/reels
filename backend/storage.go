@@ -2,6 +2,7 @@ package backend
 
 import (
 	"bufio"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -428,7 +429,7 @@ func (b *ChromeBackend) SetVolume(vol float64) error {
 
 // fetchURLs fetches multiple URLs in parallel via a single chromedp Promise.all call,
 // returning the decoded bytes for each URL (nil if the fetch failed).
-func (b *ChromeBackend) fetchURLs(urls []string) [][]byte {
+func (b *ChromeBackend) fetchURLs(ctx context.Context, urls []string) [][]byte {
 	if len(urls) == 0 {
 		return nil
 	}
@@ -456,7 +457,7 @@ func (b *ChromeBackend) fetchURLs(urls []string) [][]byte {
 	`, string(urlsJSON))
 
 	var result string
-	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &result, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
+	if err := chromedp.Run(ctx, chromedp.Evaluate(js, &result, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
 		return p.WithAwaitPromise(true)
 	})); err != nil {
 		return make([][]byte, len(urls))
@@ -537,7 +538,7 @@ func (b *ChromeBackend) Download(index int) (string, string, error) {
 		urls = append(urls, reel.ProfilePicUrl)
 	}
 
-	data := b.fetchURLs(urls)
+	data := b.fetchURLs(b.ctx, urls)
 	if data[0] == nil {
 		return "", "", fmt.Errorf("failed to download video")
 	}

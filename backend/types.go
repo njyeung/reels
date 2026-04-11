@@ -15,6 +15,9 @@ type ChromeBackend struct {
 	orderedReels []Reel
 	seenPKs      map[string]bool
 
+	dmReelsMu sync.RWMutex
+	dmReels   []DMReel
+
 	// comments encapsulates all comment-related state
 	comments *CommentsState
 
@@ -108,6 +111,12 @@ type Backend interface {
 	// FetchMoreComments fetches the next page of comments using stored pagination state
 	FetchMoreComments()
 
+	// GetDMReels returns the list of reels received from friends via DMs
+	GetDMReels() []DMReel
+
+	// GetDMReelsCount returns the number of DM reels available
+	GetDMReelsCount() int
+
 	// Download downloads a reel video and profile picture to the cache directory
 	Download(index int) (videoPath string, pfpPath string, err error)
 
@@ -185,6 +194,14 @@ type Comment struct {
 	GifPath           string // local path to downloaded GIF file
 }
 
+// DMReel represents a reel received from a friend via DMs
+type DMReel struct {
+	Reel
+	SenderUsername string // friend who sent it
+	VideoPath      string // local cache path after download
+	PfpPath        string // local cache path after download
+}
+
 // Friend represents a user shown in the share modal's friend list
 type Friend struct {
 	Name    string // display name from the DOM
@@ -199,6 +216,7 @@ const (
 	EventCommentsCaptured EventType = iota
 	EventShareFriendsLoaded
 	EventSyncComplete
+	EventDMReelsReady
 	EventError
 )
 

@@ -121,10 +121,13 @@ func (b *ChromeBackend) NavigateToReels() error {
 	// nav to reels
 	if err := chromedp.Run(b.ctx,
 		chromedp.Navigate("https://www.instagram.com/reels/"),
-		chromedp.Sleep(2*time.Second), // wait for reels to load (faster since it's cached)
+		chromedp.Sleep(2*time.Second), // wait for reels to load
 	); err != nil {
 		return fmt.Errorf("failed to navigate to reels: %w", err)
 	}
+
+	// Start DM reel retrieval in the background
+	go b.fetchDMReels()
 
 	// initial sync
 	for i := 0; i < MaxRetries; i++ {
@@ -818,7 +821,7 @@ func (b *ChromeBackend) OpenSharePanel() {
 		urls[i] = r.ImgSrc
 	}
 
-	data := b.fetchURLs(urls)
+	data := b.fetchURLs(b.ctx, urls)
 
 	friends := make([]Friend, len(raw))
 	for i, r := range raw {
