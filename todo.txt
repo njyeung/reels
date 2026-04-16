@@ -1,0 +1,2 @@
+1. Add gifs to npm package readme
+2. Fix send button disabled bug (done)
