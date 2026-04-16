@@ -32,6 +32,7 @@ type (
 	volumeFadeTickMsg    struct{}
 	volumeResetMsg       struct{}
 	shareSentMsg         struct{}
+	shareFailedMsg       struct{}
 	versionCheckMsg      struct{ latest string }
 	loadingMsgsMsg       struct{ messages []string }
 	loadingMsgTickMsg    struct{}
@@ -408,6 +409,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case shareResetMsg:
 		m.shareConfirmed = false
+		return m, nil
+
+	case shareFailedMsg:
+		m.shareSending = false
 		return m, nil
 
 	case shareSentMsg:

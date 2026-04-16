@@ -456,7 +456,9 @@ func volumeFadeColor(step int) string {
 
 func (m Model) sendShare() tea.Cmd {
 	return func() tea.Msg {
-		m.backend.SendShare()
+		if err := m.backend.SendShare(); err != nil {
+			return shareFailedMsg{}
+		}
 		return shareSentMsg{}
 	}
 }

@@ -15,7 +15,6 @@ import (
 
 	"github.com/chromedp/cdproto/fetch"
 	"github.com/chromedp/cdproto/input"
-	"github.com/chromedp/cdproto/network"
 	"github.com/chromedp/chromedp"
 )
 
@@ -74,30 +73,21 @@ func (b *ChromeBackend) Start(headless bool) error {
 	b.ctx = ctx
 	b.cancel = cancel
 
-	// network events for capturing graphql responses
-	if err := chromedp.Run(ctx, network.Enable()); err != nil {
-		return fmt.Errorf("failed to enable network: %w", err)
-	}
-
-	// this lets us read body before it's cleared
-	err = chromedp.Run(ctx,
-		fetch.Enable().WithPatterns([]*fetch.RequestPattern{
-			{URLPattern: "*graphql*", RequestStage: fetch.RequestStageResponse},
-		}),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to enable fetch: %w", err)
-	}
-
 	chromedp.ListenTarget(ctx, b.handleFetchEvent)
 
-	// Nav to Instagram
+	// Enable fetch interception and navigate
 	err = chromedp.Run(ctx,
+		fetch.Enable().WithPatterns([]*fetch.RequestPattern{
+			{
+				URLPattern:   "*graphql*",
+				RequestStage: fetch.RequestStageResponse,
+			},
+		}),
 		chromedp.Navigate("https://www.instagram.com/"),
 		chromedp.Sleep(2*time.Second), // sleep to let page load
 	)
 	if err != nil {
-		return fmt.Errorf("failed to navigate: %w", err)
+		return fmt.Errorf("failed to start: %w", err)
 	}
 
 	return nil
@@ -875,9 +865,10 @@ func (b *ChromeBackend) ToggleShareFriend(index int) {
 
 // SendShare clicks the Send button in the share modal.
 // Instagram closes the modal immediately on successful send.
-func (b *ChromeBackend) SendShare() {
+// Returns an error if the button is disabled (aria-disabled="true").
+func (b *ChromeBackend) SendShare() error {
 	if b.IsSyncing() {
-		return
+		return fmt.Errorf("syncing")
 	}
 
 	js := `
@@ -890,21 +881,30 @@ func (b *ChromeBackend) SendShare() {
 			for (const btn of buttons) {
 				if (btn.textContent.trim().toLowerCase().includes('send')) {
 					btn.setAttribute('data-reels-send-btn', 'true');
-					return true;
+					return btn.getAttribute('aria-disabled') === 'true' ? 'disabled' : 'ok';
 				}
 			}
-			return false;
+			return 'notfound';
 		})()
 	`
-	var found bool
-	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &found)); err != nil || !found {
+	var result string
+	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &result)); err != nil {
 		b.clickCloseButton()
-		return
+		return fmt.Errorf("js error: %w", err)
+	}
+
+	switch result {
+	case "disabled":
+		return fmt.Errorf("send button disabled")
+	case "notfound":
+		b.clickCloseButton()
+		return fmt.Errorf("send button not found")
 	}
 
 	chromedp.Run(b.ctx,
 		chromedp.Click(`[data-reels-send-btn="true"]`, chromedp.ByQuery),
 	)
+	return nil
 }
 
 // GetCommentsReelPK returns which reel we're fetching comments for

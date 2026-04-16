@@ -93,8 +93,9 @@ type Backend interface {
 	// ToggleShareFriend clicks the friend at the given index in the share modal
 	ToggleShareFriend(index int)
 
-	// SendShare clicks the Send button in the share modal and closes it
-	SendShare()
+	// SendShare clicks the Send button in the share modal and closes it.
+	// Returns an error if the button is disabled (Instagram web UI is still processing).
+	SendShare() error
 
 	// OpenComments opens the current reel's comment section
 	OpenComments()
