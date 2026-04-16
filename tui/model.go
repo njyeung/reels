@@ -28,9 +28,6 @@ type (
 	}
 	musicTickMsg         struct{}
 	shareResetMsg        struct{}
-	volumeHoldMsg        struct{ gen int }
-	volumeFadeTickMsg    struct{}
-	volumeResetMsg       struct{}
 	shareSentMsg         struct{}
 	versionCheckMsg      struct{ latest string }
 	loadingMsgsMsg       struct{ messages []string }
@@ -102,9 +99,7 @@ type Model struct {
 	shareConfirmed bool
 	shareSending   bool
 
-	// volume indicator: 0=hidden, 1=visible (holding), 2-7=fading out
-	volumeFadeStep int
-	volumeGen      int
+	hud HUD
 
 	reelPFP *player.PFP
 
@@ -327,10 +322,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case backendReadyMsg:
 		m.state = stateBrowsing
 		m.status = statusLoading
-		return m, tea.Batch(
-			m.loadCurrentReel,
-			m.listenForEvents,
-		)
+		return m, tea.Batch(m.loadCurrentReel, m.listenForEvents)
 
 	case loginRequiredMsg:
 		m.state = stateLogin
@@ -369,7 +361,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updateImages()
 			}
 		case backend.EventDMReelsReady:
-			// DM reels fetched in background — TUI can display notification later
+			if msg.Count > 0 {
+				return m, tea.Batch(m.hud.ShowDMNotify(msg.Count), m.listenForEvents)
+			}
 		}
 		return m, m.listenForEvents
 
@@ -385,28 +379,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.musicTick()
 
-	case volumeHoldMsg:
-		// Stale tick from a previous volume press
-		if msg.gen != m.volumeGen {
-			return m, nil
+	case volumeHoldMsg, volumeFadeTickMsg, dmNotifyHoldMsg, dmNotifyFadeTickMsg:
+		if handled, updated, cmd := m.updateHUD(msg); handled {
+			return updated, cmd
 		}
-		// Hold period over, start fading out
-		if m.volumeFadeStep == 1 {
-			m.volumeFadeStep = 2
-			return m, m.volumeFadeTick()
-		}
-		return m, nil
-
-	case volumeFadeTickMsg:
-		if m.volumeFadeStep < 2 {
-			return m, nil
-		}
-		m.volumeFadeStep++
-		if m.volumeFadeStep > 7 {
-			m.volumeFadeStep = 0
-			return m, nil
-		}
-		return m, m.volumeFadeTick()
 
 	case shareResetMsg:
 		m.shareConfirmed = false

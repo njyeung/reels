@@ -10,95 +10,56 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/fetch"
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
 )
-
-// dmLog is a file-based logger for DM retrieval (avoids corrupting the TUI).
-type dmLog struct {
-	path string
-}
-
-func newDMLog(cacheDir string) *dmLog {
-	return &dmLog{path: filepath.Join(cacheDir, "dm_debug.log")}
-}
-
-func (l *dmLog) printf(format string, args ...interface{}) {
-	msg := fmt.Sprintf("[dm] "+format+"\n", args...)
-	f, err := os.OpenFile(l.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	f.WriteString(time.Now().Format("15:04:05") + " " + msg)
-}
 
 // dmThreadResponse represents the GraphQL response for a DM thread
 type dmThreadResponse struct {
 	Data struct {
-		Thread *dmThread `json:"get_slide_thread_nullable"`
+		Thread *struct {
+			Inner *struct {
+				ThreadKey string `json:"thread_key"`
+				Viewer    struct {
+					FBID string `json:"interop_messaging_user_fbid"`
+				}
+				ReadReceipts []struct {
+					ParticipantFBID string `json:"participant_fbid"`
+					Watermark       string `json:"watermark_timestamp_ms"`
+				} `json:"slide_read_receipts"`
+				Messages struct {
+					Edges []struct {
+						Node struct {
+							SenderFBID  string `json:"sender_fbid"`
+							ContentType string `json:"content_type"`
+							TimestampMS string `json:"timestamp_ms"`
+							Sender      struct {
+								UserDict struct {
+									Username string `json:"username"`
+								} `json:"user_dict"`
+							} `json:"sender"`
+							Content struct {
+								XMA *struct {
+									TargetID    string `json:"target_id"`
+									TargetURL   string `json:"target_url"`
+									HeaderTitle string `json:"xmaHeaderTitle"`
+									PreviewImg  *struct {
+										DecorationType string `json:"preview_image_decoration_type"`
+									} `json:"xmaPreviewImage"`
+									PreviewImg2 *struct {
+										DecorationType string `json:"preview_image_decoration_type"`
+									} `json:"preview_image"`
+								} `json:"xma"`
+							} `json:"content"`
+						} `json:"node"`
+					} `json:"edges"`
+				} `json:"slide_messages"`
+			} `json:"as_ig_direct_thread"`
+		} `json:"get_slide_thread_nullable"`
 	} `json:"data"`
-}
-
-type dmThread struct {
-	Inner *dmThreadInner `json:"as_ig_direct_thread"`
-}
-
-type dmThreadInner struct {
-	ThreadKey    string `json:"thread_key"`
-	ThreadTitle  string `json:"thread_title"`
-	IsGroup      bool   `json:"is_group"`
-	Viewer       dmViewer
-	ReadReceipts []dmReadReceipt      `json:"slide_read_receipts"`
-	Messages     dmMessagesConnection `json:"slide_messages"`
-}
-
-type dmViewer struct {
-	FBID string `json:"interop_messaging_user_fbid"`
-}
-
-type dmReadReceipt struct {
-	ParticipantFBID string `json:"participant_fbid"`
-	Watermark       string `json:"watermark_timestamp_ms"`
-}
-
-type dmMessagesConnection struct {
-	Edges []dmMessageEdge `json:"edges"`
-}
-
-type dmMessageEdge struct {
-	Node dmMessageNode `json:"node"`
-}
-
-type dmMessageNode struct {
-	SenderFBID  string    `json:"sender_fbid"`
-	ContentType string    `json:"content_type"`
-	TimestampMS string    `json:"timestamp_ms"`
-	Sender      dmSender  `json:"sender"`
-	Content     dmContent `json:"content"`
-}
-
-type dmSender struct {
-	UserDict struct {
-		Username string `json:"username"`
-	} `json:"user_dict"`
-}
-
-type dmContent struct {
-	XMA *dmXMA `json:"xma"`
-}
-
-type dmXMA struct {
-	TargetID    string `json:"target_id"`
-	TargetURL   string `json:"target_url"`
-	HeaderTitle string `json:"xmaHeaderTitle"`
-	PreviewImg  *struct {
-		DecorationType string `json:"preview_image_decoration_type"`
-	} `json:"xmaPreviewImage"`
-	PreviewImg2 *struct {
-		DecorationType string `json:"preview_image_decoration_type"`
-	} `json:"preview_image"`
 }
 
 // dmReelEntry is an intermediate struct for unseen reels extracted from DM threads
@@ -177,23 +138,29 @@ func extractDMReelEntries(body string) ([]dmReelEntry, string) {
 	return entries, thread.ThreadKey
 }
 
-// fetchDMReels runs in a background goroutine. It opens a second browser tab,
+// fetchDMReels runs in a background goroutine. It opens a separate browser window,
 // navigates to the DM inbox, extracts unseen reels, resolves their CDN URLs,
-// downloads them, marks threads as read, and emits EventDMReelsReady.
+// downloads them, and emits EventDMReelsReady.
+// On error, this function silently fails
 func (b *ChromeBackend) fetchDMReels() {
-	dir, err := os.Getwd()
-	if err != nil {
-		//what
+	// Spawn a separate browser window
+	var targetID target.ID
+	if err := chromedp.Run(b.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
+		var err error
+		targetID, err = target.CreateTarget("about:blank").
+			WithNewWindow(true).
+			Do(cdp.WithExecutor(ctx, chromedp.FromContext(ctx).Browser))
+		return err
+	})); err != nil {
+		return
 	}
-	l := newDMLog(dir)
+	dmCtx, dmCancel := chromedp.NewContext(b.ctx, chromedp.WithTargetID(targetID))
+	defer func() {
+		chromedp.Run(dmCtx, fetch.Disable())
+		dmCancel()
+	}()
 
-	// Create a second tab in the same browser (NewContext from an existing tab creates a new tab)
-	dmCtx, dmCancel := chromedp.NewContext(b.ctx)
-	defer dmCancel()
-
-	// Enable network + fetch interception on the DM tab
 	if err := chromedp.Run(dmCtx, network.Enable()); err != nil {
-		l.printf("failed to enable network: %v", err)
 		return
 	}
 	if err := chromedp.Run(dmCtx,
@@ -201,7 +168,6 @@ func (b *ChromeBackend) fetchDMReels() {
 			{URLPattern: "*graphql*", RequestStage: fetch.RequestStageResponse},
 		}),
 	); err != nil {
-		l.printf("failed to enable fetch: %v", err)
 		return
 	}
 
@@ -217,12 +183,10 @@ func (b *ChromeBackend) fetchDMReels() {
 	})
 
 	// Navigate to DM inbox
-	l.printf("[dm] navigating to inbox")
 	if err := chromedp.Run(dmCtx,
 		chromedp.Navigate("https://www.instagram.com/direct/inbox/"),
 		chromedp.Sleep(3*time.Second),
 	); err != nil {
-		l.printf("[dm] failed to navigate to inbox: %v", err)
 		return
 	}
 
@@ -247,12 +211,69 @@ func (b *ChromeBackend) fetchDMReels() {
 		}
 	}
 
-	l.printf("found %d unseen reels across %d threads", len(allEntries), len(threadKeys))
+	// Cap to first 10 entries
+	if len(allEntries) > 10 {
+		allEntries = allEntries[:10]
+	}
 
-	// Write debug log and close the tab
-	dmDebugLog(l, allEntries, threadKeys)
+	// Resolve CDN URLs by visiting each reel's target URL
+	var dmReels []DMReel
+	for _, entry := range allEntries {
+		// Navigate the DM window to the reel URL
+		if err := chromedp.Run(dmCtx,
+			chromedp.Navigate(entry.TargetURL),
+			chromedp.Sleep(3*time.Second),
+		); err != nil {
+			continue
+		}
 
-	l.printf("done: %d entries found", len(allEntries))
+		// Wait for the clips GraphQL response
+		var reelBody string
+		reelTimeout := time.After(10 * time.Second)
+		select {
+		case reelBody = <-reelBodies:
+		case <-reelTimeout:
+			continue
+		}
+
+		reel := firstReelFromResponse(reelBody)
+		if reel == nil {
+			continue
+		}
+
+		dmReels = append(dmReels, DMReel{
+			Reel:           *reel,
+			SenderUsername: entry.SenderUsername,
+		})
+	}
+
+	// Download videos + profile pics
+	for i := range dmReels {
+		dr := &dmReels[i]
+		if dr.VideoURL == "" {
+			continue
+		}
+
+		videoFile := filepath.Join(b.cacheDir, fmt.Sprintf("dm_%s.mp4", dr.Code))
+		pfpFile := filepath.Join(b.cacheDir, fmt.Sprintf("dm_%s_pfp.jpg", dr.Code))
+
+		data := b.fetchURLs(dmCtx, []string{dr.VideoURL, dr.ProfilePicUrl})
+		if len(data) >= 1 && len(data[0]) > 0 {
+			os.WriteFile(videoFile, data[0], 0644)
+			dr.VideoPath = videoFile
+		}
+		if len(data) >= 2 && len(data[1]) > 0 {
+			os.WriteFile(pfpFile, data[1], 0644)
+			dr.PfpPath = pfpFile
+		}
+	}
+
+	// Store & emit
+	b.dmReelsMu.Lock()
+	b.dmReels = dmReels
+	b.dmReelsMu.Unlock()
+
+	b.events <- Event{Type: EventDMReelsReady, Count: len(dmReels)}
 }
 
 // processDMFetchEvent handles a paused fetch event on the DM tab.
@@ -287,62 +308,51 @@ func (b *ChromeBackend) processDMFetchEvent(ctx context.Context, e *fetch.EventR
 	)
 }
 
-// matchReelByPK parses a clips response and returns the Reel matching the given PK, or nil.
-func matchReelByPK(body string, pk string) *Reel {
+// firstReelFromResponse parses a clips response and returns the first Reel, or nil.
+func firstReelFromResponse(body string) *Reel {
 	var resp reelResponse
 	if err := json.Unmarshal([]byte(body), &resp); err != nil {
 		return nil
 	}
 
-	for _, edge := range resp.Data.Connection.Edges {
-		media := edge.Node.Media
-		if media.PK != pk {
-			continue
-		}
+	if len(resp.Data.Connection.Edges) == 0 {
+		return nil
+	}
 
-		// Pick first video URL (width may be 0 in DM-triggered responses)
-		var videoURL string
-		minWidth := int(^uint(0) >> 1)
-		for _, v := range media.VideoVersions {
-			if v.Width < minWidth {
-				minWidth = v.Width
-				videoURL = strings.ReplaceAll(v.URL, "\\u0026", "&")
-			}
-		}
+	media := resp.Data.Connection.Edges[0].Node.Media
 
-		caption := ""
-		if media.Caption != nil {
-			caption = media.Caption.Text
-		}
+	videoURL := strings.ReplaceAll(media.VideoVersions[0].URL, "\\u0026", "&")
 
-		var music *MusicInfo
-		if media.ClipsMetadata.MusicInfo != nil {
-			info := media.ClipsMetadata.MusicInfo.MusicAssetInfo
-			music = &MusicInfo{
-				Title:      info.Title,
-				Artist:     info.DisplayArtist,
-				IsExplicit: info.IsExplicit,
-			}
-		}
+	caption := ""
+	if media.Caption != nil {
+		caption = media.Caption.Text
+	}
 
-		return &Reel{
-			PK:               media.PK,
-			Code:             media.Code,
-			VideoURL:         videoURL,
-			ProfilePicUrl:    media.User.ProfilePicUrl,
-			Username:         media.User.Username,
-			Caption:          caption,
-			Liked:            media.HasLiked,
-			LikeCount:        media.LikeCount,
-			IsVerified:       media.User.IsVerified,
-			CommentCount:     media.CommentCount,
-			CommentsDisabled: media.CommentsDisabled,
-			Music:            music,
-			CanViewerReshare: media.CanViewerReshare,
+	var music *MusicInfo
+	if media.ClipsMetadata.MusicInfo != nil {
+		info := media.ClipsMetadata.MusicInfo.MusicAssetInfo
+		music = &MusicInfo{
+			Title:      info.Title,
+			Artist:     info.DisplayArtist,
+			IsExplicit: info.IsExplicit,
 		}
 	}
 
-	return nil
+	return &Reel{
+		PK:               media.PK,
+		Code:             media.Code,
+		VideoURL:         videoURL,
+		ProfilePicUrl:    media.User.ProfilePicUrl,
+		Username:         media.User.Username,
+		Caption:          caption,
+		Liked:            media.HasLiked,
+		LikeCount:        media.LikeCount,
+		IsVerified:       media.User.IsVerified,
+		CommentCount:     media.CommentCount,
+		CommentsDisabled: media.CommentsDisabled,
+		Music:            music,
+		CanViewerReshare: media.CanViewerReshare,
+	}
 }
 
 // GetDMReels returns a copy of the DM reels list.
@@ -359,18 +369,4 @@ func (b *ChromeBackend) GetDMReelsCount() int {
 	b.dmReelsMu.RLock()
 	defer b.dmReelsMu.RUnlock()
 	return len(b.dmReels)
-}
-
-// dmDebugLog writes a debug summary of DM reel retrieval via the dmLog logger.
-func dmDebugLog(l *dmLog, entries []dmReelEntry, threadKeys []string) {
-	l.printf("--- summary ---")
-	l.printf("threads with unseen messages: %d", len(threadKeys))
-	for _, tk := range threadKeys {
-		l.printf("  thread: %s", tk)
-	}
-	l.printf("unseen reel entries: %d", len(entries))
-	for _, e := range entries {
-		l.printf("  PK=%s author=@%s sent_by=@%s", e.TargetID, e.ReelAuthor, e.SenderUsername)
-		l.printf("    URL: %s", e.TargetURL)
-	}
 }

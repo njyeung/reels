@@ -121,7 +121,7 @@ func (b *ChromeBackend) NavigateToReels() error {
 	// nav to reels
 	if err := chromedp.Run(b.ctx,
 		chromedp.Navigate("https://www.instagram.com/reels/"),
-		chromedp.Sleep(2*time.Second), // wait for reels to load
+		chromedp.Sleep(2*time.Second),
 	); err != nil {
 		return fmt.Errorf("failed to navigate to reels: %w", err)
 	}
