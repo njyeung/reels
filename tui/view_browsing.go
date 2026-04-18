@@ -231,11 +231,11 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
 	switch {
-	// Friends-panel select takes priority so 'enter' doesn't fall through to other handlers.
+	// Friends-panel select takes priority so the select key doesn't fall through to other handlers.
 	// The panel stays open through the load — it closes on EventFriendReelLoaded so
 	// the reel keeps its shrunk size (and keeps showing the prev reel's caption-area
 	// content) until the new reel is actually ready to play.
-	case m.friends.IsOpen() && slices.Contains(config.KeysFriendsSelect, key):
+	case m.friends.IsOpen() && slices.Contains(config.KeysSelect, key):
 		friend := m.friends.CursorFriend()
 		if friend == nil {
 			return m, nil
@@ -248,7 +248,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	// Share select takes priority over other keys when share panel is open
-	case m.share.IsOpen() && slices.Contains(config.KeysShareSelect, key):
+	case m.share.IsOpen() && slices.Contains(config.KeysSelect, key):
 		if m.shareSending {
 			return m, nil
 		}

@@ -43,9 +43,10 @@ type Settings struct {
 	KeysSeekForward  []string
 	KeysSeekBackward []string
 
-	KeysShareOpen   []string
-	KeysShareClose  []string
-	KeysShareSelect []string
+	KeysSelect []string
+
+	KeysShareOpen  []string
+	KeysShareClose []string
 
 	KeysCommentsOpen  []string
 	KeysCommentsClose []string
@@ -53,9 +54,8 @@ type Settings struct {
 	KeysHelpOpen  []string
 	KeysHelpClose []string
 
-	KeysFriendsOpen   []string
-	KeysFriendsClose  []string
-	KeysFriendsSelect []string
+	KeysFriendsOpen  []string
+	KeysFriendsClose []string
 }
 
 var Config Settings
@@ -216,9 +216,10 @@ func defaultSettings() Settings {
 		KeysSeekForward:  []string{"l"},
 		KeysSeekBackward: []string{"h"},
 
-		KeysShareOpen:   []string{"s"},
-		KeysShareClose:  []string{"S"},
-		KeysShareSelect: []string{" "},
+		KeysSelect: []string{" "},
+
+		KeysShareOpen:  []string{"s"},
+		KeysShareClose: []string{"S"},
 
 		KeysCommentsOpen:  []string{"c"},
 		KeysCommentsClose: []string{"C"},
@@ -226,9 +227,8 @@ func defaultSettings() Settings {
 		KeysHelpOpen:  []string{"?"},
 		KeysHelpClose: []string{"?"},
 
-		KeysFriendsOpen:   []string{"d"},
-		KeysFriendsClose:  []string{"D"},
-		KeysFriendsSelect: []string{"enter"},
+		KeysFriendsOpen:  []string{"d"},
+		KeysFriendsClose: []string{"D"},
 	}
 
 	if goruntime.GOOS == "darwin" {
@@ -315,14 +315,13 @@ func LoadSettings(configDir string) {
 	loadKey(conf, "key_seek_backward", &s.KeysSeekBackward)
 	loadKey(conf, "key_share_open", &s.KeysShareOpen)
 	loadKey(conf, "key_share_close", &s.KeysShareClose)
-	loadKey(conf, "key_share_select", &s.KeysShareSelect)
+	loadKey(conf, "key_select", &s.KeysSelect)
 	loadKey(conf, "key_comments_open", &s.KeysCommentsOpen)
 	loadKey(conf, "key_comments_close", &s.KeysCommentsClose)
 	loadKey(conf, "key_help_open", &s.KeysHelpOpen)
 	loadKey(conf, "key_help_close", &s.KeysHelpClose)
 	loadKey(conf, "key_friends_open", &s.KeysFriendsOpen)
 	loadKey(conf, "key_friends_close", &s.KeysFriendsClose)
-	loadKey(conf, "key_friends_select", &s.KeysFriendsSelect)
 
 	Config = s
 }
@@ -369,14 +368,13 @@ func writeConf(path string, s Settings) error {
 	writeKeys(&b, "key_seek_backward", s.KeysSeekBackward)
 	writeKeys(&b, "key_share_open", s.KeysShareOpen)
 	writeKeys(&b, "key_share_close", s.KeysShareClose)
-	writeKeys(&b, "key_share_select", s.KeysShareSelect)
+	writeKeys(&b, "key_select", s.KeysSelect)
 	writeKeys(&b, "key_comments_open", s.KeysCommentsOpen)
 	writeKeys(&b, "key_comments_close", s.KeysCommentsClose)
 	writeKeys(&b, "key_help_open", s.KeysHelpOpen)
 	writeKeys(&b, "key_help_close", s.KeysHelpClose)
 	writeKeys(&b, "key_friends_open", s.KeysFriendsOpen)
 	writeKeys(&b, "key_friends_close", s.KeysFriendsClose)
-	writeKeys(&b, "key_friends_select", s.KeysFriendsSelect)
 
 	return os.WriteFile(path, []byte(b.String()), 0644)
 }

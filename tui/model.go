@@ -399,7 +399,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case reelLoadedMsg:
 		m.currentReel = msg.info
-		m.status = statusNone
 		m.musicScrollOffset = 0
 		return m, tea.Batch(m.startPlayback(msg.info.Index), m.musicTick())
 

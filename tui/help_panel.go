@@ -53,7 +53,7 @@ func (hp *HelpPanel) buildEntries() {
 		{displayKeys(config.KeysCommentsClose), "close comments"},
 		{displayKeys(config.KeysShareOpen), "share via DM"},
 		{displayKeys(config.KeysShareClose), "send & close share"},
-		{displayKeys(config.KeysShareSelect), "select friend"},
+		{displayKeys(config.KeysSelect), "select (share/friends)"},
 		{displayKeys(config.KeysCopyLink), "copy link"},
 		{displayKeys(config.KeysSave), "bookmark"},
 		{displayKeys(config.KeysNavbar), "toggle navbar"},
@@ -63,7 +63,6 @@ func (hp *HelpPanel) buildEntries() {
 		{displayKeys(config.KeysReelSizeDec), "shrink video"},
 		{displayKeys(config.KeysFriendsOpen), "open DM friends"},
 		{displayKeys(config.KeysFriendsClose), "close DMs / exit friend mode"},
-		{displayKeys(config.KeysFriendsSelect), "select friend"},
 		{displayKeys(config.KeysHelpOpen), "help"},
 		{displayKeys(config.KeysQuit), "quit"},
 	}
