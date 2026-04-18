@@ -61,6 +61,9 @@ func (hp *HelpPanel) buildEntries() {
 		{displayKeys(config.KeysVolDown), "volume down"},
 		{displayKeys(config.KeysReelSizeInc), "enlarge video"},
 		{displayKeys(config.KeysReelSizeDec), "shrink video"},
+		{displayKeys(config.KeysFriendsOpen), "open DM friends"},
+		{displayKeys(config.KeysFriendsClose), "close DMs / exit friend mode"},
+		{displayKeys(config.KeysFriendsSelect), "select friend"},
 		{displayKeys(config.KeysHelpOpen), "help"},
 		{displayKeys(config.KeysQuit), "quit"},
 	}

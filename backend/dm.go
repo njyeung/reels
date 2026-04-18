@@ -342,9 +342,11 @@ func (b *ChromeBackend) EnterFriendMode(username string) error {
 }
 
 // ExitFriendMode flips back to the main feed and parks the DM window on about:blank
-// (which also stops any background video playback there).
+// (which also stops any background video playback there). Emits
+// EventFriendModeExited only on an actual transition out of friend mode.
 func (b *ChromeBackend) ExitFriendMode() {
 	b.modeMu.Lock()
+	wasFriend := b.viewMode == ViewModeFriend
 	b.viewMode = ViewModeFeed
 	b.activeFriend = ""
 	b.friendCursor = 0
@@ -353,6 +355,17 @@ func (b *ChromeBackend) ExitFriendMode() {
 	if b.dmCtx != nil {
 		chromedp.Run(b.dmCtx, chromedp.Navigate("about:blank"))
 	}
+
+	if wasFriend {
+		b.events <- Event{Type: EventFriendModeExited}
+	}
+}
+
+// IsFriendMode reports whether the active view is the secondary DM window.
+func (b *ChromeBackend) IsFriendMode() bool {
+	b.modeMu.RLock()
+	defer b.modeMu.RUnlock()
+	return b.viewMode == ViewModeFriend
 }
 
 // NextFriendReel advances to the next reel from the active friend. If there's

@@ -89,6 +89,13 @@ type Model struct {
 	// Help panel displays all keybinds
 	help *HelpPanel
 
+	// Friends panel picks a DM friend whose reels to browse
+	friends *FriendsPanel
+
+	// friendMode mirrors backend.IsFriendMode(); the TUI tracks it so panel/nav
+	// logic doesn't need to call the backend on every keypress.
+	friendMode bool
+
 	flags Config
 
 	loginSuccess bool
@@ -150,6 +157,7 @@ func NewModel(userDataDir, cacheDir, configDir string, output io.Writer, version
 		comments:      NewCommentsPanel(),
 		share:         NewSharePanel(),
 		help:          NewHelpPanel(),
+		friends:       NewFriendsPanel(),
 		flags:         flags,
 		showNavbar:    settings.ShowNavbar,
 		version:       version,
@@ -229,7 +237,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		key := msg.String()
 		if slices.Contains(backend.GetSettings().KeysQuit, key) {
-			if m.comments.IsOpen() || m.share.IsOpen() || m.help.IsOpen() {
+			if m.comments.IsOpen() || m.share.IsOpen() || m.help.IsOpen() || m.friends.IsOpen() {
 				m.resizeReel(backend.GetSettings().ReelSizeStep * backend.GetSettings().PanelShrinkSteps)
 			}
 
@@ -364,6 +372,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.Count > 0 {
 				return m, tea.Batch(m.hud.ShowDMNotify(msg.Count), m.listenForEvents)
 			}
+		case backend.EventFriendReelLoaded:
+			// If the friends panel is still open (i.e. the user just selected a
+			// friend), close it now that the reel is ready so the layout swaps
+			// from picker → reel atomically, without a flash of full-size video.
+			if m.friends.IsOpen() {
+				m.friends.Close()
+				m.closePanelLayout()
+			}
+			m.player.Stop()
+			m.status = statusLoading
+			m.comments.Clear()
+			return m, tea.Batch(m.loadCurrentReel, m.listenForEvents)
+		case backend.EventFriendModeExited:
+			m.friendMode = false
+			if m.friends.IsOpen() {
+				m.friends.Close()
+				m.closePanelLayout()
+			}
+			m.player.Stop()
+			m.status = statusLoading
+			m.comments.Clear()
+			return m, tea.Batch(m.loadCurrentReel, m.listenForEvents)
 		}
 		return m, m.listenForEvents
 

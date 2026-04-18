@@ -52,6 +52,10 @@ type Settings struct {
 
 	KeysHelpOpen  []string
 	KeysHelpClose []string
+
+	KeysFriendsOpen   []string
+	KeysFriendsClose  []string
+	KeysFriendsSelect []string
 }
 
 var Config Settings
@@ -221,6 +225,10 @@ func defaultSettings() Settings {
 
 		KeysHelpOpen:  []string{"?"},
 		KeysHelpClose: []string{"?"},
+
+		KeysFriendsOpen:   []string{"d"},
+		KeysFriendsClose:  []string{"D"},
+		KeysFriendsSelect: []string{"enter"},
 	}
 
 	if goruntime.GOOS == "darwin" {
@@ -312,6 +320,9 @@ func LoadSettings(configDir string) {
 	loadKey(conf, "key_comments_close", &s.KeysCommentsClose)
 	loadKey(conf, "key_help_open", &s.KeysHelpOpen)
 	loadKey(conf, "key_help_close", &s.KeysHelpClose)
+	loadKey(conf, "key_friends_open", &s.KeysFriendsOpen)
+	loadKey(conf, "key_friends_close", &s.KeysFriendsClose)
+	loadKey(conf, "key_friends_select", &s.KeysFriendsSelect)
 
 	Config = s
 }
@@ -363,6 +374,9 @@ func writeConf(path string, s Settings) error {
 	writeKeys(&b, "key_comments_close", s.KeysCommentsClose)
 	writeKeys(&b, "key_help_open", s.KeysHelpOpen)
 	writeKeys(&b, "key_help_close", s.KeysHelpClose)
+	writeKeys(&b, "key_friends_open", s.KeysFriendsOpen)
+	writeKeys(&b, "key_friends_close", s.KeysFriendsClose)
+	writeKeys(&b, "key_friends_select", s.KeysFriendsSelect)
 
 	return os.WriteFile(path, []byte(b.String()), 0644)
 }
@@ -481,22 +495,55 @@ func (b *ChromeBackend) fetchURLs(ctx context.Context, urls []string) [][]byte {
 	return data
 }
 
-// Download downloads a reel video and profile picture to the cache directory
+// Download downloads a reel video and profile picture to the cache directory.
+// In friend mode, the index is into the active friend's entries and the reel is
+// pulled from friendReels (populated on navigation) rather than orderedReels.
 func (b *ChromeBackend) Download(index int) (string, string, error) {
-	b.reelsMu.RLock()
-	if index < 1 || index > len(b.orderedReels) {
+	b.modeMu.RLock()
+	friendMode := b.viewMode == ViewModeFriend
+	username := b.activeFriend
+	b.modeMu.RUnlock()
+
+	var reel Reel
+	var fileStem string // unique stem for cache filenames
+	var pfpName string
+
+	if friendMode {
+		entries, ok := b.findFriend(username)
+		if !ok {
+			return "", "", fmt.Errorf("active friend %q no longer present", username)
+		}
+		if index < 1 || index > len(entries) {
+			return "", "", fmt.Errorf("index out of range")
+		}
+		pk := entries[index-1].TargetID
+		b.modeMu.RLock()
+		r, ok := b.friendReels[pk]
+		b.modeMu.RUnlock()
+		if !ok {
+			return "", "", fmt.Errorf("reel pk=%s not yet captured", pk)
+		}
+		reel = *r
+		fileStem = fmt.Sprintf("dm_%s_%s", username, reel.Code)
+		pfpName = fmt.Sprintf("dm_%s_%s_pfp.jpg", username, reel.Code)
+	} else {
+		b.reelsMu.RLock()
+		if index < 1 || index > len(b.orderedReels) {
+			b.reelsMu.RUnlock()
+			return "", "", fmt.Errorf("index out of range")
+		}
+		reel = b.orderedReels[index-1]
 		b.reelsMu.RUnlock()
-		return "", "", fmt.Errorf("index out of range")
+		fileStem = fmt.Sprintf("%03d_%s", index, reel.Code)
+		pfpName = fmt.Sprintf("%03d_%s_pfp.jpg", index, reel.Code)
 	}
-	reel := b.orderedReels[index-1]
-	b.reelsMu.RUnlock()
 
 	if reel.VideoURL == "" {
 		return "", "", fmt.Errorf("no video URL")
 	}
 
-	videoFile := filepath.Join(b.cacheDir, fmt.Sprintf("%03d_%s.mp4", index, reel.Code))
-	pfpFile := filepath.Join(b.cacheDir, fmt.Sprintf("%03d_%s_pfp.jpg", index, reel.Code))
+	videoFile := filepath.Join(b.cacheDir, fileStem+".mp4")
+	pfpFile := filepath.Join(b.cacheDir, pfpName)
 
 	// check cache to see if already downloaded
 	if videoCache.has(videoFile) {
@@ -549,7 +596,7 @@ func (b *ChromeBackend) Download(index int) (string, string, error) {
 	videoCache.add(videoFile)
 
 	if len(data) > 1 && data[1] != nil {
-		b.cacheReelPfp(fmt.Sprintf("%03d_%s_pfp.jpg", index, reel.Code), data[1])
+		b.cacheReelPfp(pfpName, data[1])
 	}
 
 	return videoFile, pfpFile, nil

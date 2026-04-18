@@ -1,0 +1,7 @@
+findFriend might not be needed since EnterFriendMode(username) basically guarantees that the username exists otherwise we wouldn't know what username it was.
+
+Interesting mutateReelByPK function. It doesn't hold any locks so are we correctly holding locks when calling this?
+
+is b.activeCtx the best way? Is it possible to use a tmp variable and literally atomically switch between the two?
+
+If you look at SyncTo, it is not called during friendMode. How is NextFriendReel and PrevFriendReel used?

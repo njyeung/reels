@@ -150,6 +150,8 @@ func (m Model) viewBrowsing() string {
 			b.WriteString(m.comments.View(videoWidthChars, maxPanelLines, padding))
 		} else if m.help.IsOpen() {
 			b.WriteString(m.help.View(videoWidthChars, maxPanelLines, padding))
+		} else if m.friends.IsOpen() {
+			b.WriteString(m.friends.View(videoWidthChars, maxPanelLines, padding))
 		} else {
 			// Normal caption view
 			var captionLines []string
@@ -229,6 +231,22 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
 	switch {
+	// Friends-panel select takes priority so 'enter' doesn't fall through to other handlers.
+	// The panel stays open through the load — it closes on EventFriendReelLoaded so
+	// the reel keeps its shrunk size (and keeps showing the prev reel's caption-area
+	// content) until the new reel is actually ready to play.
+	case m.friends.IsOpen() && slices.Contains(config.KeysFriendsSelect, key):
+		friend := m.friends.CursorFriend()
+		if friend == nil {
+			return m, nil
+		}
+		username := friend.Username
+		m.friendMode = true
+		m.player.Stop()
+		m.status = statusLoading
+		go m.backend.EnterFriendMode(username)
+		return m, nil
+
 	// Share select takes priority over other keys when share panel is open
 	case m.share.IsOpen() && slices.Contains(config.KeysShareSelect, key):
 		if m.shareSending {
@@ -329,6 +347,23 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.player.RedrawVideo()
 		}
 
+	case m.friends.IsOpen() && slices.Contains(config.KeysFriendsClose, key):
+		m.friends.Close()
+		m.closePanelLayout()
+
+	case !m.friends.IsOpen() && slices.Contains(config.KeysFriendsClose, key) && m.friendMode:
+		// In friend mode with no panel open, close-key exits back to the feed.
+		go m.backend.ExitFriendMode()
+		return m, nil
+
+	case !m.friends.IsOpen() && slices.Contains(config.KeysFriendsOpen, key):
+		if !m.panelOpen() {
+			friends := m.backend.GetDMFriends()
+			m.friends.Open(friends)
+			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
+			m.player.RedrawVideo()
+		}
+
 	case slices.Contains(config.KeysNavbar, key):
 		showNavbar := m.backend.ToggleNavbar()
 		m.showNavbar = showNavbar
@@ -391,6 +426,12 @@ func (m *Model) startPlayback(index int) tea.Cmd {
 }
 
 func (m Model) prefetch(index int) {
+	// Friend-mode reels are navigated on demand; the next reel's VideoURL isn't
+	// known until the user actually reaches it, so prefetch is a no-op there.
+	if m.friendMode {
+		return
+	}
+
 	toDownload1 := index + 1
 	toDownload2 := index + 2
 
@@ -421,9 +462,9 @@ func (m Model) sendShare() tea.Cmd {
 	}
 }
 
-// panelOpen returns true if any overlay panel (comments, share, help) is open.
+// panelOpen returns true if any overlay panel (comments, share, help, friends) is open.
 func (m Model) panelOpen() bool {
-	return m.comments.IsOpen() || m.share.IsOpen() || m.help.IsOpen()
+	return m.comments.IsOpen() || m.share.IsOpen() || m.help.IsOpen() || m.friends.IsOpen()
 }
 
 // scrollPanel dispatches scroll/cursor movement to the active panel.
@@ -441,6 +482,10 @@ func (m *Model) scrollPanel(direction int) bool {
 		m.updateImages()
 		return true
 	}
+	if m.friends.IsOpen() {
+		m.friends.MoveCursor(direction)
+		return true
+	}
 	if m.comments.IsOpen() {
 		m.comments.Scroll(direction)
 		m.updateCommentGifs()
@@ -455,8 +500,40 @@ func (m *Model) scrollPanel(direction int) bool {
 }
 
 // navigateToReel moves to a reel at currentIndex+direction if in bounds and not already loading.
+// In friend mode, navigation goes through the backend (Next/PrevFriendReel) and
+// the reel is loaded on the EventFriendReelLoaded event instead of synchronously.
 func (m *Model) navigateToReel(direction int) tea.Cmd {
-	if m.currentReel == nil || m.status == statusLoading {
+	if m.status == statusLoading {
+		return nil
+	}
+
+	if m.friendMode {
+		if m.currentReel == nil {
+			return nil
+		}
+		// Prev clamps at start; Next past end auto-exits via backend.
+		if direction < 0 && m.currentReel.Index <= 1 {
+			return nil
+		}
+		m.player.Stop()
+		m.status = statusLoading
+		m.comments.Clear()
+		return func() tea.Msg {
+			var err error
+			if direction > 0 {
+				err = m.backend.NextFriendReel()
+			} else {
+				err = m.backend.PrevFriendReel()
+			}
+			if err != nil {
+				return reelErrorMsg{err}
+			}
+			// EventFriendReelLoaded / EventFriendModeExited drives the reload.
+			return nil
+		}
+	}
+
+	if m.currentReel == nil {
 		return nil
 	}
 	index := m.currentReel.Index + direction
@@ -526,7 +603,7 @@ func (m Model) updateCommentGifs() {
 // then forwards it to the player.
 func (m *Model) updateVideoPosition() {
 	row, col := player.ComputeVideoCenterPosition(m.videoWidthPx, m.videoHeightPx)
-	if m.comments.IsOpen() || m.share.IsOpen() || m.help.IsOpen() {
+	if m.comments.IsOpen() || m.share.IsOpen() || m.help.IsOpen() || m.friends.IsOpen() {
 		row = 5
 	}
 

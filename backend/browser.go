@@ -414,6 +414,15 @@ func (b *ChromeBackend) GetTotal() int {
 
 // SyncTo scrolls browser to match the given index
 func (b *ChromeBackend) SyncTo(index int) error {
+	// Friend mode navigates via NextFriendReel/PrevFriendReel directly; the main
+	// feed scrolling logic below only applies to the feed window.
+	b.modeMu.RLock()
+	friendMode := b.viewMode == ViewModeFriend
+	b.modeMu.RUnlock()
+	if friendMode {
+		return nil
+	}
+
 	// Close and clear comments before scrolling (arrow keys don't trigger Instagram's auto-close)
 	b.ClearComments()
 

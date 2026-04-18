@@ -148,6 +148,10 @@ type Backend interface {
 	// Clamped at the first reel.
 	PrevFriendReel() error
 
+	// IsFriendMode reports whether the backend is currently in friend-mode
+	// (secondary DM window). Frontend uses this to branch UI behavior.
+	IsFriendMode() bool
+
 	// Download downloads a reel video and profile picture to the cache directory
 	Download(index int) (videoPath string, pfpPath string, err error)
 
@@ -266,6 +270,9 @@ const (
 	EventDMReelsReady
 	// EventFriendReelLoaded fires after a friend-mode navigation resolves a reel.
 	EventFriendReelLoaded
+	// EventFriendModeExited fires when the backend leaves friend mode (either
+	// auto-exit past the last reel or an explicit ExitFriendMode call).
+	EventFriendModeExited
 	EventError
 )
 
