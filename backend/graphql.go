@@ -131,7 +131,7 @@ func (b *ChromeBackend) extractComments(resp *commentsResponse) []Comment {
 		return comments
 	}
 
-	data := b.fetchURLs(b.ctx, gifURLs)
+	data := b.fetchURLs(b.activeCtx(), gifURLs)
 	for i, idx := range gifIndices {
 		if i >= len(data) || data[i] == nil {
 			continue
@@ -280,7 +280,7 @@ func (b *ChromeBackend) FetchMoreComments() {
 	`, jsonStringForJS(paginationFriendlyName), jsonStringForJS(lsd), expectedAppID, jsonStringForJS(postBody))
 
 	var result string
-	err = chromedp.Run(b.ctx,
+	err = chromedp.Run(b.activeCtx(),
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			return chromedp.Evaluate(js, &result, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
 				return p.WithAwaitPromise(true)
@@ -382,13 +382,70 @@ func (b *ChromeBackend) processReelResponse(body string) {
 	}
 }
 
-// processResponse handles a paused request, reads the body, then continues
-func (b *ChromeBackend) processResponse(e *fetch.EventRequestPaused) {
-	// Get the response body while the request is paused
+// parseFirstReel parses a clips GraphQL response and returns the first reel, or nil.
+// Used by the DM window to capture a friend's individual reel after navigation.
+func parseFirstReel(body string) *Reel {
+	var resp reelResponse
+	if err := json.Unmarshal([]byte(body), &resp); err != nil {
+		return nil
+	}
+	if len(resp.Data.Connection.Edges) == 0 {
+		return nil
+	}
+
+	media := resp.Data.Connection.Edges[0].Node.Media
+	if len(media.VideoVersions) == 0 {
+		return nil
+	}
+	videoURL := strings.ReplaceAll(media.VideoVersions[0].URL, "\\u0026", "&")
+
+	caption := ""
+	if media.Caption != nil {
+		caption = media.Caption.Text
+	}
+
+	var music *MusicInfo
+	if media.ClipsMetadata.MusicInfo != nil {
+		info := media.ClipsMetadata.MusicInfo.MusicAssetInfo
+		music = &MusicInfo{
+			Title:      info.Title,
+			Artist:     info.DisplayArtist,
+			IsExplicit: info.IsExplicit,
+		}
+	}
+
+	return &Reel{
+		PK:               media.PK,
+		Code:             media.Code,
+		VideoURL:         videoURL,
+		ProfilePicUrl:    media.User.ProfilePicUrl,
+		Username:         media.User.Username,
+		Caption:          caption,
+		Liked:            media.HasLiked,
+		LikeCount:        media.LikeCount,
+		IsVerified:       media.User.IsVerified,
+		CommentCount:     media.CommentCount,
+		CommentsDisabled: media.CommentsDisabled,
+		Music:            music,
+		CanViewerReshare: media.CanViewerReshare,
+	}
+}
+
+// processGraphQLBody is the shared fetch-interception router. It reads the paused
+// response body in `ctx` (the window that saw the request), dispatches based on
+// body content, and continues the request. clipSink is how captured clips are
+// forwarded — the main feed appends to orderedReels, the DM window routes into
+// friend-reel state. threadSink is only non-nil during DM inbox collection.
+func (b *ChromeBackend) processGraphQLBody(
+	ctx context.Context,
+	e *fetch.EventRequestPaused,
+	clipSink func(string),
+	threadSink func(string),
+) {
 	var body []byte
-	err := chromedp.Run(b.ctx,
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			data, err := fetch.GetResponseBody(e.RequestID).Do(ctx)
+	err := chromedp.Run(ctx,
+		chromedp.ActionFunc(func(c context.Context) error {
+			data, err := fetch.GetResponseBody(e.RequestID).Do(c)
 			if err != nil {
 				return err
 			}
@@ -399,9 +456,12 @@ func (b *ChromeBackend) processResponse(e *fetch.EventRequestPaused) {
 
 	if err == nil {
 		bodyStr := string(body)
-		if strings.Contains(bodyStr, "xdt_api__v1__clips__home__connection_v2") {
-			b.processReelResponse(bodyStr)
-		} else if strings.Contains(bodyStr, "xdt_api__v1__media__media_id__comments__connection") {
+		switch {
+		case strings.Contains(bodyStr, "xdt_api__v1__clips__home__connection_v2"):
+			if clipSink != nil {
+				clipSink(bodyStr)
+			}
+		case strings.Contains(bodyStr, "xdt_api__v1__media__media_id__comments__connection"):
 			// Decode the POST body from the intercepted request (base64-encoded)
 			var rawBytes []byte
 			for _, entry := range e.Request.PostDataEntries {
@@ -410,7 +470,6 @@ func (b *ChromeBackend) processResponse(e *fetch.EventRequestPaused) {
 					rawBytes = append(rawBytes, decoded...)
 				}
 			}
-
 			postData := string(rawBytes)
 			var appID string
 			for k, v := range e.Request.Headers {
@@ -419,18 +478,18 @@ func (b *ChromeBackend) processResponse(e *fetch.EventRequestPaused) {
 					break
 				}
 			}
-
-			// Skip pagination responses, those are handled by FetchMoreComments directly
+			// Skip pagination responses — FetchMoreComments handles those directly.
 			if !strings.Contains(postData, paginationFriendlyName) {
 				b.processCommentsResponse(bodyStr, postData, appID)
 			}
+		case threadSink != nil && strings.Contains(bodyStr, "get_slide_thread_nullable"):
+			threadSink(bodyStr)
 		}
 	}
 
-	// Continue the request
-	chromedp.Run(b.ctx,
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			return fetch.ContinueRequest(e.RequestID).Do(ctx)
+	chromedp.Run(ctx,
+		chromedp.ActionFunc(func(c context.Context) error {
+			return fetch.ContinueRequest(e.RequestID).Do(c)
 		}),
 	)
 }

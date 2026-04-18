@@ -4,10 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/chromedp/cdproto/cdp"
@@ -62,16 +59,14 @@ type dmThreadResponse struct {
 	} `json:"data"`
 }
 
-// dmReelEntry is an intermediate struct for unseen reels extracted from DM threads
-type dmReelEntry struct {
-	TargetID       string // reel PK
-	TargetURL      string // URL to navigate to for CDN resolution
-	ReelAuthor     string // xmaHeaderTitle
-	SenderUsername string // friend who sent it
+// dmThreadEntry is the per-message result from one thread response, before grouping.
+type dmThreadEntry struct {
+	DMReelEntry
+	SenderUsername string
 }
 
-// extractDMReelEntries parses a single thread response and returns unseen reel entries.
-func extractDMReelEntries(body string) ([]dmReelEntry, string) {
+// extractDMThreadEntries parses a single thread response and returns its unseen reel entries.
+func extractDMThreadEntries(body string) ([]dmThreadEntry, string) {
 	var resp dmThreadResponse
 	if err := json.Unmarshal([]byte(body), &resp); err != nil {
 		return nil, ""
@@ -83,7 +78,6 @@ func extractDMReelEntries(body string) ([]dmReelEntry, string) {
 	thread := resp.Data.Thread.Inner
 	viewerFBID := thread.Viewer.FBID
 
-	// Find viewer's watermark
 	var watermark int64
 	for _, r := range thread.ReadReceipts {
 		if r.ParticipantFBID == viewerFBID {
@@ -94,24 +88,20 @@ func extractDMReelEntries(body string) ([]dmReelEntry, string) {
 		}
 	}
 
-	var entries []dmReelEntry
+	var entries []dmThreadEntry
 	for _, edge := range thread.Messages.Edges {
 		msg := edge.Node
 
-		// Skip messages from the viewer
 		if msg.SenderFBID == viewerFBID {
 			continue
 		}
-		// Only inline shares
 		if msg.ContentType != "MESSAGE_INLINE_SHARE" {
 			continue
 		}
-		// Check if unseen
 		ts, err := strconv.ParseInt(msg.TimestampMS, 10, 64)
 		if err != nil || ts <= watermark {
 			continue
 		}
-		// Check if it's a reel (try both preview image fields)
 		if msg.Content.XMA == nil {
 			continue
 		}
@@ -127,10 +117,12 @@ func extractDMReelEntries(body string) ([]dmReelEntry, string) {
 			continue
 		}
 
-		entries = append(entries, dmReelEntry{
-			TargetID:       xma.TargetID,
-			TargetURL:      xma.TargetURL,
-			ReelAuthor:     xma.HeaderTitle,
+		entries = append(entries, dmThreadEntry{
+			DMReelEntry: DMReelEntry{
+				TargetID:   xma.TargetID,
+				TargetURL:  xma.TargetURL,
+				ReelAuthor: xma.HeaderTitle,
+			},
 			SenderUsername: msg.Sender.UserDict.Username,
 		})
 	}
@@ -138,12 +130,11 @@ func extractDMReelEntries(body string) ([]dmReelEntry, string) {
 	return entries, thread.ThreadKey
 }
 
-// fetchDMReels runs in a background goroutine. It opens a separate browser window,
-// navigates to the DM inbox, extracts unseen reels, resolves their CDN URLs,
-// downloads them, and emits EventDMReelsReady.
-// On error, this function silently fails
-func (b *ChromeBackend) fetchDMReels() {
-	// Spawn a separate browser window
+// startDMSession spawns the secondary browser window, wires up persistent fetch
+// interception on it, and stores the long-lived dmCtx on the backend. Called
+// once after NavigateToReels. The window stays alive for the whole session so
+// friend-mode navigation can reuse it.
+func (b *ChromeBackend) startDMSession() error {
 	var targetID target.ID
 	if err := chromedp.Run(b.ctx, chromedp.ActionFunc(func(ctx context.Context) error {
 		var err error
@@ -152,221 +143,300 @@ func (b *ChromeBackend) fetchDMReels() {
 			Do(cdp.WithExecutor(ctx, chromedp.FromContext(ctx).Browser))
 		return err
 	})); err != nil {
-		return
+		return fmt.Errorf("dm: create target: %w", err)
 	}
+
 	dmCtx, dmCancel := chromedp.NewContext(b.ctx, chromedp.WithTargetID(targetID))
-	defer func() {
-		chromedp.Run(dmCtx, fetch.Disable())
-		dmCancel()
-	}()
+	b.dmCtx = dmCtx
+	b.dmCancel = dmCancel
+	b.dmReelBodies = make(chan string, 10)
+	b.friendReels = make(map[string]*Reel)
 
 	if err := chromedp.Run(dmCtx, network.Enable()); err != nil {
-		return
+		return fmt.Errorf("dm: network enable: %w", err)
 	}
 	if err := chromedp.Run(dmCtx,
 		fetch.Enable().WithPatterns([]*fetch.RequestPattern{
 			{URLPattern: "*graphql*", RequestStage: fetch.RequestStageResponse},
 		}),
 	); err != nil {
-		return
+		return fmt.Errorf("dm: fetch enable: %w", err)
 	}
 
-	// Channels for intercepted data
-	threadBodies := make(chan string, 50)
-	reelBodies := make(chan string, 10)
-
 	chromedp.ListenTarget(dmCtx, func(ev interface{}) {
-		switch e := ev.(type) {
-		case *fetch.EventRequestPaused:
-			go b.processDMFetchEvent(dmCtx, e, threadBodies, reelBodies)
+		if e, ok := ev.(*fetch.EventRequestPaused); ok {
+			go b.processGraphQLBody(dmCtx, e, b.ingestFriendReelBody, b.currentThreadSink)
 		}
 	})
 
-	// Navigate to DM inbox
-	if err := chromedp.Run(dmCtx,
+	return nil
+}
+
+// stopDMSession tears down the secondary window. Safe to call if session never started.
+func (b *ChromeBackend) stopDMSession() {
+	if b.dmCancel != nil {
+		b.dmCancel()
+		b.dmCancel = nil
+	}
+}
+
+// ingestFriendReelBody is the clipSink for the DM window. It forwards captured
+// clip bodies onto dmReelBodies; gotoFriendEntry drains the channel after each
+// navigation.
+func (b *ChromeBackend) ingestFriendReelBody(body string) {
+	select {
+	case b.dmReelBodies <- body:
+	default:
+		// drop if no one is listening; friend-mode only reads during navigation
+	}
+}
+
+// currentThreadSink returns the thread handler that's active right now. Non-nil
+// only while collectDMInbox is running.
+func (b *ChromeBackend) currentThreadSink(body string) {
+	b.modeMu.RLock()
+	sink := b.threadSink
+	b.modeMu.RUnlock()
+	if sink != nil {
+		sink(body)
+	}
+}
+
+// collectDMInbox navigates the DM window to /direct/inbox/, drains thread
+// responses, groups them by sender, stores on b.dmFriends, and parks the
+// window on about:blank. Emits EventDMReelsReady on completion.
+// Runs once in a background goroutine after startDMSession succeeds.
+func (b *ChromeBackend) collectDMInbox() {
+	threadBodies := make(chan string, 50)
+
+	b.modeMu.Lock()
+	b.threadSink = func(body string) {
+		select {
+		case threadBodies <- body:
+		default:
+		}
+	}
+	b.modeMu.Unlock()
+
+	defer func() {
+		b.modeMu.Lock()
+		b.threadSink = nil
+		b.modeMu.Unlock()
+	}()
+
+	if err := chromedp.Run(b.dmCtx,
 		chromedp.Navigate("https://www.instagram.com/direct/inbox/"),
 		chromedp.Sleep(3*time.Second),
 	); err != nil {
 		return
 	}
 
-	// Collect thread responses with a timeout
-	var allEntries []dmReelEntry
-	var threadKeys []string
-	seenThreads := make(map[string]bool)
+	type friendAccum struct {
+		order   int
+		entries []DMReelEntry
+		seenPK  map[string]bool
+	}
+	friends := make(map[string]*friendAccum)
+	order := 0
 
+	seenThreads := make(map[string]bool)
 	collectTimeout := time.After(5 * time.Second)
 	collecting := true
 	for collecting {
 		select {
 		case body := <-threadBodies:
-			entries, threadKey := extractDMReelEntries(body)
-			if threadKey != "" && !seenThreads[threadKey] {
+			entries, threadKey := extractDMThreadEntries(body)
+			if threadKey != "" {
+				if seenThreads[threadKey] {
+					continue
+				}
 				seenThreads[threadKey] = true
-				threadKeys = append(threadKeys, threadKey)
 			}
-			allEntries = append(allEntries, entries...)
+			for _, e := range entries {
+				acc, ok := friends[e.SenderUsername]
+				if !ok {
+					acc = &friendAccum{order: order, seenPK: make(map[string]bool)}
+					friends[e.SenderUsername] = acc
+					order++
+				}
+				if acc.seenPK[e.TargetID] {
+					continue
+				}
+				acc.seenPK[e.TargetID] = true
+				acc.entries = append(acc.entries, e.DMReelEntry)
+			}
 		case <-collectTimeout:
 			collecting = false
 		}
 	}
 
-	// Cap to first 10 entries
-	if len(allEntries) > 10 {
-		allEntries = allEntries[:10]
+	result := make([]DMFriend, 0, len(friends))
+	for username, acc := range friends {
+		result = append(result, DMFriend{Username: username, Entries: acc.entries})
 	}
-
-	// Resolve CDN URLs by visiting each reel's target URL
-	var dmReels []DMReel
-	for _, entry := range allEntries {
-		// Navigate the DM window to the reel URL
-		if err := chromedp.Run(dmCtx,
-			chromedp.Navigate(entry.TargetURL),
-			chromedp.Sleep(3*time.Second),
-		); err != nil {
-			continue
-		}
-
-		// Wait for the clips GraphQL response
-		var reelBody string
-		reelTimeout := time.After(10 * time.Second)
-		select {
-		case reelBody = <-reelBodies:
-		case <-reelTimeout:
-			continue
-		}
-
-		reel := firstReelFromResponse(reelBody)
-		if reel == nil {
-			continue
-		}
-
-		dmReels = append(dmReels, DMReel{
-			Reel:           *reel,
-			SenderUsername: entry.SenderUsername,
-		})
-	}
-
-	// Download videos + profile pics
-	for i := range dmReels {
-		dr := &dmReels[i]
-		if dr.VideoURL == "" {
-			continue
-		}
-
-		videoFile := filepath.Join(b.cacheDir, fmt.Sprintf("dm_%s.mp4", dr.Code))
-		pfpFile := filepath.Join(b.cacheDir, fmt.Sprintf("dm_%s_pfp.jpg", dr.Code))
-
-		data := b.fetchURLs(dmCtx, []string{dr.VideoURL, dr.ProfilePicUrl})
-		if len(data) >= 1 && len(data[0]) > 0 {
-			os.WriteFile(videoFile, data[0], 0644)
-			dr.VideoPath = videoFile
-		}
-		if len(data) >= 2 && len(data[1]) > 0 {
-			os.WriteFile(pfpFile, data[1], 0644)
-			dr.PfpPath = pfpFile
+	// Stable order by first-seen sender
+	for i := 1; i < len(result); i++ {
+		for j := i; j > 0 && friends[result[j].Username].order < friends[result[j-1].Username].order; j-- {
+			result[j], result[j-1] = result[j-1], result[j]
 		}
 	}
 
-	// Store & emit
-	b.dmReelsMu.Lock()
-	b.dmReels = dmReels
-	b.dmReelsMu.Unlock()
+	b.dmMu.Lock()
+	b.dmFriends = result
+	b.dmMu.Unlock()
 
-	b.events <- Event{Type: EventDMReelsReady, Count: len(dmReels)}
+	// Park the DM window so no further traffic hits the interceptor.
+	chromedp.Run(b.dmCtx, chromedp.Navigate("about:blank"))
+
+	b.events <- Event{Type: EventDMReelsReady, Count: len(result)}
 }
 
-// processDMFetchEvent handles a paused fetch event on the DM tab.
-// Routes thread responses and reel responses to their respective channels.
-func (b *ChromeBackend) processDMFetchEvent(ctx context.Context, e *fetch.EventRequestPaused, threadBodies chan<- string, reelBodies chan<- string) {
-	var body []byte
-	err := chromedp.Run(ctx,
-		chromedp.ActionFunc(func(actCtx context.Context) error {
-			data, err := fetch.GetResponseBody(e.RequestID).Do(actCtx)
-			if err != nil {
-				return err
-			}
-			body = data
-			return nil
-		}),
-	)
-
-	if err == nil {
-		bodyStr := string(body)
-		if strings.Contains(bodyStr, "get_slide_thread_nullable") {
-			threadBodies <- bodyStr
-		} else if strings.Contains(bodyStr, "xdt_api__v1__clips__home__connection_v2") {
-			reelBodies <- bodyStr
-		}
+// GetDMFriends returns a copy of the DM-friend list with their reel entries.
+func (b *ChromeBackend) GetDMFriends() []DMFriend {
+	b.dmMu.RLock()
+	defer b.dmMu.RUnlock()
+	out := make([]DMFriend, len(b.dmFriends))
+	for i, f := range b.dmFriends {
+		entries := make([]DMReelEntry, len(f.Entries))
+		copy(entries, f.Entries)
+		out[i] = DMFriend{Username: f.Username, Entries: entries}
 	}
-
-	// Always continue the request
-	chromedp.Run(ctx,
-		chromedp.ActionFunc(func(actCtx context.Context) error {
-			return fetch.ContinueRequest(e.RequestID).Do(actCtx)
-		}),
-	)
+	return out
 }
 
-// firstReelFromResponse parses a clips response and returns the first Reel, or nil.
-func firstReelFromResponse(body string) *Reel {
-	var resp reelResponse
-	if err := json.Unmarshal([]byte(body), &resp); err != nil {
-		return nil
-	}
-
-	if len(resp.Data.Connection.Edges) == 0 {
-		return nil
-	}
-
-	media := resp.Data.Connection.Edges[0].Node.Media
-
-	videoURL := strings.ReplaceAll(media.VideoVersions[0].URL, "\\u0026", "&")
-
-	caption := ""
-	if media.Caption != nil {
-		caption = media.Caption.Text
-	}
-
-	var music *MusicInfo
-	if media.ClipsMetadata.MusicInfo != nil {
-		info := media.ClipsMetadata.MusicInfo.MusicAssetInfo
-		music = &MusicInfo{
-			Title:      info.Title,
-			Artist:     info.DisplayArtist,
-			IsExplicit: info.IsExplicit,
-		}
-	}
-
-	return &Reel{
-		PK:               media.PK,
-		Code:             media.Code,
-		VideoURL:         videoURL,
-		ProfilePicUrl:    media.User.ProfilePicUrl,
-		Username:         media.User.Username,
-		Caption:          caption,
-		Liked:            media.HasLiked,
-		LikeCount:        media.LikeCount,
-		IsVerified:       media.User.IsVerified,
-		CommentCount:     media.CommentCount,
-		CommentsDisabled: media.CommentsDisabled,
-		Music:            music,
-		CanViewerReshare: media.CanViewerReshare,
-	}
-}
-
-// GetDMReels returns a copy of the DM reels list.
-func (b *ChromeBackend) GetDMReels() []DMReel {
-	b.dmReelsMu.RLock()
-	defer b.dmReelsMu.RUnlock()
-	result := make([]DMReel, len(b.dmReels))
-	copy(result, b.dmReels)
-	return result
-}
-
-// GetDMReelsCount returns the number of DM reels available.
+// GetDMReelsCount returns the total number of DM reel entries across all friends.
 func (b *ChromeBackend) GetDMReelsCount() int {
-	b.dmReelsMu.RLock()
-	defer b.dmReelsMu.RUnlock()
-	return len(b.dmReels)
+	b.dmMu.RLock()
+	defer b.dmMu.RUnlock()
+	total := 0
+	for _, f := range b.dmFriends {
+		total += len(f.Entries)
+	}
+	return total
+}
+
+// findFriend returns (entries, true) if the username has any DM reel entries.
+func (b *ChromeBackend) findFriend(username string) ([]DMReelEntry, bool) {
+	b.dmMu.RLock()
+	defer b.dmMu.RUnlock()
+	for _, f := range b.dmFriends {
+		if f.Username == username {
+			return f.Entries, true
+		}
+	}
+	return nil, false
+}
+
+// EnterFriendMode flips to the secondary window and navigates to the first reel
+// shared by `username`. Subsequent user actions (ToggleLike, OpenComments, etc.)
+// will operate on that window via activeCtx().
+func (b *ChromeBackend) EnterFriendMode(username string) error {
+	if _, ok := b.findFriend(username); !ok {
+		return fmt.Errorf("no DM reels from %s", username)
+	}
+	b.modeMu.Lock()
+	b.viewMode = ViewModeFriend
+	b.activeFriend = username
+	b.modeMu.Unlock()
+	return b.gotoFriendEntry(0)
+}
+
+// ExitFriendMode flips back to the main feed and parks the DM window on about:blank
+// (which also stops any background video playback there).
+func (b *ChromeBackend) ExitFriendMode() {
+	b.modeMu.Lock()
+	b.viewMode = ViewModeFeed
+	b.activeFriend = ""
+	b.friendCursor = 0
+	b.modeMu.Unlock()
+
+	if b.dmCtx != nil {
+		chromedp.Run(b.dmCtx, chromedp.Navigate("about:blank"))
+	}
+}
+
+// NextFriendReel advances to the next reel from the active friend. If there's
+// no next reel, it auto-exits friend mode (user has "scrolled past" their list).
+func (b *ChromeBackend) NextFriendReel() error {
+	b.modeMu.RLock()
+	username := b.activeFriend
+	cursor := b.friendCursor
+	b.modeMu.RUnlock()
+
+	if username == "" {
+		return fmt.Errorf("not in friend mode")
+	}
+	entries, ok := b.findFriend(username)
+	if !ok {
+		return fmt.Errorf("active friend %q no longer present", username)
+	}
+	if cursor+1 >= len(entries) {
+		b.ExitFriendMode()
+		return nil
+	}
+	return b.gotoFriendEntry(cursor + 1)
+}
+
+// PrevFriendReel moves to the previous reel. Clamps at 0 (no exit on scroll-up).
+func (b *ChromeBackend) PrevFriendReel() error {
+	b.modeMu.RLock()
+	username := b.activeFriend
+	cursor := b.friendCursor
+	b.modeMu.RUnlock()
+
+	if username == "" {
+		return fmt.Errorf("not in friend mode")
+	}
+	if cursor == 0 {
+		return nil
+	}
+	return b.gotoFriendEntry(cursor - 1)
+}
+
+// gotoFriendEntry navigates the DM window to entries[index], drains a single
+// clip body from dmReelBodies, parses it into a Reel cached by PK, and emits
+// EventFriendReelLoaded.
+func (b *ChromeBackend) gotoFriendEntry(index int) error {
+	b.modeMu.RLock()
+	username := b.activeFriend
+	b.modeMu.RUnlock()
+
+	entries, ok := b.findFriend(username)
+	if !ok {
+		return fmt.Errorf("active friend %q no longer present", username)
+	}
+	if index < 0 || index >= len(entries) {
+		return fmt.Errorf("friend-reel index %d out of range", index)
+	}
+	entry := entries[index]
+
+	b.modeMu.Lock()
+	b.friendCursor = index
+	b.modeMu.Unlock()
+
+	// Drain any stale clip bodies left over from a previous navigation.
+	for drained := false; !drained; {
+		select {
+		case <-b.dmReelBodies:
+		default:
+			drained = true
+		}
+	}
+
+	if err := chromedp.Run(b.dmCtx, chromedp.Navigate(entry.TargetURL)); err != nil {
+		return fmt.Errorf("dm: navigate to %s: %w", entry.TargetURL, err)
+	}
+
+	select {
+	case body := <-b.dmReelBodies:
+		if r := parseFirstReel(body); r != nil {
+			b.modeMu.Lock()
+			b.friendReels[r.PK] = r
+			b.modeMu.Unlock()
+			b.events <- Event{Type: EventFriendReelLoaded}
+		}
+	case <-time.After(10 * time.Second):
+		// Clip response never arrived — TUI will show no reel; user can retry.
+	}
+	return nil
 }

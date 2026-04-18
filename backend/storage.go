@@ -538,7 +538,7 @@ func (b *ChromeBackend) Download(index int) (string, string, error) {
 		urls = append(urls, reel.ProfilePicUrl)
 	}
 
-	data := b.fetchURLs(b.ctx, urls)
+	data := b.fetchURLs(b.activeCtx(), urls)
 	if data[0] == nil {
 		return "", "", fmt.Errorf("failed to download video")
 	}

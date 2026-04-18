@@ -15,8 +15,22 @@ type ChromeBackend struct {
 	orderedReels []Reel
 	seenPKs      map[string]bool
 
-	dmReelsMu sync.RWMutex
-	dmReels   []DMReel
+	// DM session — secondary browser window, lives for the whole backend session
+	dmCtx        context.Context
+	dmCancel     context.CancelFunc
+	dmReelBodies chan string // clip responses captured in the DM window
+
+	// Phase A results: DM inbox grouped by sender
+	dmMu      sync.RWMutex
+	dmFriends []DMFriend
+
+	// Phase B: friend-mode state. modeMu also guards friendReels.
+	modeMu       sync.RWMutex
+	viewMode     ViewMode
+	activeFriend string           // username; only set when viewMode == ViewModeFriend
+	friendCursor int              // index into active friend's Entries
+	friendReels  map[string]*Reel // PK -> captured Reel
+	threadSink   func(string)     // only non-nil during DM inbox collection
 
 	// comments encapsulates all comment-related state
 	comments *CommentsState
@@ -111,11 +125,28 @@ type Backend interface {
 	// FetchMoreComments fetches the next page of comments using stored pagination state
 	FetchMoreComments()
 
-	// GetDMReels returns the list of reels received from friends via DMs
-	GetDMReels() []DMReel
+	// GetDMFriends returns the list of friends who sent reels via DMs, each
+	// with their unseen reel entries. Populated after EventDMReelsReady.
+	GetDMFriends() []DMFriend
 
-	// GetDMReelsCount returns the number of DM reels available
+	// GetDMReelsCount returns the total number of DM reel entries across all friends.
 	GetDMReelsCount() int
+
+	// EnterFriendMode switches the active browser to the secondary DM window,
+	// navigates it to the first reel from `username`, and routes all subsequent
+	// user actions (ToggleLike, OpenComments, etc.) to that window.
+	EnterFriendMode(username string) error
+
+	// ExitFriendMode flips back to the main feed window and parks the DM window on about:blank.
+	ExitFriendMode()
+
+	// NextFriendReel advances to the next reel from the active friend.
+	// If there is no next reel, it auto-exits friend mode.
+	NextFriendReel() error
+
+	// PrevFriendReel moves to the previous reel from the active friend.
+	// Clamped at the first reel.
+	PrevFriendReel() error
 
 	// Download downloads a reel video and profile picture to the cache directory
 	Download(index int) (videoPath string, pfpPath string, err error)
@@ -194,13 +225,27 @@ type Comment struct {
 	GifPath           string // local path to downloaded GIF file
 }
 
-// DMReel represents a reel received from a friend via DMs
-type DMReel struct {
-	Reel
-	SenderUsername string // friend who sent it
-	VideoPath      string // local cache path after download
-	PfpPath        string // local cache path after download
+// DMReelEntry is a pointer to a reel shared in a DM thread — the TargetURL is
+// navigated in the secondary window to resolve the full Reel on demand.
+type DMReelEntry struct {
+	TargetID   string // reel PK
+	TargetURL  string // navigate here to fetch the Reel
+	ReelAuthor string // xmaHeaderTitle, i.e. the reel's original poster
 }
+
+// DMFriend groups all reel entries shared by a single friend via DMs.
+type DMFriend struct {
+	Username string
+	Entries  []DMReelEntry
+}
+
+// ViewMode switches which browser window user actions operate on.
+type ViewMode int
+
+const (
+	ViewModeFeed   ViewMode = iota // main reels feed window
+	ViewModeFriend                 // secondary DM window, browsing one friend's reels
+)
 
 // Friend represents a user shown in the share modal's friend list
 type Friend struct {
@@ -216,7 +261,11 @@ const (
 	EventCommentsCaptured EventType = iota
 	EventShareFriendsLoaded
 	EventSyncComplete
+	// EventDMReelsReady fires after the DM inbox has been scraped and grouped.
+	// Count holds the number of friends who shared reels.
 	EventDMReelsReady
+	// EventFriendReelLoaded fires after a friend-mode navigation resolves a reel.
+	EventFriendReelLoaded
 	EventError
 )
 

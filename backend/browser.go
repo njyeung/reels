@@ -89,7 +89,7 @@ func (b *ChromeBackend) Start(headless bool) error {
 		return fmt.Errorf("failed to enable fetch: %w", err)
 	}
 
-	chromedp.ListenTarget(ctx, b.handleFetchEvent)
+	chromedp.ListenTarget(ctx, b.handleMainFetchEvent)
 
 	// Nav to Instagram
 	err = chromedp.Run(ctx,
@@ -101,6 +101,62 @@ func (b *ChromeBackend) Start(headless bool) error {
 	}
 
 	return nil
+}
+
+// activeCtx returns the chromedp context for whichever window the user is currently
+// interacting with: main feed in ViewModeFeed, secondary DM window in ViewModeFriend.
+// All user-action paths (like, comment, save, share, download) route through this.
+func (b *ChromeBackend) activeCtx() context.Context {
+	b.modeMu.RLock()
+	defer b.modeMu.RUnlock()
+	if b.viewMode == ViewModeFriend && b.dmCtx != nil {
+		return b.dmCtx
+	}
+	return b.ctx
+}
+
+// currentViewPK returns the PK of the reel the user is currently viewing.
+// In friend mode it's derived from the cursor; in feed mode it's a DOM probe
+// against the main window.
+func (b *ChromeBackend) currentViewPK() (string, error) {
+	b.modeMu.RLock()
+	friendMode := b.viewMode == ViewModeFriend
+	username := b.activeFriend
+	cursor := b.friendCursor
+	b.modeMu.RUnlock()
+
+	if friendMode {
+		entries, ok := b.findFriend(username)
+		if !ok || cursor < 0 || cursor >= len(entries) {
+			return "", fmt.Errorf("friend cursor out of range")
+		}
+		return entries[cursor].TargetID, nil
+	}
+	return b.getCurrentPK()
+}
+
+// mutateReelByPK finds a Reel with the given PK in either the main feed cache
+// (orderedReels) or the friend-mode cache (friendReels), and applies mutator
+// while holding the appropriate lock. Returns true if the reel was found.
+// The mutator MUST NOT acquire reelsMu or modeMu.
+func (b *ChromeBackend) mutateReelByPK(pk string, mutator func(*Reel)) bool {
+	b.reelsMu.Lock()
+	for i := range b.orderedReels {
+		if b.orderedReels[i].PK == pk {
+			mutator(&b.orderedReels[i])
+			b.reelsMu.Unlock()
+			return true
+		}
+	}
+	b.reelsMu.Unlock()
+
+	b.modeMu.Lock()
+	defer b.modeMu.Unlock()
+	if r, ok := b.friendReels[pk]; ok {
+		mutator(r)
+		return true
+	}
+	return false
 }
 
 // NeedsLogin checks if login is required by looking for login form elements
@@ -126,8 +182,10 @@ func (b *ChromeBackend) NavigateToReels() error {
 		return fmt.Errorf("failed to navigate to reels: %w", err)
 	}
 
-	// Start DM reel retrieval in the background
-	go b.fetchDMReels()
+	// Spawn secondary DM window and collect the inbox in the background.
+	if err := b.startDMSession(); err == nil {
+		go b.collectDMInbox()
+	}
 
 	// initial sync
 	for i := 0; i < MaxRetries; i++ {
@@ -146,6 +204,7 @@ func (b *ChromeBackend) NavigateToReels() error {
 
 // Stop closes the browser
 func (b *ChromeBackend) Stop() {
+	b.stopDMSession()
 	if b.cancel != nil {
 		b.cancel()
 	}
@@ -160,11 +219,12 @@ func (b *ChromeBackend) Events() <-chan Event {
 	return b.events
 }
 
-// handleFetchEvent processes paused fetch events to capture response bodies
-func (b *ChromeBackend) handleFetchEvent(ev interface{}) {
-	switch e := ev.(type) {
-	case *fetch.EventRequestPaused:
-		go b.processResponse(e)
+// handleMainFetchEvent is the main-feed window's fetch-interception listener.
+// Captured clips feed orderedReels; threadSink is nil because inbox thread
+// responses only land in the DM window.
+func (b *ChromeBackend) handleMainFetchEvent(ev interface{}) {
+	if e, ok := ev.(*fetch.EventRequestPaused); ok {
+		go b.processGraphQLBody(b.ctx, e, b.processReelResponse, nil)
 	}
 }
 
@@ -228,8 +288,35 @@ func (b *ChromeBackend) getCurrentPK() (string, error) {
 	return pk, nil
 }
 
-// GetCurrent returns info about the currently visible reel
+// GetCurrent returns info about the currently visible reel. In friend mode the
+// visible reel is determined by the friendCursor (no DOM probe needed since we
+// navigated there explicitly); in feed mode we query the main feed DOM.
 func (b *ChromeBackend) GetCurrent() (*ReelInfo, error) {
+	b.modeMu.RLock()
+	friendMode := b.viewMode == ViewModeFriend
+	username := b.activeFriend
+	cursor := b.friendCursor
+	b.modeMu.RUnlock()
+
+	if friendMode {
+		entries, ok := b.findFriend(username)
+		if !ok || cursor < 0 || cursor >= len(entries) {
+			return nil, fmt.Errorf("friend-mode cursor out of range")
+		}
+		pk := entries[cursor].TargetID
+		b.modeMu.RLock()
+		reel, ok := b.friendReels[pk]
+		b.modeMu.RUnlock()
+		if !ok {
+			return nil, fmt.Errorf("reel pk=%s not yet captured for friend %s", pk, username)
+		}
+		return &ReelInfo{
+			Index: cursor + 1,
+			Total: len(entries),
+			Reel:  *reel,
+		}, nil
+	}
+
 	pk, err := b.getCurrentPK()
 	if err != nil {
 		return nil, err
@@ -251,8 +338,36 @@ func (b *ChromeBackend) GetCurrent() (*ReelInfo, error) {
 	return nil, fmt.Errorf("reel pk=%s not in captured list", pk)
 }
 
-// GetReel returns reel info by *1-BASED INDEX* from cache, no browser interaction
+// GetReel returns reel info by *1-BASED INDEX* from cache, no browser interaction.
+// In friend mode the index is into the active friend's entries.
 func (b *ChromeBackend) GetReel(index int) (*ReelInfo, error) {
+	b.modeMu.RLock()
+	friendMode := b.viewMode == ViewModeFriend
+	username := b.activeFriend
+	b.modeMu.RUnlock()
+
+	if friendMode {
+		entries, ok := b.findFriend(username)
+		if !ok {
+			return nil, fmt.Errorf("active friend %q no longer present", username)
+		}
+		if index < 1 || index > len(entries) {
+			return nil, fmt.Errorf("index %d out of range (1-%d)", index, len(entries))
+		}
+		pk := entries[index-1].TargetID
+		b.modeMu.RLock()
+		reel, ok := b.friendReels[pk]
+		b.modeMu.RUnlock()
+		if !ok {
+			return nil, fmt.Errorf("reel pk=%s not yet captured", pk)
+		}
+		return &ReelInfo{
+			Index: index,
+			Total: len(entries),
+			Reel:  *reel,
+		}, nil
+	}
+
 	b.reelsMu.RLock()
 	defer b.reelsMu.RUnlock()
 
@@ -268,25 +383,30 @@ func (b *ChromeBackend) GetReel(index int) (*ReelInfo, error) {
 	}, nil
 }
 
-// updateReelComments appends comments to a reel by PK, or sets them if none exist yet.
+// updateReelComments appends comments to a reel by PK (in either the main feed
+// cache or the friend-mode cache), or sets them if none exist yet.
 func (b *ChromeBackend) updateReelComments(pk string, comments []Comment) {
-	b.reelsMu.Lock()
-	defer b.reelsMu.Unlock()
-
-	for i := range b.orderedReels {
-		if b.orderedReels[i].PK == pk {
-			if b.orderedReels[i].Comments != nil {
-				b.orderedReels[i].Comments = append(b.orderedReels[i].Comments, comments...)
-			} else {
-				b.orderedReels[i].Comments = comments
-			}
-			return
+	b.mutateReelByPK(pk, func(r *Reel) {
+		if r.Comments != nil {
+			r.Comments = append(r.Comments, comments...)
+		} else {
+			r.Comments = comments
 		}
-	}
+	})
 }
 
-// GetTotal returns total number of captured reels
+// GetTotal returns total number of captured reels in the active view.
 func (b *ChromeBackend) GetTotal() int {
+	b.modeMu.RLock()
+	friendMode := b.viewMode == ViewModeFriend
+	username := b.activeFriend
+	b.modeMu.RUnlock()
+
+	if friendMode {
+		entries, _ := b.findFriend(username)
+		return len(entries)
+	}
+
 	b.reelsMu.RLock()
 	defer b.reelsMu.RUnlock()
 	return len(b.orderedReels)
@@ -420,7 +540,7 @@ func (b *ChromeBackend) ToggleLike() (bool, error) {
 	}
 
 	// Get the current reel's PK first
-	pk, err := b.getCurrentPK()
+	pk, err := b.currentViewPK()
 	if err != nil {
 		return false, err
 	}
@@ -458,7 +578,7 @@ func (b *ChromeBackend) ToggleLike() (bool, error) {
 		})()
 	`
 	var found bool
-	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &found)); err != nil {
+	if err := chromedp.Run(b.activeCtx(), chromedp.Evaluate(js, &found)); err != nil {
 		return false, err
 	}
 	if !found {
@@ -466,21 +586,15 @@ func (b *ChromeBackend) ToggleLike() (bool, error) {
 	}
 
 	// Now use chromedp's native click on the marked element
-	if err := chromedp.Run(b.ctx,
+	if err := chromedp.Run(b.activeCtx(),
 		chromedp.Click(`[data-reels-like-btn="true"]`, chromedp.ByQuery),
 	); err != nil {
 		return false, err
 	}
 
-	// Toggle like in the stored reel
-	b.reelsMu.Lock()
-	for i := range b.orderedReels {
-		if b.orderedReels[i].PK == pk {
-			b.orderedReels[i].Liked = !b.orderedReels[i].Liked
-			break
-		}
-	}
-	b.reelsMu.Unlock()
+	b.mutateReelByPK(pk, func(r *Reel) {
+		r.Liked = !r.Liked
+	})
 
 	return true, nil
 }
@@ -491,7 +605,7 @@ func (b *ChromeBackend) ToggleSave() (bool, error) {
 		return false, fmt.Errorf("Still syncing to reel")
 	}
 
-	pk, err := b.getCurrentPK()
+	pk, err := b.currentViewPK()
 	if err != nil {
 		return false, err
 	}
@@ -528,28 +642,22 @@ func (b *ChromeBackend) ToggleSave() (bool, error) {
 		})()
 	`
 	var found bool
-	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &found)); err != nil {
+	if err := chromedp.Run(b.activeCtx(), chromedp.Evaluate(js, &found)); err != nil {
 		return false, err
 	}
 	if !found {
 		return false, nil
 	}
 
-	if err := chromedp.Run(b.ctx,
+	if err := chromedp.Run(b.activeCtx(),
 		chromedp.Click(`[data-reels-save-btn="true"]`, chromedp.ByQuery),
 	); err != nil {
 		return false, err
 	}
 
-	// Toggle saved in the stored reel
-	b.reelsMu.Lock()
-	for i := range b.orderedReels {
-		if b.orderedReels[i].PK == pk {
-			b.orderedReels[i].Saved = !b.orderedReels[i].Saved
-			break
-		}
-	}
-	b.reelsMu.Unlock()
+	b.mutateReelByPK(pk, func(r *Reel) {
+		r.Saved = !r.Saved
+	})
 
 	return true, nil
 }
@@ -560,7 +668,7 @@ func (b *ChromeBackend) OpenComments() {
 		return
 	}
 
-	pk, err := b.getCurrentPK()
+	pk, err := b.currentViewPK()
 	if err != nil {
 		return
 	}
@@ -600,14 +708,11 @@ func (b *ChromeBackend) getCommentsPagination() *CommentsPagination {
 	if pk == "" {
 		return nil
 	}
-	b.reelsMu.RLock()
-	defer b.reelsMu.RUnlock()
-	for i := range b.orderedReels {
-		if b.orderedReels[i].PK == pk {
-			return b.orderedReels[i].CommentsPagination
-		}
-	}
-	return nil
+	var out *CommentsPagination
+	b.mutateReelByPK(pk, func(r *Reel) {
+		out = r.CommentsPagination
+	})
+	return out
 }
 
 // setCommentsPagination updates pagination fields on the currently open comments reel.
@@ -616,18 +721,13 @@ func (b *ChromeBackend) setCommentsPagination(cursor string, hasNextPage bool) {
 	if pk == "" {
 		return
 	}
-	b.reelsMu.Lock()
-	defer b.reelsMu.Unlock()
-	for i := range b.orderedReels {
-		if b.orderedReels[i].PK == pk {
-			if b.orderedReels[i].CommentsPagination == nil {
-				b.orderedReels[i].CommentsPagination = &CommentsPagination{}
-			}
-			b.orderedReels[i].CommentsPagination.Cursor = cursor
-			b.orderedReels[i].CommentsPagination.HasNextPage = hasNextPage
-			return
+	b.mutateReelByPK(pk, func(r *Reel) {
+		if r.CommentsPagination == nil {
+			r.CommentsPagination = &CommentsPagination{}
 		}
-	}
+		r.CommentsPagination.Cursor = cursor
+		r.CommentsPagination.HasNextPage = hasNextPage
+	})
 }
 
 // enableCommentsPagination stores the request template and marks pagination as validated.
@@ -636,18 +736,13 @@ func (b *ChromeBackend) enableCommentsPagination(template string) {
 	if pk == "" {
 		return
 	}
-	b.reelsMu.Lock()
-	defer b.reelsMu.Unlock()
-	for i := range b.orderedReels {
-		if b.orderedReels[i].PK == pk {
-			if b.orderedReels[i].CommentsPagination == nil {
-				b.orderedReels[i].CommentsPagination = &CommentsPagination{}
-			}
-			b.orderedReels[i].CommentsPagination.RequestTemplate = template
-			b.orderedReels[i].CommentsPagination.PaginationEnabled = true
-			return
+	b.mutateReelByPK(pk, func(r *Reel) {
+		if r.CommentsPagination == nil {
+			r.CommentsPagination = &CommentsPagination{}
 		}
-	}
+		r.CommentsPagination.RequestTemplate = template
+		r.CommentsPagination.PaginationEnabled = true
+	})
 }
 
 // clickCloseButton finds and clicks the Close button in the browser
@@ -670,11 +765,11 @@ func (b *ChromeBackend) clickCloseButton() {
 		})()
 	`
 	var found bool
-	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &found)); err != nil || !found {
+	if err := chromedp.Run(b.activeCtx(), chromedp.Evaluate(js, &found)); err != nil || !found {
 		return
 	}
 
-	chromedp.Run(b.ctx,
+	chromedp.Run(b.activeCtx(),
 		chromedp.Click(`[data-reels-close-btn="true"]`, chromedp.ByQuery),
 	)
 }
@@ -713,11 +808,11 @@ func (b *ChromeBackend) clickCommentsButton() {
 		})()
 	`
 	var found bool
-	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &found)); err != nil || !found {
+	if err := chromedp.Run(b.activeCtx(), chromedp.Evaluate(js, &found)); err != nil || !found {
 		return
 	}
 
-	chromedp.Run(b.ctx,
+	chromedp.Run(b.activeCtx(),
 		chromedp.Click(`[data-reels-comment-btn="true"]`, chromedp.ByQuery),
 	)
 }
@@ -761,16 +856,17 @@ func (b *ChromeBackend) OpenSharePanel() {
 		})()
 	`
 	var found bool
-	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &found)); err != nil || !found {
+	if err := chromedp.Run(b.activeCtx(),
+		chromedp.Evaluate(js, &found)); err != nil || !found {
 		return
 	}
 
-	chromedp.Run(b.ctx,
+	chromedp.Run(b.activeCtx(),
 		chromedp.Click(`[data-reels-share-btn="true"]`, chromedp.ByQuery),
 	)
 
 	// Wait for the share modal to render
-	chromedp.Run(b.ctx,
+	chromedp.Run(b.activeCtx(),
 		chromedp.WaitVisible(`img[alt="User avatar"]`, chromedp.ByQuery),
 	)
 	// Scrape friend list from the DOM
@@ -803,7 +899,7 @@ func (b *ChromeBackend) OpenSharePanel() {
 	`
 
 	var result string
-	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &result)); err != nil {
+	if err := chromedp.Run(b.activeCtx(), chromedp.Evaluate(js, &result)); err != nil {
 		return
 	}
 
@@ -821,7 +917,7 @@ func (b *ChromeBackend) OpenSharePanel() {
 		urls[i] = r.ImgSrc
 	}
 
-	data := b.fetchURLs(b.ctx, urls)
+	data := b.fetchURLs(b.activeCtx(), urls)
 
 	friends := make([]Friend, len(raw))
 	for i, r := range raw {
@@ -867,11 +963,11 @@ func (b *ChromeBackend) ToggleShareFriend(index int) {
 	`, index)
 
 	var found bool
-	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &found)); err != nil || !found {
+	if err := chromedp.Run(b.activeCtx(), chromedp.Evaluate(js, &found)); err != nil || !found {
 		return
 	}
 
-	chromedp.Run(b.ctx,
+	chromedp.Run(b.activeCtx(),
 		chromedp.Click(`[data-reels-share-friend="true"]`, chromedp.ByQuery),
 	)
 }
@@ -900,12 +996,12 @@ func (b *ChromeBackend) SendShare() {
 		})()
 	`
 	var found bool
-	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &found)); err != nil || !found {
+	if err := chromedp.Run(b.activeCtx(), chromedp.Evaluate(js, &found)); err != nil || !found {
 		b.clickCloseButton()
 		return
 	}
 
-	chromedp.Run(b.ctx,
+	chromedp.Run(b.activeCtx(),
 		chromedp.Click(`[data-reels-send-btn="true"]`, chromedp.ByQuery),
 	)
 }
