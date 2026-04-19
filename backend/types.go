@@ -153,20 +153,20 @@ type FloatingContextItem struct {
 
 // Reel represents a single Instagram reel with metadata
 type Reel struct {
-	PK                 string
-	Code               string
-	VideoURL           string
-	ProfilePicUrl      string
-	Username           string
-	Caption            string
-	Liked              bool
-	Saved              bool
-	Reposted           bool
-	LikeCount          int
-	RepostCount        int
-	IsVerified         bool
-	CommentCount       int
-	CommentsDisabled   bool
+	PK                   string
+	Code                 string
+	VideoURL             string
+	ProfilePicUrl        string
+	Username             string
+	Caption              string
+	Liked                bool
+	Saved                bool
+	Reposted             bool
+	LikeCount            int
+	RepostCount          int
+	IsVerified           bool
+	CommentCount         int
+	CommentsDisabled     bool
 	Music                *MusicInfo
 	CanViewerReshare     bool
 	FloatingContextItems []FloatingContextItem
