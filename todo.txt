@@ -1,4 +1,4 @@
 1. Add gifs to npm package readme
 2. Fix send button disabled bug (done)
-3. Show friends who have reposted/liked a reel
-4. Reposting reels
+3. Show friends who have reposted/liked a reel (done)
+4. Reposting reels (done)

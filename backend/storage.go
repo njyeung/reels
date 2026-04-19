@@ -31,6 +31,7 @@ type Settings struct {
 	KeysMute         []string
 	KeysPause        []string
 	KeysLike         []string
+	KeysRepost       []string
 	KeysNavbar       []string
 	KeysReelSizeInc  []string
 	KeysReelSizeDec  []string
@@ -200,6 +201,7 @@ func defaultSettings() Settings {
 		KeysPause:        []string{"p"},
 		KeysMute:         []string{"m"},
 		KeysLike:         []string{" "},
+		KeysRepost:       []string{"r"},
 		KeysNavbar:       []string{"e"},
 		KeysReelSizeInc:  []string{"="},
 		KeysReelSizeDec:  []string{"-"},
@@ -294,6 +296,7 @@ func LoadSettings(configDir string) {
 	loadKey(conf, "key_pause", &s.KeysPause)
 	loadKey(conf, "key_mute", &s.KeysMute)
 	loadKey(conf, "key_like", &s.KeysLike)
+	loadKey(conf, "key_repost", &s.KeysRepost)
 	loadKey(conf, "key_navbar", &s.KeysNavbar)
 	loadKey(conf, "key_vol_up", &s.KeysVolUp)
 	loadKey(conf, "key_vol_down", &s.KeysVolDown)
@@ -345,6 +348,7 @@ func writeConf(path string, s Settings) error {
 	writeKeys(&b, "key_pause", s.KeysPause)
 	writeKeys(&b, "key_mute", s.KeysMute)
 	writeKeys(&b, "key_like", s.KeysLike)
+	writeKeys(&b, "key_repost", s.KeysRepost)
 	writeKeys(&b, "key_navbar", s.KeysNavbar)
 	writeKeys(&b, "key_vol_up", s.KeysVolUp)
 	writeKeys(&b, "key_vol_down", s.KeysVolDown)
@@ -481,32 +485,40 @@ func (b *ChromeBackend) fetchURLs(urls []string) [][]byte {
 }
 
 // Download downloads a reel video and profile picture to the cache directory
-func (b *ChromeBackend) Download(index int) (string, string, error) {
+func (b *ChromeBackend) Download(index int) (string, string, []string, error) {
 	b.reelsMu.RLock()
 	if index < 1 || index > len(b.orderedReels) {
 		b.reelsMu.RUnlock()
-		return "", "", fmt.Errorf("index out of range")
+		return "", "", nil, fmt.Errorf("index out of range")
 	}
 	reel := b.orderedReels[index-1]
 	b.reelsMu.RUnlock()
 
 	if reel.VideoURL == "" {
-		return "", "", fmt.Errorf("no video URL")
+		return "", "", nil, fmt.Errorf("no video URL")
 	}
 
 	videoFile := filepath.Join(b.cacheDir, fmt.Sprintf("%03d_%s.mp4", index, reel.Code))
 	pfpFile := filepath.Join(b.cacheDir, fmt.Sprintf("%03d_%s_pfp.jpg", index, reel.Code))
 
+	floatingPfpPaths := make([]string, len(reel.FloatingContextItems))
+	for i, item := range reel.FloatingContextItems {
+		if item.ProfilePicUrl == "" {
+			continue
+		}
+		floatingPfpPaths[i] = filepath.Join(b.cacheDir, fmt.Sprintf("%03d_%s_fc%d.jpg", index, reel.Code, i))
+	}
+
 	// check cache to see if already downloaded
 	if videoCache.has(videoFile) {
-		return videoFile, pfpFile, nil
+		return videoFile, pfpFile, floatingPfpPaths, nil
 	}
 
 	cacheMu.Lock()
 	// re-check under lock
 	if videoCache.has(videoFile) {
 		cacheMu.Unlock()
-		return videoFile, pfpFile, nil
+		return videoFile, pfpFile, floatingPfpPaths, nil
 	}
 
 	// check if in the progress of being downloaded
@@ -514,7 +526,7 @@ func (b *ChromeBackend) Download(index int) (string, string, error) {
 		cacheMu.Unlock()
 		<-ch // Wait for the other download to complete
 		if videoCache.has(videoFile) {
-			return videoFile, pfpFile, nil
+			return videoFile, pfpFile, floatingPfpPaths, nil
 		}
 		cacheMu.Lock()
 	}
@@ -531,25 +543,44 @@ func (b *ChromeBackend) Download(index int) (string, string, error) {
 		close(done)
 	}()
 
-	// Download video and profile pic in parallel
+	// Download video, creator pfp, and any floating-context pfps in parallel.
+	// urls[0] is video, urls[1] is creator pfp (if present), then floating pfps.
 	urls := []string{reel.VideoURL}
-	if reel.ProfilePicUrl != "" {
+	hasCreatorPfp := reel.ProfilePicUrl != ""
+	if hasCreatorPfp {
 		urls = append(urls, reel.ProfilePicUrl)
+	}
+	floatingStart := len(urls)
+	floatingIdx := make([]int, 0, len(reel.FloatingContextItems))
+	for i, item := range reel.FloatingContextItems {
+		if item.ProfilePicUrl == "" {
+			continue
+		}
+		urls = append(urls, item.ProfilePicUrl)
+		floatingIdx = append(floatingIdx, i)
 	}
 
 	data := b.fetchURLs(urls)
 	if data[0] == nil {
-		return "", "", fmt.Errorf("failed to download video")
+		return "", "", nil, fmt.Errorf("failed to download video")
 	}
 
 	if err := os.WriteFile(videoFile, data[0], 0644); err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 	videoCache.add(videoFile)
 
-	if len(data) > 1 && data[1] != nil {
+	if hasCreatorPfp && len(data) > 1 && data[1] != nil {
 		b.cacheReelPfp(fmt.Sprintf("%03d_%s_pfp.jpg", index, reel.Code), data[1])
 	}
 
-	return videoFile, pfpFile, nil
+	for k, i := range floatingIdx {
+		d := data[floatingStart+k]
+		if d == nil {
+			continue
+		}
+		b.cacheReelPfp(fmt.Sprintf("%03d_%s_fc%d.jpg", index, reel.Code, i), d)
+	}
+
+	return videoFile, pfpFile, floatingPfpPaths, nil
 }

@@ -65,9 +65,11 @@ type reelResponse struct {
 						PK               string `json:"pk"`
 						Code             string `json:"code"`
 						HasLiked         bool   `json:"has_liked"`
+						HasViewerSaved   bool   `json:"has_viewer_saved"`
 						CommentsDisabled bool   `json:"comments_disabled"`
 						LikeCount        int    `json:"like_count"`
 						CommentCount     int    `json:"comment_count"`
+						MediaRepostCount int    `json:"media_repost_count"`
 						VideoVersions    []struct {
 							URL   string `json:"url"`
 							Width int    `json:"width"`
@@ -90,7 +92,20 @@ type reelResponse struct {
 						Caption *struct {
 							Text string `json:"text"`
 						} `json:"caption"`
-						CanViewerReshare bool `json:"can_viewer_reshare"`
+						CanViewerReshare     bool `json:"can_viewer_reshare"`
+						FloatingContextItems []struct {
+							Type string `json:"floating_context_item_type"`
+							User struct {
+								Username      string `json:"username"`
+								ProfilePicUrl string `json:"profile_pic_url"`
+							} `json:"user"`
+							MediaNote *struct {
+								Text string `json:"text"`
+							} `json:"media_note"`
+							Comment *struct {
+								Text string `json:"text"`
+							} `json:"comment"`
+						} `json:"floating_context_items"`
 					} `json:"media"`
 				} `json:"node"`
 			} `json:"edges"`
@@ -370,20 +385,38 @@ func (b *ChromeBackend) processReelResponse(body string) {
 			}
 		}
 
+		var floatingItems []FloatingContextItem
+		for _, item := range media.FloatingContextItems {
+			fi := FloatingContextItem{
+				Type:          item.Type,
+				Username:      item.User.Username,
+				ProfilePicUrl: strings.ReplaceAll(item.User.ProfilePicUrl, "\\u0026", "&"),
+			}
+			if item.MediaNote != nil {
+				fi.Text = item.MediaNote.Text
+			} else if item.Comment != nil {
+				fi.Text = item.Comment.Text
+			}
+			floatingItems = append(floatingItems, fi)
+		}
+
 		reel := Reel{
-			PK:               media.PK,
-			Code:             media.Code,
-			VideoURL:         videoURL,
-			ProfilePicUrl:    media.User.ProfilePicUrl,
-			Username:         media.User.Username,
-			Caption:          caption,
-			Liked:            media.HasLiked,
-			LikeCount:        media.LikeCount,
-			IsVerified:       media.User.IsVerified,
-			CommentCount:     media.CommentCount,
-			CommentsDisabled: media.CommentsDisabled,
-			Music:            music,
-			CanViewerReshare: media.CanViewerReshare,
+			PK:                   media.PK,
+			Code:                 media.Code,
+			VideoURL:             videoURL,
+			ProfilePicUrl:        media.User.ProfilePicUrl,
+			Username:             media.User.Username,
+			Caption:              caption,
+			Liked:                media.HasLiked,
+			Saved:                media.HasViewerSaved,
+			LikeCount:            media.LikeCount,
+			RepostCount:          media.MediaRepostCount,
+			IsVerified:           media.User.IsVerified,
+			CommentCount:         media.CommentCount,
+			CommentsDisabled:     media.CommentsDisabled,
+			Music:                music,
+			CanViewerReshare:     media.CanViewerReshare,
+			FloatingContextItems: floatingItems,
 		}
 		b.orderedReels = append(b.orderedReels, reel)
 		newCount++

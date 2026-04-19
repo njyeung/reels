@@ -74,6 +74,9 @@ type Backend interface {
 	// ToggleLike likes/unlikes the current reel
 	ToggleLike() (bool, error)
 
+	// ToggleRepost reposts/unreposts the current reel
+	ToggleRepost() (bool, error)
+
 	// ToggleSave bookmarks/unbookmarks the current reel
 	ToggleSave() (bool, error)
 
@@ -94,8 +97,10 @@ type Backend interface {
 	ToggleShareFriend(index int)
 
 	// SendShare clicks the Send button in the share modal and closes it.
-	// Returns an error if the button is disabled (Instagram web UI is still processing).
-	SendShare() error
+	// Returns (sent, err): sent=true if a share was sent, sent=false with
+	// err=nil when nothing was selected (modal closed without sending), and
+	// a non-nil err if the button is disabled or a runtime error occurred.
+	SendShare() (bool, error)
 
 	// OpenComments opens the current reel's comment section
 	OpenComments()
@@ -109,8 +114,9 @@ type Backend interface {
 	// FetchMoreComments fetches the next page of comments using stored pagination state
 	FetchMoreComments()
 
-	// Download downloads a reel video and profile picture to the cache directory
-	Download(index int) (videoPath string, pfpPath string, err error)
+	// Download downloads a reel video, creator profile pic, and any floating-
+	// context item pfps (reposts/likes from friends) to the cache directory.
+	Download(index int) (videoPath string, pfpPath string, floatingPfpPaths []string, err error)
 
 	// Events returns a channel for backend events (new reels captured, etc)
 	Events() <-chan Event
@@ -136,6 +142,15 @@ type MusicInfo struct {
 	IsExplicit bool
 }
 
+// FloatingContextItem represents a friend-activity badge on a reel,
+// e.g. a repost (with optional note), a like, or a comment from a mutual.
+type FloatingContextItem struct {
+	Type          string // REPOSTED_BY, LIKED_BY, etc.
+	Username      string
+	ProfilePicUrl string
+	Text          string // media_note.text or comment.text, empty when absent
+}
+
 // Reel represents a single Instagram reel with metadata
 type Reel struct {
 	PK                 string
@@ -146,14 +161,17 @@ type Reel struct {
 	Caption            string
 	Liked              bool
 	Saved              bool
+	Reposted           bool
 	LikeCount          int
+	RepostCount        int
 	IsVerified         bool
 	CommentCount       int
 	CommentsDisabled   bool
-	Music              *MusicInfo
-	CanViewerReshare   bool
-	Comments           []Comment           // cached comments (nil = not fetched yet)
-	CommentsPagination *CommentsPagination // cached pagination state for resuming
+	Music                *MusicInfo
+	CanViewerReshare     bool
+	FloatingContextItems []FloatingContextItem
+	Comments             []Comment           // cached comments (nil = not fetched yet)
+	CommentsPagination   *CommentsPagination // cached pagination state for resuming
 }
 
 // ReelInfo includes the reel data plus its position in the feed

@@ -23,8 +23,9 @@ type (
 	backendEventMsg  backend.Event
 	videoErrorMsg    struct{ err error }
 	videoReadyMsg    struct {
-		index int
-		pfp   *player.PFP
+		index        int
+		pfp          *player.PFP
+		floatingPfps []*player.PFP
 	}
 	musicTickMsg         struct{}
 	shareResetMsg        struct{}
@@ -32,6 +33,7 @@ type (
 	volumeFadeTickMsg    struct{}
 	volumeResetMsg       struct{}
 	shareSentMsg         struct{}
+	shareClosedMsg       struct{}
 	shareFailedMsg       struct{}
 	versionCheckMsg      struct{ latest string }
 	loadingMsgsMsg       struct{ messages []string }
@@ -107,7 +109,8 @@ type Model struct {
 	volumeFadeStep int
 	volumeGen      int
 
-	reelPFP *player.PFP
+	reelPFP      *player.PFP
+	floatingPfps []*player.PFP
 
 	version         string
 	updateAvailable string
@@ -264,6 +267,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.reelPFP != nil {
 			m.reelPFP.ResizeToCells(2)
 		}
+		for _, p := range m.floatingPfps {
+			p.ResizeToCells(2)
+		}
 		if m.share.IsOpen() {
 			m.share.ResizePfps()
 		} else if m.comments.IsOpen() {
@@ -415,6 +421,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.shareSending = false
 		return m, nil
 
+	case shareClosedMsg:
+		if m.share.IsOpen() {
+			m.share.Close()
+			m.closePanelLayout()
+		}
+		m.shareSending = false
+		return m, nil
+
 	case shareSentMsg:
 		if m.share.IsOpen() {
 			m.share.Close()
@@ -431,6 +445,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case videoReadyMsg:
 		m.status = statusNone
 		m.reelPFP = msg.pfp
+		m.floatingPfps = msg.floatingPfps
 		m.updateVideoPosition()
 		m.updateImages()
 		go m.prefetch(msg.index)

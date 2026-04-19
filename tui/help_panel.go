@@ -46,6 +46,7 @@ func (hp *HelpPanel) buildEntries() {
 		{displayKeys(config.KeysPrevious), "prev"},
 		{displayKeys(config.KeysPause), "pause"},
 		{displayKeys(config.KeysLike), "like"},
+		{displayKeys(config.KeysRepost), "repost"},
 		{displayKeys(config.KeysMute), "mute"},
 		{displayKeys(config.KeysSeekForward), "seek forward"},
 		{displayKeys(config.KeysSeekBackward), "seek backward"},

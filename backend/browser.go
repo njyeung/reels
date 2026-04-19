@@ -472,6 +472,74 @@ func (b *ChromeBackend) ToggleLike() (bool, error) {
 	return true, nil
 }
 
+// ToggleRepost clicks the repost button for the current reel
+func (b *ChromeBackend) ToggleRepost() (bool, error) {
+	if b.IsSyncing() {
+		return false, fmt.Errorf("Still syncing to reel")
+	}
+
+	pk, err := b.getCurrentPK()
+	if err != nil {
+		return false, err
+	}
+
+	js := `
+		(() => {
+			document.querySelectorAll('[data-reels-repost-btn]').forEach(el => {
+				el.removeAttribute('data-reels-repost-btn');
+			});
+
+			const videos = document.querySelectorAll('video[playsinline]');
+			for (const video of videos) {
+				const rect = video.getBoundingClientRect();
+				const viewportHeight = window.innerHeight;
+				const videoCenter = rect.top + rect.height / 2;
+				if (videoCenter > 0 && videoCenter < viewportHeight) {
+					let parent = video.parentElement;
+					for (let i = 0; i < 15; i++) {
+						if (!parent) break;
+						const svgs = parent.querySelectorAll('svg[aria-label="Repost"]');
+						for (const svg of svgs) {
+							if (svg.getAttribute('viewBox') !== '0 0 24 24') continue;
+							const btn = svg.closest('[role="button"]');
+							if (btn) {
+								btn.setAttribute('data-reels-repost-btn', 'true');
+								return true;
+							}
+						}
+						parent = parent.parentElement;
+					}
+				}
+			}
+			return false;
+		})()
+	`
+	var found bool
+	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &found)); err != nil {
+		return false, err
+	}
+	if !found {
+		return false, nil
+	}
+
+	if err := chromedp.Run(b.ctx,
+		chromedp.Click(`[data-reels-repost-btn="true"]`, chromedp.ByQuery),
+	); err != nil {
+		return false, err
+	}
+
+	b.reelsMu.Lock()
+	for i := range b.orderedReels {
+		if b.orderedReels[i].PK == pk {
+			b.orderedReels[i].Reposted = !b.orderedReels[i].Reposted
+			break
+		}
+	}
+	b.reelsMu.Unlock()
+
+	return true, nil
+}
+
 // ToggleSave clicks the bookmark/save button for the current reel
 func (b *ChromeBackend) ToggleSave() (bool, error) {
 	if b.IsSyncing() {
@@ -865,10 +933,9 @@ func (b *ChromeBackend) ToggleShareFriend(index int) {
 
 // SendShare clicks the Send button in the share modal.
 // Instagram closes the modal immediately on successful send.
-// Returns an error if the button is disabled (aria-disabled="true").
-func (b *ChromeBackend) SendShare() error {
+func (b *ChromeBackend) SendShare() (bool, error) {
 	if b.IsSyncing() {
-		return fmt.Errorf("syncing")
+		return false, fmt.Errorf("syncing")
 	}
 
 	js := `
@@ -890,21 +957,21 @@ func (b *ChromeBackend) SendShare() error {
 	var result string
 	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &result)); err != nil {
 		b.clickCloseButton()
-		return fmt.Errorf("js error: %w", err)
+		return false, fmt.Errorf("js error: %w", err)
 	}
 
 	switch result {
 	case "disabled":
-		return fmt.Errorf("send button disabled")
+		return false, fmt.Errorf("send button disabled")
 	case "notfound":
 		b.clickCloseButton()
-		return fmt.Errorf("send button not found")
+		return false, nil
 	}
 
 	chromedp.Run(b.ctx,
 		chromedp.Click(`[data-reels-send-btn="true"]`, chromedp.ByQuery),
 	)
-	return nil
+	return true, nil
 }
 
 // GetCommentsReelPK returns which reel we're fetching comments for

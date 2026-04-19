@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"hash/fnv"
+	"math/rand/v2"
 	"os/exec"
 	goruntime "runtime"
 	"slices"
@@ -67,12 +69,18 @@ func (m Model) viewBrowsing() string {
 	heartIcon := "🤍"
 	likeCount := ""
 	commentCount := ""
+	repostIcon := white.Render("⇄")
+	repostCount := ""
 	if m.currentReel != nil {
 		if m.currentReel.Liked {
 			heartIcon = "❤️"
 		}
+		if m.currentReel.Reposted {
+			repostIcon = purple400.Render("⇄")
+		}
 		likeCount = formatLikeCount(m.currentReel.LikeCount)
 		commentCount = formatLikeCount(m.currentReel.CommentCount)
+		repostCount = formatLikeCount(m.currentReel.RepostCount)
 	}
 
 	playPauseIcon := "  "
@@ -102,7 +110,7 @@ func (m Model) viewBrowsing() string {
 		saveIcon = "⚑"
 	}
 
-	rest := " " + likeCount + "   💬 " + commentCount + "   " + saveIcon + "   " + shareIcon + "   " + playPauseIcon + "   " + muteIcon
+	rest := " " + likeCount + "   💬 " + commentCount + "   " + repostIcon + " " + repostCount + "   " + saveIcon + "   " + shareIcon + "   " + playPauseIcon + "   " + muteIcon
 	statusContent := heartIcon + rest
 	contentWidth := 2 + runewidth.StringWidth(rest)
 
@@ -288,6 +296,14 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case slices.Contains(config.KeysRepost, key):
+		if !m.panelOpen() && m.currentReel != nil {
+			if !m.backend.IsSyncing() {
+				m.currentReel.Reposted = !m.currentReel.Reposted
+				go m.backend.ToggleRepost()
+			}
+		}
+
 	case slices.Contains(config.KeysSave, key):
 		if !m.panelOpen() && m.currentReel != nil {
 			if !m.backend.IsSyncing() {
@@ -389,7 +405,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) startPlayback(index int) tea.Cmd {
 	return func() tea.Msg {
-		videoPath, pfpPath, err := m.backend.Download(index)
+		videoPath, pfpPath, floatingPaths, err := m.backend.Download(index)
 		if err != nil {
 			return videoErrorMsg{err}
 		}
@@ -400,10 +416,22 @@ func (m *Model) startPlayback(index int) tea.Cmd {
 				pfp = loaded
 			}
 		}
+		floatingPfps := make([]*player.PFP, 0, len(floatingPaths))
+		for _, p := range floatingPaths {
+			if p == "" {
+				continue
+			}
+			loaded, err := player.LoadPFP(p)
+			if err != nil {
+				continue
+			}
+			loaded.ResizeToCells(2)
+			floatingPfps = append(floatingPfps, loaded)
+		}
 		if err := m.player.Play(videoPath); err != nil {
 			return videoErrorMsg{err}
 		}
-		return videoReadyMsg{index: index, pfp: pfp}
+		return videoReadyMsg{index: index, pfp: pfp, floatingPfps: floatingPfps}
 	}
 }
 
@@ -456,8 +484,12 @@ func volumeFadeColor(step int) string {
 
 func (m Model) sendShare() tea.Cmd {
 	return func() tea.Msg {
-		if err := m.backend.SendShare(); err != nil {
+		sent, err := m.backend.SendShare()
+		if err != nil {
 			return shareFailedMsg{}
+		}
+		if !sent {
+			return shareClosedMsg{}
 		}
 		return shareSentMsg{}
 	}
@@ -585,6 +617,7 @@ func (m *Model) updateImages() {
 	if m.reelPFP != nil {
 		row := max(m.videoRow+player.VideoHeightChars, 1)
 		slots = append(slots, player.ImageSlot{Img: m.reelPFP, Row: row, Col: m.videoCol})
+		slots = append(slots, m.floatingPfpSlots()...)
 	}
 
 	if m.share.IsOpen() {
@@ -600,6 +633,52 @@ func (m *Model) updateImages() {
 	} else {
 		m.player.ClearImages()
 	}
+}
+
+// floatingPfpSlots scatters floating-context reaction pfps (friend reposts/likes)
+// across the bottom-right quarter of the reel. Seeded by the reel's PK so the
+// layout is stable across resizes, panel toggles, and re-navigation.
+func (m *Model) floatingPfpSlots() []player.ImageSlot {
+	if len(m.floatingPfps) == 0 || m.currentReel == nil {
+		return nil
+	}
+
+	const pfpCellH = 2
+	const pfpCellW = 4
+
+	quadW := player.VideoWidthChars / 4
+	quadH := player.VideoHeightChars / 4
+	quadRow := m.videoRow + player.VideoHeightChars - quadH
+	quadCol := m.videoCol + player.VideoWidthChars - quadW
+
+	maxRowOff := max(quadH-pfpCellH, 0)
+	maxColOff := max(quadW-pfpCellW, 0)
+
+	h := fnv.New64a()
+	h.Write([]byte(m.currentReel.PK))
+	seed := h.Sum64()
+	rng := rand.New(rand.NewPCG(seed, seed^0x9E3779B97F4A7C15))
+
+	slots := make([]player.ImageSlot, 0, len(m.floatingPfps))
+	for _, p := range m.floatingPfps {
+		if p == nil {
+			continue
+		}
+		dr := 0
+		if maxRowOff > 0 {
+			dr = rng.IntN(maxRowOff + 1)
+		}
+		dc := 0
+		if maxColOff > 0 {
+			dc = rng.IntN(maxColOff + 1)
+		}
+		slots = append(slots, player.ImageSlot{
+			Img: p,
+			Row: quadRow + dr,
+			Col: quadCol + dc,
+		})
+	}
+	return slots
 }
 
 func copyToClipboard(text string) {
