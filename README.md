@@ -57,6 +57,7 @@ reels
 | `key_seek_backward` | `h` | Seek backward by 5 seconds |
 | `key_seek_forward` | `l` | Seek forward by 5 seconds |
 | `key_like` | `space` | Like/unlike |
+| `key_repost` | `r` | Repost/unrepost current reel |
 | `key_share_select` | `space` | Select friend in share panel. Overrides any other bind while share panel is open |
 | `key_pause` | `p` | Pause/resume current reel |
 | `key_save` | `b` | Save/Unsave (bookmark) current reel |
@@ -157,6 +158,7 @@ key_previous = k
 key_pause = p
 key_mute = m
 key_like = space
+key_repost = r
 key_navbar = e
 key_vol_up = ]
 key_vol_down = [

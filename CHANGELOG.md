@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.9]
+- Add reposting reels (default r)
+- Show friend who have reposted/liked the current reel
+- Fix: Update Instagram comments pagination doc_id to match new frontend
+- Fix: fallback when mp4s have no audio stream
+- Fix: video centering off-by-one
+- Fix: colors 
+
 ## [1.2.8]
 - Auto install Chrome if not found on system (except for Linux ARM64)
 - Black box test harness, does not introduce any new code into user binary
