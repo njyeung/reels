@@ -169,7 +169,8 @@ func validateCommentsRequest(postData string, appID string) bool {
 		return false
 	}
 
-	// Core API identifiers — if these change, Instagram has updated their frontend
+	// Core API identifiers
+	// if these change, Instagram has updated their frontend
 	if params.Get("doc_id") != initialCommentsDocID {
 		return false
 	}
@@ -177,12 +178,10 @@ func validateCommentsRequest(postData string, appID string) bool {
 		return false
 	}
 
-	// App identity from request header
 	if appID != expectedAppID {
 		return false
 	}
 
-	// Session tokens we need for pagination requests
 	if params.Get("lsd") == "" || params.Get("fb_dtsg") == "" {
 		return false
 	}
