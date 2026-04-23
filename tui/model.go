@@ -25,7 +25,8 @@ type (
 	videoReadyMsg    struct {
 		index        int
 		pfp          *player.PFP
-		floatingPfps []*player.PFP
+		floatingPfps  []*player.PFP
+		floatingTypes []string
 	}
 	musicTickMsg         struct{}
 	shareResetMsg        struct{}
@@ -109,8 +110,9 @@ type Model struct {
 	volumeFadeStep int
 	volumeGen      int
 
-	reelPFP      *player.PFP
-	floatingPfps []*player.PFP
+	reelPFP       *player.PFP
+	floatingPfps  []*player.PFP
+	floatingTypes []string
 
 	version         string
 	updateAvailable string
@@ -269,6 +271,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		for _, p := range m.floatingPfps {
 			p.ResizeToCells(2)
+		}
+		if heart := player.HeartIcon(); heart != nil {
+			heart.ResizeToCells(1)
+		}
+		if repost := player.RepostIcon(); repost != nil {
+			repost.ResizeToCells(1)
 		}
 		if m.share.IsOpen() {
 			m.share.ResizePfps()
@@ -446,6 +454,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = statusNone
 		m.reelPFP = msg.pfp
 		m.floatingPfps = msg.floatingPfps
+		m.floatingTypes = msg.floatingTypes
 		m.updateVideoPosition()
 		m.updateImages()
 		go m.prefetch(msg.index)

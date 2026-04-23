@@ -70,9 +70,8 @@ type reelResponse struct {
 						LikeCount        int    `json:"like_count"`
 						CommentCount     int    `json:"comment_count"`
 						MediaRepostCount int    `json:"media_repost_count"`
-						VideoVersions    []struct {
-							URL   string `json:"url"`
-							Width int    `json:"width"`
+						VideoVersions []struct {
+							URL string `json:"url"`
 						} `json:"video_versions"`
 						User struct {
 							Username      string `json:"username"`
@@ -359,14 +358,9 @@ func (b *ChromeBackend) processReelResponse(body string) {
 
 		b.seenPKs[media.PK] = true
 
-		// Find lowest quality video (smaller file size)
 		var videoURL string
-		minWidth := int(^uint(0) >> 1) // max int
-		for _, v := range media.VideoVersions {
-			if v.Width < minWidth {
-				minWidth = v.Width
-				videoURL = strings.ReplaceAll(v.URL, "\\u0026", "&")
-			}
+		if len(media.VideoVersions) > 0 {
+			videoURL = strings.ReplaceAll(media.VideoVersions[0].URL, "\\u0026", "&")
 		}
 
 		caption := ""

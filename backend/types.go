@@ -116,7 +116,7 @@ type Backend interface {
 
 	// Download downloads a reel video, creator profile pic, and any floating-
 	// context item pfps (reposts/likes from friends) to the cache directory.
-	Download(index int) (videoPath string, pfpPath string, floatingPfpPaths []string, err error)
+	Download(index int) (videoPath string, pfpPath string, floatingPfps []FloatingPfpFile, err error)
 
 	// Events returns a channel for backend events (new reels captured, etc)
 	Events() <-chan Event
@@ -143,12 +143,23 @@ type MusicInfo struct {
 }
 
 // FloatingContextItem represents a friend-activity badge on a reel,
-// e.g. a repost (with optional note), a like, or a comment from a mutual.
 type FloatingContextItem struct {
 	Type          string // REPOSTED_BY, LIKED_BY, etc.
 	Username      string
 	ProfilePicUrl string
 	Text          string // media_note.text or comment.text, empty when absent
+}
+
+// Floating-context item types
+const (
+	FloatingTypeReposted = "REPOSTED_BY"
+	FloatingTypeLiked    = "LIKED_BY"
+)
+
+// FloatingPfpFile is a downloaded floating-context pfp paired with its type
+type FloatingPfpFile struct {
+	Path string
+	Type string
 }
 
 // Reel represents a single Instagram reel with metadata

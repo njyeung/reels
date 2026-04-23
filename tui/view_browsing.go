@@ -407,7 +407,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) startPlayback(index int) tea.Cmd {
 	return func() tea.Msg {
-		videoPath, pfpPath, floatingPaths, err := m.backend.Download(index)
+		videoPath, pfpPath, floatingFiles, err := m.backend.Download(index)
 		if err != nil {
 			return videoErrorMsg{err}
 		}
@@ -418,22 +418,24 @@ func (m *Model) startPlayback(index int) tea.Cmd {
 				pfp = loaded
 			}
 		}
-		floatingPfps := make([]*player.PFP, 0, len(floatingPaths))
-		for _, p := range floatingPaths {
-			if p == "" {
+		floatingPfps := make([]*player.PFP, 0, len(floatingFiles))
+		floatingTypes := make([]string, 0, len(floatingFiles))
+		for _, f := range floatingFiles {
+			if f.Path == "" {
 				continue
 			}
-			loaded, err := player.LoadPFP(p)
+			loaded, err := player.LoadPFP(f.Path)
 			if err != nil {
 				continue
 			}
 			loaded.ResizeToCells(2)
 			floatingPfps = append(floatingPfps, loaded)
+			floatingTypes = append(floatingTypes, f.Type)
 		}
 		if err := m.player.Play(videoPath); err != nil {
 			return videoErrorMsg{err}
 		}
-		return videoReadyMsg{index: index, pfp: pfp, floatingPfps: floatingPfps}
+		return videoReadyMsg{index: index, pfp: pfp, floatingPfps: floatingPfps, floatingTypes: floatingTypes}
 	}
 }
 
@@ -661,8 +663,8 @@ func (m *Model) floatingPfpSlots() []player.ImageSlot {
 	seed := h.Sum64()
 	rng := rand.New(rand.NewPCG(seed, seed^0x9E3779B97F4A7C15))
 
-	slots := make([]player.ImageSlot, 0, len(m.floatingPfps))
-	for _, p := range m.floatingPfps {
+	slots := make([]player.ImageSlot, 0, len(m.floatingPfps)*2)
+	for i, p := range m.floatingPfps {
 		if p == nil {
 			continue
 		}
@@ -674,11 +676,28 @@ func (m *Model) floatingPfpSlots() []player.ImageSlot {
 		if maxColOff > 0 {
 			dc = rng.IntN(maxColOff + 1)
 		}
-		slots = append(slots, player.ImageSlot{
-			Img: p,
-			Row: quadRow + dr,
-			Col: quadCol + dc,
-		})
+		row := quadRow + dr
+		col := quadCol + dc
+		slots = append(slots, player.ImageSlot{Img: p, Row: row, Col: col})
+
+		var badge *player.PFP
+		if i < len(m.floatingTypes) {
+			switch m.floatingTypes[i] {
+			case backend.FloatingTypeReposted:
+				badge = player.RepostIcon()
+			case backend.FloatingTypeLiked:
+				badge = player.HeartIcon()
+			}
+		}
+		if badge != nil {
+			// place it at the pfp's bottom-right cell so half the
+			// badge hangs off to the right.
+			slots = append(slots, player.ImageSlot{
+				Img: badge,
+				Row: row + 1,
+				Col: col + 1,
+			})
+		}
 	}
 	return slots
 }

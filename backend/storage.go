@@ -485,7 +485,7 @@ func (b *ChromeBackend) fetchURLs(urls []string) [][]byte {
 }
 
 // Download downloads a reel video and profile picture to the cache directory
-func (b *ChromeBackend) Download(index int) (string, string, []string, error) {
+func (b *ChromeBackend) Download(index int) (string, string, []FloatingPfpFile, error) {
 	b.reelsMu.RLock()
 	if index < 1 || index > len(b.orderedReels) {
 		b.reelsMu.RUnlock()
@@ -501,12 +501,13 @@ func (b *ChromeBackend) Download(index int) (string, string, []string, error) {
 	videoFile := filepath.Join(b.cacheDir, fmt.Sprintf("%03d_%s.mp4", index, reel.Code))
 	pfpFile := filepath.Join(b.cacheDir, fmt.Sprintf("%03d_%s_pfp.jpg", index, reel.Code))
 
-	floatingPfpPaths := make([]string, len(reel.FloatingContextItems))
+	floatingPfpPaths := make([]FloatingPfpFile, len(reel.FloatingContextItems))
 	for i, item := range reel.FloatingContextItems {
+		floatingPfpPaths[i].Type = item.Type
 		if item.ProfilePicUrl == "" {
 			continue
 		}
-		floatingPfpPaths[i] = filepath.Join(b.cacheDir, fmt.Sprintf("%03d_%s_fc%d.jpg", index, reel.Code, i))
+		floatingPfpPaths[i].Path = filepath.Join(b.cacheDir, fmt.Sprintf("%03d_%s_fc%d.jpg", index, reel.Code, i))
 	}
 
 	// check cache to see if already downloaded
