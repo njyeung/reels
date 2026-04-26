@@ -1,4 +1,9 @@
 # Changelog
+## [1.2.10]
+- Color @mentions blue in captions and comments
+- Add heart/repost badge icons on floating reaction profile pictures
+- Fix: resizing reel now repositions comment gifs
+- Fix: Update Instagram comments pagination doc_id to match new frontend
 
 ## [1.2.9]
 - Add reposting reels (default r)
