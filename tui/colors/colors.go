@@ -50,7 +50,11 @@ var (
 	Purple900Color = lipgloss.Color("#2B167E")
 
 	// Blue
+	Blue300Color = lipgloss.Color("#80CAFB")
+	Blue400Color = lipgloss.Color("#4DB0F9")
 	Blue500Color = lipgloss.Color("#0095F6")
+	Blue600Color = lipgloss.Color("#007ACC")
+	Blue700Color = lipgloss.Color("#005FA0")
 
 	// Red
 	Red500Color = lipgloss.Color("#FF0069")

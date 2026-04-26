@@ -225,7 +225,7 @@ func (cp *CommentsPanel) View(width, height int, padding string) string {
 				if linesUsed >= availableLines {
 					break
 				}
-				b.WriteString(padding + "  " + gray100.Render(line) + "\n")
+				b.WriteString(padding + "  " + renderWithMentions(line, gray100) + "\n")
 				linesUsed++
 			}
 		}

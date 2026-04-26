@@ -194,7 +194,7 @@ func (m Model) viewBrowsing() string {
 				captionLines = captionLines[:maxPanelLines]
 			}
 			for _, line := range captionLines {
-				b.WriteString(padding + gray300.Render(line) + "\n")
+				b.WriteString(padding + renderWithMentions(line, gray300) + "\n")
 			}
 
 			// navbar (only when comments not open)

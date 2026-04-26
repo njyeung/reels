@@ -53,7 +53,11 @@ var (
 	purple900 = lipgloss.NewStyle().Foreground(colors.Purple900Color)
 
 	// Blue
+	blue300 = lipgloss.NewStyle().Foreground(colors.Blue300Color)
+	blue400 = lipgloss.NewStyle().Foreground(colors.Blue400Color)
 	blue500 = lipgloss.NewStyle().Foreground(colors.Blue500Color)
+	blue600 = lipgloss.NewStyle().Foreground(colors.Blue600Color)
+	blue700 = lipgloss.NewStyle().Foreground(colors.Blue700Color)
 
 	// Red
 	red500 = lipgloss.NewStyle().Foreground(colors.Red500Color)
