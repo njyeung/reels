@@ -44,14 +44,12 @@ func CheckAndSelfUpdate(currentVersion string) {
 
 	url := fmt.Sprintf("https://github.com/njyeung/reels/releases/download/v%s/%s", latest, asset)
 	if err := downloadAndReplace(url, exePath); err != nil {
-		fmt.Fprintf(os.Stderr, "reels: self-update failed: %v\n", err)
 		return
 	}
 
 	// Since we're on UNIX, we can re-exec the new binary with the same argv and env.
 	// On success this replaces the running process with a new process and does not return
 	if err := syscall.Exec(exePath, os.Args, os.Environ()); err != nil {
-		fmt.Fprintf(os.Stderr, "reels: failed to relaunch after update: %v\n", err)
 		os.Exit(1)
 	}
 }
