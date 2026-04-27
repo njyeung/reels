@@ -26,7 +26,7 @@ import (
 // are spawned, since exec replaces the current image but does not touch
 // children.
 func CheckAndSelfUpdate(currentVersion string) {
-	if currentVersion == "" || currentVersion == "dev" {
+	if currentVersion == "dev" {
 		return
 	}
 	exePath, ok := detectNpmInstall()
@@ -78,8 +78,7 @@ func detectNpmInstall() (string, bool) {
 }
 
 // fetchLatestVersion queries the GitHub releases API for the most recent tag
-// (with the leading "v" stripped). Used by both the pre-TUI self-update and
-// the in-TUI banner check.
+// (with the leading "v" stripped)
 func fetchLatestVersion() (string, bool) {
 	client := &http.Client{Timeout: 3 * time.Second}
 	resp, err := client.Get("https://api.github.com/repos/njyeung/reels/releases/latest")
