@@ -43,23 +43,11 @@ func (m Model) checkVersion() tea.Msg {
 	if m.version == "dev" {
 		return versionCheckMsg{}
 	}
-	client := &http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Get("https://api.github.com/repos/njyeung/reels/releases/latest")
-	if err != nil {
+	latest, ok := fetchLatestVersion()
+	if !ok || latest == "" || latest == m.version {
 		return versionCheckMsg{}
 	}
-	defer resp.Body.Close()
-	var release struct {
-		TagName string `json:"tag_name"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return versionCheckMsg{}
-	}
-	latest := strings.TrimPrefix(release.TagName, "v")
-	if latest != "" && latest != m.version {
-		return versionCheckMsg{latest: latest}
-	}
-	return versionCheckMsg{}
+	return versionCheckMsg{latest: latest}
 }
 
 func renderLoadingScreen(width, height int, barText string, barStyle lipgloss.Style, scrollOffset int) string {
