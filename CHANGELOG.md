@@ -1,4 +1,8 @@
 # Changelog
+
+## [1.2.11]
+- Add automatic self-update for npm-installed binaries on launch
+
 ## [1.2.10]
 - Color @mentions blue in captions and comments
 - Add heart/repost badge icons on floating reaction profile pictures
