@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +14,10 @@ import (
 	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/chromedp"
 )
+
+// pkRegex extracts ig_cache_key from a URL — used to recover the visible
+// reel's PK from its cached preview image src.
+var pkRegex = regexp.MustCompile(`ig_cache_key=([^&]+)`)
 
 // Cursor abstracts how the user navigates a list of reels in the browser.
 // FeedCursor scrolls the main reels page; a future FriendCursor will navigate
@@ -57,6 +62,9 @@ func NewFeedCursor(ctx context.Context) *FeedCursor {
 
 // append records a newly captured PK at the tail. The caller (processReelResponse)
 // has already deduped via the reels map, so no membership check is needed here.
+// Caller must hold ChromeBackend.reelsMu so the b.reels insert and this append
+// are atomic — otherwise readers can observe a PK in b.reels before it shows
+// up in fc.pks, producing transient "pk not in captured list" errors.
 func (fc *FeedCursor) append(pk string) {
 	fc.mu.Lock()
 	defer fc.mu.Unlock()

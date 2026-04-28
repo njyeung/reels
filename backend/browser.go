@@ -7,15 +7,11 @@ import (
 	"log"
 	"math/rand"
 	"os"
-	"regexp"
 	"time"
 
 	"github.com/chromedp/cdproto/fetch"
 	"github.com/chromedp/chromedp"
 )
-
-// compiled once for extracting ig_cache_key from URLs
-var pkRegex = regexp.MustCompile(`ig_cache_key=([^&]+)`)
 
 // NewChromeBackend creates a new Chrome-based backend
 func NewChromeBackend(userDataDir, cacheDir, configDir string) *ChromeBackend {
@@ -462,11 +458,11 @@ func (b *ChromeBackend) getCommentsPagination() *CommentsPagination {
 	if pk == "" {
 		return nil
 	}
-	var out *CommentsPagination
-	b.mutateReelByPK(pk, func(r *Reel) {
-		out = r.CommentsPagination
-	})
-	return out
+	reel, ok := b.reelByPK(pk)
+	if !ok {
+		return nil
+	}
+	return reel.CommentsPagination
 }
 
 // setCommentsPagination updates pagination fields on the currently open comments reel.

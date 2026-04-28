@@ -414,9 +414,8 @@ func (b *ChromeBackend) processReelResponse(body string) {
 			FloatingContextItems: floatingItems,
 		}
 		b.reels[media.PK] = reel
-		b.reelsMu.Unlock()
-
 		b.feed.append(media.PK)
+		b.reelsMu.Unlock()
 	}
 }
 
