@@ -486,12 +486,17 @@ func (b *ChromeBackend) fetchURLs(urls []string) [][]byte {
 
 // Download downloads a reel video and profile picture to the cache directory
 func (b *ChromeBackend) Download(index int) (string, string, []FloatingPfpFile, error) {
-	b.reelsMu.RLock()
-	if index < 1 || index > len(b.orderedReels) {
-		b.reelsMu.RUnlock()
+	pk := b.activeCursor().PKAt(index)
+	if pk == "" {
 		return "", "", nil, fmt.Errorf("index out of range")
 	}
-	reel := b.orderedReels[index-1]
+	b.reelsMu.RLock()
+	r, ok := b.reels[pk]
+	if !ok {
+		b.reelsMu.RUnlock()
+		return "", "", nil, fmt.Errorf("reel pk=%s not in cache", pk)
+	}
+	reel := *r
 	b.reelsMu.RUnlock()
 
 	if reel.VideoURL == "" {

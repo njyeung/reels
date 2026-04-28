@@ -70,7 +70,7 @@ type reelResponse struct {
 						LikeCount        int    `json:"like_count"`
 						CommentCount     int    `json:"comment_count"`
 						MediaRepostCount int    `json:"media_repost_count"`
-						VideoVersions []struct {
+						VideoVersions    []struct {
 							URL string `json:"url"`
 						} `json:"video_versions"`
 						User struct {
@@ -339,24 +339,26 @@ func jsonStringForJS(s string) string {
 	return string(b)
 }
 
-// processReelResponse extracts reels from a GraphQL response
+// processReelResponse extracts reels from a GraphQL response. New PKs are
+// inserted into b.reels and appended to the feed cursor; map membership is
+// the dedup signal.
 func (b *ChromeBackend) processReelResponse(body string) {
 	var resp reelResponse
 	if err := json.Unmarshal([]byte(body), &resp); err != nil {
 		return
 	}
 
-	b.reelsMu.Lock()
-	defer b.reelsMu.Unlock()
-
-	newCount := 0
 	for _, edge := range resp.Data.Connection.Edges {
 		media := edge.Node.Media
-		if media.PK == "" || b.seenPKs[media.PK] {
+		if media.PK == "" {
 			continue
 		}
 
-		b.seenPKs[media.PK] = true
+		b.reelsMu.Lock()
+		if _, exists := b.reels[media.PK]; exists {
+			b.reelsMu.Unlock()
+			continue
+		}
 
 		var videoURL string
 		if len(media.VideoVersions) > 0 {
@@ -393,7 +395,7 @@ func (b *ChromeBackend) processReelResponse(body string) {
 			floatingItems = append(floatingItems, fi)
 		}
 
-		reel := Reel{
+		reel := &Reel{
 			PK:                   media.PK,
 			Code:                 media.Code,
 			VideoURL:             videoURL,
@@ -411,18 +413,23 @@ func (b *ChromeBackend) processReelResponse(body string) {
 			CanViewerReshare:     media.CanViewerReshare,
 			FloatingContextItems: floatingItems,
 		}
-		b.orderedReels = append(b.orderedReels, reel)
-		newCount++
+		b.reels[media.PK] = reel
+		b.reelsMu.Unlock()
+
+		b.feed.append(media.PK)
 	}
 }
 
-// processResponse handles a paused request, reads the body, then continues
-func (b *ChromeBackend) processResponse(e *fetch.EventRequestPaused) {
+// processResponse handles a paused request, reads the body, then continues.
+// ctx must be the same context its intercepting listener was registered on
+// (feedCtx today, future dmCtx for the DM window) — fetch body reads and
+// ContinueRequest are scoped to the target the listener captured.
+func (b *ChromeBackend) processResponse(ctx context.Context, e *fetch.EventRequestPaused) {
 	// Get the response body while the request is paused
 	var body []byte
-	err := chromedp.Run(b.ctx,
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			data, err := fetch.GetResponseBody(e.RequestID).Do(ctx)
+	err := chromedp.Run(ctx,
+		chromedp.ActionFunc(func(c context.Context) error {
+			data, err := fetch.GetResponseBody(e.RequestID).Do(c)
 			if err != nil {
 				return err
 			}
@@ -462,9 +469,9 @@ func (b *ChromeBackend) processResponse(e *fetch.EventRequestPaused) {
 	}
 
 	// Continue the request
-	chromedp.Run(b.ctx,
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			return fetch.ContinueRequest(e.RequestID).Do(ctx)
+	chromedp.Run(ctx,
+		chromedp.ActionFunc(func(c context.Context) error {
+			return fetch.ContinueRequest(e.RequestID).Do(c)
 		}),
 	)
 }

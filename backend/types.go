@@ -7,23 +7,40 @@ import (
 
 // ChromeBackend implements Backend using chromedp
 type ChromeBackend struct {
-	ctx         context.Context
-	cancel      context.CancelFunc
+	// feedCtx is stable for the lifetime of the backend and tied to the main
+	// feed browser window. Used by the fetch listener and FeedCursor for
+	// scrolling and DOM probes.
+	feedCtx     context.Context
+	feedCancel  context.CancelFunc
 	allocCancel context.CancelFunc
 
-	reelsMu      sync.RWMutex
-	orderedReels []Reel
-	seenPKs      map[string]bool
+	// modeMu guards swaps of ctx and active when entering/exiting friend mode.
+	// Read paths in user-action methods access ctx directly; modeMu only
+	// matters at swap boundaries.
+	modeMu sync.RWMutex
+	// ctx is the swappable handle that user-action methods (ToggleLike,
+	// OpenSharePanel, FetchMoreComments JS fetch, fetchURLs, etc.) read.
+	// Today it always equals feedCtx. When DM mode lands, EnterFriendMode
+	// will swap this to the dm window's ctx and ExitFriendMode will swap
+	// it back.
+	ctx context.Context
+
+	// reels is the single source of truth for reel data, keyed by PK.
+	// Membership in this map is the dedup signal — no separate seen set.
+	reelsMu sync.RWMutex
+	reels   map[string]*Reel
+
+	// feed is the always-present cursor for the main reels page.
+	// active is whichever cursor user-action methods route through; today
+	// always == feed. A future FriendCursor will be swapped in alongside ctx.
+	feed   *FeedCursor
+	active Cursor
 
 	// comments encapsulates all comment-related state
 	comments *CommentsState
 
 	// share modal state
 	shareFriends []Friend
-
-	syncMu     sync.Mutex
-	syncCtx    context.Context
-	syncCancel context.CancelFunc
 
 	events chan Event
 
