@@ -426,12 +426,10 @@ func (b *ChromeBackend) processReelResponse(body string) {
 	}
 }
 
-// processResponse handles a paused request, reads the body, then continues.
-// ctx must be the same context its intercepting listener was registered on
-// (feedCtx today, future dmCtx for the DM window) — fetch body reads and
-// ContinueRequest are scoped to the target the listener captured.
-func (b *ChromeBackend) processResponse(ctx context.Context, e *fetch.EventRequestPaused) {
-	// Get the response body while the request is paused
+// processGraphQLBody is the shared fetch-interception router. It reads the paused
+// response body in the window that saw the request (ctx), dispatches based on
+// body content, and continues the request.
+func (b *ChromeBackend) processGraphQLBody(ctx context.Context, e *fetch.EventRequestPaused, clipSink func(string), threadSink func(string)) {
 	var body []byte
 	err := chromedp.Run(ctx,
 		chromedp.ActionFunc(func(c context.Context) error {
@@ -446,9 +444,12 @@ func (b *ChromeBackend) processResponse(ctx context.Context, e *fetch.EventReque
 
 	if err == nil {
 		bodyStr := string(body)
-		if strings.Contains(bodyStr, "xdt_api__v1__clips__home__connection_v2") {
-			b.processReelResponse(bodyStr)
-		} else if strings.Contains(bodyStr, "xdt_api__v1__media__media_id__comments__connection") {
+		switch {
+		case strings.Contains(bodyStr, "xdt_api__v1__clips__home__connection_v2"):
+			if clipSink != nil {
+				clipSink(bodyStr)
+			}
+		case strings.Contains(bodyStr, "xdt_api__v1__media__media_id__comments__connection"):
 			// Decode the POST body from the intercepted request (base64-encoded)
 			var rawBytes []byte
 			for _, entry := range e.Request.PostDataEntries {
@@ -457,7 +458,6 @@ func (b *ChromeBackend) processResponse(ctx context.Context, e *fetch.EventReque
 					rawBytes = append(rawBytes, decoded...)
 				}
 			}
-
 			postData := string(rawBytes)
 			var appID string
 			for k, v := range e.Request.Headers {
@@ -466,15 +466,15 @@ func (b *ChromeBackend) processResponse(ctx context.Context, e *fetch.EventReque
 					break
 				}
 			}
-
-			// Skip pagination responses, those are handled by FetchMoreComments directly
+			// Skip pagination responses, FetchMoreComments handles those directly.
 			if !strings.Contains(postData, paginationFriendlyName) {
 				b.processCommentsResponse(bodyStr, postData, appID)
 			}
+		case threadSink != nil && strings.Contains(bodyStr, "get_slide_thread_nullable"):
+			threadSink(bodyStr)
 		}
 	}
 
-	// Continue the request
 	chromedp.Run(ctx,
 		chromedp.ActionFunc(func(c context.Context) error {
 			return fetch.ContinueRequest(e.RequestID).Do(c)

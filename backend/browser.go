@@ -68,13 +68,9 @@ func (b *ChromeBackend) Start(headless bool) error {
 	b.feed = NewFeedCursor(feedCtx)
 	b.active = b.feed
 
-	// Fetch interception is per-window; the feed listener is bound to feedCtx.
-	// When DM mode lands, an analogous listener will be registered on dmCtx,
-	// passing dmCtx into processResponse so body reads/continues run on the
-	// same target the listener captured.
 	chromedp.ListenTarget(feedCtx, func(ev interface{}) {
 		if e, ok := ev.(*fetch.EventRequestPaused); ok {
-			go b.processResponse(feedCtx, e)
+			go b.processGraphQLBody(feedCtx, e, b.processReelResponse, nil)
 		}
 	})
 
