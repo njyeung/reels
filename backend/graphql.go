@@ -55,61 +55,122 @@ type commentsResponse struct {
 	} `json:"data"`
 }
 
+// reelMedia is the Media payload inside one clip edge.
+type reelMedia struct {
+	PK               string `json:"pk"`
+	Code             string `json:"code"`
+	HasLiked         bool   `json:"has_liked"`
+	HasViewerSaved   bool   `json:"has_viewer_saved"`
+	CommentsDisabled bool   `json:"comments_disabled"`
+	LikeCount        int    `json:"like_count"`
+	CommentCount     int    `json:"comment_count"`
+	MediaRepostCount int    `json:"media_repost_count"`
+	VideoVersions    []struct {
+		URL string `json:"url"`
+	} `json:"video_versions"`
+	User struct {
+		Username      string `json:"username"`
+		IsVerified    bool   `json:"is_verified"`
+		ProfilePicUrl string `json:"profile_pic_url"`
+	} `json:"user"`
+	ClipsMetadata struct {
+		MusicInfo *struct {
+			MusicAssetInfo struct {
+				Title                    string `json:"title"`
+				DisplayArtist            string `json:"display_artist"`
+				CoverArtworkThumbnailUri string `json:"cover_artwork_thumbnail_uri"`
+				IsExplicit               bool   `json:"is_explicit"`
+			} `json:"music_asset_info"`
+		} `json:"music_info"`
+	} `json:"clips_metadata"`
+	Caption *struct {
+		Text string `json:"text"`
+	} `json:"caption"`
+	CanViewerReshare     bool `json:"can_viewer_reshare"`
+	FloatingContextItems []struct {
+		Type string `json:"floating_context_item_type"`
+		User struct {
+			Username      string `json:"username"`
+			ProfilePicUrl string `json:"profile_pic_url"`
+		} `json:"user"`
+		MediaNote *struct {
+			Text string `json:"text"`
+		} `json:"media_note"`
+		Comment *struct {
+			Text string `json:"text"`
+		} `json:"comment"`
+	} `json:"floating_context_items"`
+}
+
 // reelResponse represents the xdt_api__v1__clips__home__connection_v2 GraphQL response structure
 type reelResponse struct {
 	Data struct {
 		Connection struct {
 			Edges []struct {
 				Node struct {
-					Media struct {
-						PK               string `json:"pk"`
-						Code             string `json:"code"`
-						HasLiked         bool   `json:"has_liked"`
-						HasViewerSaved   bool   `json:"has_viewer_saved"`
-						CommentsDisabled bool   `json:"comments_disabled"`
-						LikeCount        int    `json:"like_count"`
-						CommentCount     int    `json:"comment_count"`
-						MediaRepostCount int    `json:"media_repost_count"`
-						VideoVersions    []struct {
-							URL string `json:"url"`
-						} `json:"video_versions"`
-						User struct {
-							Username      string `json:"username"`
-							IsVerified    bool   `json:"is_verified"`
-							ProfilePicUrl string `json:"profile_pic_url"`
-						} `json:"user"`
-						ClipsMetadata struct {
-							MusicInfo *struct {
-								MusicAssetInfo struct {
-									Title                    string `json:"title"`
-									DisplayArtist            string `json:"display_artist"`
-									CoverArtworkThumbnailUri string `json:"cover_artwork_thumbnail_uri"`
-									IsExplicit               bool   `json:"is_explicit"`
-								} `json:"music_asset_info"`
-							} `json:"music_info"`
-						} `json:"clips_metadata"`
-						Caption *struct {
-							Text string `json:"text"`
-						} `json:"caption"`
-						CanViewerReshare     bool `json:"can_viewer_reshare"`
-						FloatingContextItems []struct {
-							Type string `json:"floating_context_item_type"`
-							User struct {
-								Username      string `json:"username"`
-								ProfilePicUrl string `json:"profile_pic_url"`
-							} `json:"user"`
-							MediaNote *struct {
-								Text string `json:"text"`
-							} `json:"media_note"`
-							Comment *struct {
-								Text string `json:"text"`
-							} `json:"comment"`
-						} `json:"floating_context_items"`
-					} `json:"media"`
+					Media reelMedia `json:"media"`
 				} `json:"node"`
 			} `json:"edges"`
 		} `json:"xdt_api__v1__clips__home__connection_v2"`
 	} `json:"data"`
+}
+
+// buildReel converts a parsed reelMedia into our Reel domain type. It can be
+// called from any path that has a reelMedia in hand.
+func buildReel(media reelMedia) *Reel {
+	var videoURL string
+	if len(media.VideoVersions) > 0 {
+		videoURL = strings.ReplaceAll(media.VideoVersions[0].URL, "\\u0026", "&")
+	}
+
+	caption := ""
+	if media.Caption != nil {
+		caption = media.Caption.Text
+	}
+
+	var music *MusicInfo
+	if media.ClipsMetadata.MusicInfo != nil {
+		info := media.ClipsMetadata.MusicInfo.MusicAssetInfo
+		music = &MusicInfo{
+			Title:      info.Title,
+			Artist:     info.DisplayArtist,
+			IsExplicit: info.IsExplicit,
+		}
+	}
+
+	var floatingItems []FloatingContextItem
+	for _, item := range media.FloatingContextItems {
+		fi := FloatingContextItem{
+			Type:          item.Type,
+			Username:      item.User.Username,
+			ProfilePicUrl: strings.ReplaceAll(item.User.ProfilePicUrl, "\\u0026", "&"),
+		}
+		if item.MediaNote != nil {
+			fi.Text = item.MediaNote.Text
+		} else if item.Comment != nil {
+			fi.Text = item.Comment.Text
+		}
+		floatingItems = append(floatingItems, fi)
+	}
+
+	return &Reel{
+		PK:                   media.PK,
+		Code:                 media.Code,
+		VideoURL:             videoURL,
+		ProfilePicUrl:        media.User.ProfilePicUrl,
+		Username:             media.User.Username,
+		Caption:              caption,
+		Liked:                media.HasLiked,
+		Saved:                media.HasViewerSaved,
+		LikeCount:            media.LikeCount,
+		RepostCount:          media.MediaRepostCount,
+		IsVerified:           media.User.IsVerified,
+		CommentCount:         media.CommentCount,
+		CommentsDisabled:     media.CommentsDisabled,
+		Music:                music,
+		CanViewerReshare:     media.CanViewerReshare,
+		FloatingContextItems: floatingItems,
+	}
 }
 
 // extractComments parses comment edges from a commentsResponse.
@@ -359,61 +420,7 @@ func (b *ChromeBackend) processReelResponse(body string) {
 			b.reelsMu.Unlock()
 			continue
 		}
-
-		var videoURL string
-		if len(media.VideoVersions) > 0 {
-			videoURL = strings.ReplaceAll(media.VideoVersions[0].URL, "\\u0026", "&")
-		}
-
-		caption := ""
-		if media.Caption != nil {
-			caption = media.Caption.Text
-		}
-
-		var music *MusicInfo
-		if media.ClipsMetadata.MusicInfo != nil {
-			info := media.ClipsMetadata.MusicInfo.MusicAssetInfo
-			music = &MusicInfo{
-				Title:      info.Title,
-				Artist:     info.DisplayArtist,
-				IsExplicit: info.IsExplicit,
-			}
-		}
-
-		var floatingItems []FloatingContextItem
-		for _, item := range media.FloatingContextItems {
-			fi := FloatingContextItem{
-				Type:          item.Type,
-				Username:      item.User.Username,
-				ProfilePicUrl: strings.ReplaceAll(item.User.ProfilePicUrl, "\\u0026", "&"),
-			}
-			if item.MediaNote != nil {
-				fi.Text = item.MediaNote.Text
-			} else if item.Comment != nil {
-				fi.Text = item.Comment.Text
-			}
-			floatingItems = append(floatingItems, fi)
-		}
-
-		reel := &Reel{
-			PK:                   media.PK,
-			Code:                 media.Code,
-			VideoURL:             videoURL,
-			ProfilePicUrl:        media.User.ProfilePicUrl,
-			Username:             media.User.Username,
-			Caption:              caption,
-			Liked:                media.HasLiked,
-			Saved:                media.HasViewerSaved,
-			LikeCount:            media.LikeCount,
-			RepostCount:          media.MediaRepostCount,
-			IsVerified:           media.User.IsVerified,
-			CommentCount:         media.CommentCount,
-			CommentsDisabled:     media.CommentsDisabled,
-			Music:                music,
-			CanViewerReshare:     media.CanViewerReshare,
-			FloatingContextItems: floatingItems,
-		}
-		b.reels[media.PK] = reel
+		b.reels[media.PK] = buildReel(media)
 		b.feed.append(media.PK)
 		b.reelsMu.Unlock()
 	}

@@ -209,6 +209,14 @@ type ReelInfo struct {
 	Reel
 }
 
+// DMReelEntry is a pointer to a reel shared in a DM thread. The DM window
+// navigates to TargetURL to materialize the full Reel
+type DMReelEntry struct {
+	TargetPK   string // reel PK
+	TargetURL  string // navigate here to fetch the Reel
+	ReelAuthor string // xmaHeaderTitle, i.e. the reel's original poster
+}
+
 // CommentsPagination holds the resumable pagination state for a reel's comments.
 // Stored on the Reel struct so pagination can be restored after navigating away and back.
 type CommentsPagination struct {
