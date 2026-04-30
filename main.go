@@ -33,7 +33,7 @@ func main() {
 	// If installed via npm and a newer release exists, swap the binary on disk
 	// and re-exec into it. Does nothing for non-npm installs or when already up
 	// to date. Must run before any child processes are spawned.
-	tui.CheckAndSelfUpdate(Version)
+	// tui.CheckAndSelfUpdate(Version)
 
 	// Set up directories:
 	// Browser data: 	~/.local/share/reels/

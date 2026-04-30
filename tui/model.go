@@ -23,8 +23,8 @@ type (
 	backendEventMsg  backend.Event
 	videoErrorMsg    struct{ err error }
 	videoReadyMsg    struct {
-		index        int
-		pfp          *player.PFP
+		index         int
+		pfp           *player.PFP
 		floatingPfps  []*player.PFP
 		floatingTypes []string
 	}
@@ -178,7 +178,6 @@ func (m Model) Init() tea.Cmd {
 }
 
 func (m Model) startBackend() tea.Msg {
-
 	if err := m.backend.Start(!(m.flags.HeadedMode || m.flags.LoginMode)); err != nil {
 		return backendErrorMsg{err}
 	}
