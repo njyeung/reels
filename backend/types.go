@@ -20,9 +20,6 @@ type ChromeBackend struct {
 	modeMu sync.RWMutex
 	// ctx is the swappable handle that user-action methods (ToggleLike,
 	// OpenSharePanel, FetchMoreComments JS fetch, fetchURLs, etc.) read.
-	// Today it always equals feedCtx. When DM mode lands, EnterFriendMode
-	// will swap this to the dm window's ctx and ExitFriendMode will swap
-	// it back.
 	ctx context.Context
 
 	// reels is the single source of truth for reel data, keyed by PK.
@@ -35,6 +32,17 @@ type ChromeBackend struct {
 	// always == feed. A future FriendCursor will be swapped in alongside ctx.
 	feed   *FeedCursor
 	active Cursor
+
+	// dmCtx is the secondary chromedp window used for friend-mode navigation
+	// and DM-inbox collection. Created once by startDMSession after the feed
+	// is up; lives until Stop. Nil if the session never started.
+	dmCtx    context.Context
+	dmCancel context.CancelFunc
+
+	// dmMu guards dmFriends. Merged into by processThreadResponse on every DM
+	// thread body; read by GetDMFriends / GetDMReelsCount / EnterFriendMode.
+	dmMu      sync.RWMutex
+	dmFriends []DMFriend
 
 	// comments encapsulates all comment-related state
 	comments *CommentsState
@@ -137,6 +145,26 @@ type Backend interface {
 
 	// Events returns a channel for backend events (new reels captured, etc)
 	Events() <-chan Event
+
+	// GetDMFriends returns the friends who have shared reels in DMs, grouped
+	// by sender. Populated by the background DM-inbox collection.
+	GetDMFriends() []DMFriend
+
+	// GetDMReelsCount returns the total number of unseen friend-shared reels
+	// across all friends. Used by the startup HUD notification.
+	GetDMReelsCount() int
+
+	// EnterFriendMode swaps the active cursor to a FriendCursor over the
+	// named friend's reel entries and routes user actions through the DM
+	// window. Errors if the friend isn't known.
+	EnterFriendMode(username string) error
+
+	// ExitFriendMode restores the feed cursor and feed window. Idempotent
+	// when not in friend mode. Emits EventFriendModeExited on transition.
+	ExitFriendMode()
+
+	// IsFriendMode reports whether the active cursor is a FriendCursor.
+	IsFriendMode() bool
 }
 
 const (
@@ -212,9 +240,10 @@ type ReelInfo struct {
 // DMReelEntry is a pointer to a reel shared in a DM thread. The DM window
 // navigates to TargetURL to materialize the full Reel
 type DMReelEntry struct {
-	TargetPK   string // reel PK
-	TargetURL  string // navigate here to fetch the Reel
-	ReelAuthor string // xmaHeaderTitle, i.e. the reel's original poster
+	TargetPK       string // reel PK
+	TargetURL      string // navigate here to fetch the Reel
+	ReelAuthor     string // xmaHeaderTitle, i.e. the reel's original poster
+	SenderUsername string // who shared the reel
 }
 
 // CommentsPagination holds the resumable pagination state for a reel's comments.
@@ -255,10 +284,13 @@ const (
 	EventShareFriendsLoaded
 	EventSyncComplete
 	EventError
+	EventDMReelsReady
+	EventFriendReelLoaded
+	EventFriendModeExited
 )
 
 // Event is sent from backend to frontend
 type Event struct {
 	Type  EventType
-	Count int // for EventReelsCaptured
+	Count int
 }

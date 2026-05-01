@@ -12,8 +12,9 @@ import (
 // window. Unlike FeedCursor, position is authoritative (we drove the
 // navigation, so we know where we are).
 type FriendCursor struct {
-	ctx     context.Context
-	entries []DMReelEntry
+	ctx      context.Context
+	username string
+	entries  []DMReelEntry
 
 	mu     sync.RWMutex
 	cursor int // -1 before first SyncTo; else 0-based index into entries
@@ -24,10 +25,15 @@ type FriendCursor struct {
 }
 
 // NewFriendCursor binds the cursor to the DM window's chromedp context and a
-// snapshot of the friend's entries. The entry list is treated as immutable —
+// snapshot of the friend's entries. The entry list is treated as immutable.
 // if it changes, build a new cursor.
-func NewFriendCursor(ctx context.Context, entries []DMReelEntry) *FriendCursor {
-	return &FriendCursor{ctx: ctx, entries: entries, cursor: -1}
+func NewFriendCursor(ctx context.Context, username string, entries []DMReelEntry) *FriendCursor {
+	return &FriendCursor{ctx: ctx, username: username, entries: entries, cursor: -1}
+}
+
+// Username returns the friend whose entries this cursor navigates.
+func (fc *FriendCursor) Username() string {
+	return fc.username
 }
 
 // Total returns the number of entries this cursor can navigate.

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 	"github.com/njyeung/reels/backend"
 	"github.com/njyeung/reels/player"
@@ -50,19 +49,7 @@ func (m Model) viewBrowsing() string {
 	// music
 	maxPanelLines := max(m.height-(topPad+1+(videoHeightChars+1)+2), 1)
 
-	if m.volumeFadeStep > 0 && topPad >= 3 {
-		b.WriteString(strings.Repeat("\n", max(topPad-3, 0)))
-		vol := m.player.Volume()
-		barWidth := videoWidthChars - 1
-		filled := int(vol*float64(barWidth) + 0.5)
-		fadeColor := lipgloss.Color(volumeFadeColor(m.volumeFadeStep))
-		filledStyle := lipgloss.NewStyle().Foreground(fadeColor)
-		emptyStyle := lipgloss.NewStyle().Foreground(fadeColor).Faint(true)
-		volBar := filledStyle.Render(strings.Repeat("█", filled)) + emptyStyle.Render(strings.Repeat("░", barWidth-filled))
-		b.WriteString(padding + volBar + "\n\n")
-	} else {
-		b.WriteString(strings.Repeat("\n", max(topPad-1, 0)))
-	}
+	b.WriteString(m.viewHUD(videoWidthChars, topPad, padding))
 
 	// Status line - heart, like count, comment count, play/pause, mute icons
 	// positioned on the right side of video
@@ -171,6 +158,8 @@ func (m Model) viewBrowsing() string {
 			b.WriteString(m.comments.View(videoWidthChars, maxPanelLines, padding))
 		} else if m.help.IsOpen() {
 			b.WriteString(m.help.View(videoWidthChars, maxPanelLines, padding))
+		} else if m.friends.IsOpen() {
+			b.WriteString(m.friends.View(videoWidthChars, maxPanelLines, padding))
 		} else {
 			// Normal caption view
 			var captionLines []string
@@ -250,8 +239,21 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
 	switch {
+	// Friends panel select takes priority over other keys
+	case m.friends.IsOpen() && slices.Contains(config.KeysSelect, key):
+		friend := m.friends.CursorFriend()
+		if friend == nil {
+			return m, nil
+		}
+		username := friend.Username
+		m.friendMode = true
+		m.player.Stop()
+		m.status = statusLoading
+		go m.backend.EnterFriendMode(username)
+		return m, nil
+
 	// Share select takes priority over other keys when share panel is open
-	case m.share.IsOpen() && slices.Contains(config.KeysShareSelect, key):
+	case m.share.IsOpen() && slices.Contains(config.KeysSelect, key):
 		if m.shareSending {
 			return m, nil
 		}
@@ -358,6 +360,23 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.player.RedrawVideo()
 		}
 
+	case m.friends.IsOpen() && slices.Contains(config.KeysFriendsClose, key):
+		m.friends.Close()
+		m.closePanelLayout()
+
+	case !m.friends.IsOpen() && slices.Contains(config.KeysFriendsClose, key) && m.friendMode:
+		// In friend mode with no panel open, close-key exits back to the feed.
+		go m.backend.ExitFriendMode()
+		return m, nil
+
+	case !m.friends.IsOpen() && slices.Contains(config.KeysFriendsOpen, key):
+		if !m.panelOpen() {
+			friends := m.backend.GetDMFriends()
+			m.friends.Open(friends)
+			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
+			m.player.RedrawVideo()
+		}
+
 	case slices.Contains(config.KeysNavbar, key):
 		showNavbar := m.backend.ToggleNavbar()
 		m.showNavbar = showNavbar
@@ -376,17 +395,13 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		vol := min(m.player.Volume()+0.1, 1.0)
 		m.player.SetVolume(vol)
 		go m.backend.SetVolume(vol)
-		m.volumeFadeStep = 1
-		m.volumeGen++
-		return m, m.volumeHoldTick()
+		return m, m.hud.ShowVolume()
 
 	case slices.Contains(config.KeysVolDown, key):
 		vol := max(m.player.Volume()-0.1, 0.0)
 		m.player.SetVolume(vol)
 		go m.backend.SetVolume(vol)
-		m.volumeFadeStep = 1
-		m.volumeGen++
-		return m, m.volumeHoldTick()
+		return m, m.hud.ShowVolume()
 
 	case slices.Contains(config.KeysCopyLink, key):
 		if m.currentReel != nil && m.currentReel.Code != "" {
@@ -440,6 +455,12 @@ func (m *Model) startPlayback(index int) tea.Cmd {
 }
 
 func (m Model) prefetch(index int) {
+	// Friend-mode reels are navigated on demand; the next reel's VideoURL isn't
+	// known until the user actually reaches it, so prefetch is a no-op there.
+	if m.friendMode {
+		return
+	}
+
 	toDownload1 := index + 1
 	toDownload2 := index + 2
 
@@ -463,29 +484,6 @@ func (m Model) queueShareReset() tea.Cmd {
 	})
 }
 
-func (m Model) volumeHoldTick() tea.Cmd {
-	gen := m.volumeGen
-	return tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
-		return volumeHoldMsg{gen: gen}
-	})
-}
-
-func (m Model) volumeFadeTick() tea.Cmd {
-	return tea.Tick(60*time.Millisecond, func(t time.Time) tea.Msg {
-		return volumeFadeTickMsg{}
-	})
-}
-
-// volumeFadeColor returns the hex color for the volume fade-out.
-// Step 1 = full brightness (gray300), steps 2-7 fade to background.
-func volumeFadeColor(step int) string {
-	colors := [8]string{"#C7C7C7", "#C7C7C7", "#A8A8A8", "#808080", "#6B6B6B", "#555555", "#363636", "#262626"}
-	if step < 0 || step >= len(colors) {
-		return "#262626"
-	}
-	return colors[step]
-}
-
 func (m Model) sendShare() tea.Cmd {
 	return func() tea.Msg {
 		sent, err := m.backend.SendShare()
@@ -499,9 +497,9 @@ func (m Model) sendShare() tea.Cmd {
 	}
 }
 
-// panelOpen returns true if any overlay panel (comments, share, help) is open.
+// panelOpen returns true if any overlay panel (comments, share, help, friends) is open.
 func (m Model) panelOpen() bool {
-	return m.comments.IsOpen() || m.share.IsOpen() || m.help.IsOpen()
+	return m.comments.IsOpen() || m.share.IsOpen() || m.help.IsOpen() || m.friends.IsOpen()
 }
 
 // scrollPanel dispatches scroll/cursor movement to the active panel.
@@ -519,6 +517,10 @@ func (m *Model) scrollPanel(direction int) bool {
 		m.updateImages()
 		return true
 	}
+	if m.friends.IsOpen() {
+		m.friends.MoveCursor(direction)
+		return true
+	}
 	if m.comments.IsOpen() {
 		m.comments.Scroll(direction)
 		m.updateCommentGifs()
@@ -533,12 +535,26 @@ func (m *Model) scrollPanel(direction int) bool {
 }
 
 // navigateToReel moves to a reel at currentIndex+direction if in bounds and not already loading.
+//
+// In friend mode, navigation is async: SyncTo on the FriendCursor navigates the DM window,
+// the clip body arrives later, and EventSyncComplete drives the reload.
 func (m *Model) navigateToReel(direction int) tea.Cmd {
 	if m.currentReel == nil || m.status == statusLoading {
 		return nil
 	}
 	index := m.currentReel.Index + direction
+	if m.friendMode && direction > 0 && index > m.backend.GetTotal() {
+		go m.backend.ExitFriendMode()
+		return nil
+	}
 	if index < 1 || index > m.backend.GetTotal() {
+		return nil
+	}
+	if m.friendMode {
+		m.player.Stop()
+		m.status = statusLoading
+		m.comments.Clear()
+		go m.backend.SyncTo(index)
 		return nil
 	}
 	m.player.Stop()
@@ -604,7 +620,7 @@ func (m Model) updateCommentGifs() {
 // then forwards it to the player.
 func (m *Model) updateVideoPosition() {
 	row, col := player.ComputeVideoCenterPosition(m.videoWidthPx, m.videoHeightPx)
-	if m.comments.IsOpen() || m.share.IsOpen() || m.help.IsOpen() {
+	if m.panelOpen() {
 		row = 5
 	}
 

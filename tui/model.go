@@ -23,16 +23,13 @@ type (
 	backendEventMsg  backend.Event
 	videoErrorMsg    struct{ err error }
 	videoReadyMsg    struct {
-		index        int
-		pfp          *player.PFP
+		index         int
+		pfp           *player.PFP
 		floatingPfps  []*player.PFP
 		floatingTypes []string
 	}
 	musicTickMsg         struct{}
 	shareResetMsg        struct{}
-	volumeHoldMsg        struct{ gen int }
-	volumeFadeTickMsg    struct{}
-	volumeResetMsg       struct{}
 	shareSentMsg         struct{}
 	shareClosedMsg       struct{}
 	shareFailedMsg       struct{}
@@ -96,6 +93,13 @@ type Model struct {
 	// Help panel displays all keybinds
 	help *HelpPanel
 
+	// Friends panel picks a DM friend whose reels to browse
+	friends *FriendsPanel
+
+	// friendMode mirrors backend.IsFriendMode(); the TUI tracks it so panel/nav
+	// logic doesn't need to call the backend on every keypress.
+	friendMode bool
+
 	flags Config
 
 	loginSuccess bool
@@ -106,9 +110,7 @@ type Model struct {
 	shareConfirmed bool
 	shareSending   bool
 
-	// volume indicator: 0=hidden, 1=visible (holding), 2-7=fading out
-	volumeFadeStep int
-	volumeGen      int
+	hud HUD
 
 	reelPFP       *player.PFP
 	floatingPfps  []*player.PFP
@@ -161,6 +163,7 @@ func NewModel(userDataDir, cacheDir, configDir string, output io.Writer, version
 		comments:      NewCommentsPanel(),
 		share:         NewSharePanel(),
 		help:          NewHelpPanel(),
+		friends:       NewFriendsPanel(),
 		flags:         flags,
 		showNavbar:    settings.ShowNavbar,
 		version:       version,
@@ -240,7 +243,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		key := msg.String()
 		if slices.Contains(backend.GetSettings().KeysQuit, key) {
-			if m.comments.IsOpen() || m.share.IsOpen() || m.help.IsOpen() {
+			if m.comments.IsOpen() || m.share.IsOpen() || m.help.IsOpen() || m.friends.IsOpen() {
 				m.resizeReel(backend.GetSettings().ReelSizeStep * backend.GetSettings().PanelShrinkSteps)
 			}
 
@@ -383,6 +386,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.share.SetFriends(m.backend.GetShareFriends())
 				m.updateImages()
 			}
+		case backend.EventDMReelsReady:
+			if msg.Count > 0 {
+				return m, tea.Batch(m.hud.ShowDMNotify(msg.Count), m.listenForEvents)
+			}
+		case backend.EventFriendReelLoaded:
+			if m.friends.IsOpen() {
+				m.friends.Close()
+				m.closePanelLayout()
+			}
+		case backend.EventSyncComplete:
+			if m.friendMode {
+				m.player.Stop()
+				m.status = statusLoading
+				m.comments.Clear()
+				return m, tea.Batch(m.loadCurrentReel, m.listenForEvents)
+			}
+		case backend.EventFriendModeExited:
+			m.friendMode = false
+			if m.friends.IsOpen() {
+				m.friends.Close()
+				m.closePanelLayout()
+			}
+			m.player.Stop()
+			m.status = statusLoading
+			m.comments.Clear()
+			return m, tea.Batch(m.loadCurrentReel, m.listenForEvents)
 		}
 		return m, m.listenForEvents
 
@@ -398,28 +427,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.musicTick()
 
-	case volumeHoldMsg:
-		// Stale tick from a previous volume press
-		if msg.gen != m.volumeGen {
-			return m, nil
+	case volumeHoldMsg, volumeFadeTickMsg, dmNotifyHoldMsg, dmNotifyFadeTickMsg:
+		if handled, updated, cmd := m.updateHUD(msg); handled {
+			return updated, cmd
 		}
-		// Hold period over, start fading out
-		if m.volumeFadeStep == 1 {
-			m.volumeFadeStep = 2
-			return m, m.volumeFadeTick()
-		}
-		return m, nil
-
-	case volumeFadeTickMsg:
-		if m.volumeFadeStep < 2 {
-			return m, nil
-		}
-		m.volumeFadeStep++
-		if m.volumeFadeStep > 7 {
-			m.volumeFadeStep = 0
-			return m, nil
-		}
-		return m, m.volumeFadeTick()
 
 	case shareResetMsg:
 		m.shareConfirmed = false

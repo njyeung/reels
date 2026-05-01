@@ -119,6 +119,9 @@ func (b *ChromeBackend) NavigateToReels() error {
 		info, err := b.GetCurrent()
 		if err == nil && info != nil {
 			b.events <- Event{Type: EventSyncComplete}
+			if err := b.startDMSession(); err != nil {
+				log.Printf("dm session: %v", err)
+			}
 			return nil
 		}
 		if err := b.feed.scrollDown(); err != nil {
@@ -131,6 +134,7 @@ func (b *ChromeBackend) NavigateToReels() error {
 
 // Stop closes the browser
 func (b *ChromeBackend) Stop() {
+	b.stopDMSession()
 	if b.feedCancel != nil {
 		b.feedCancel()
 	}
