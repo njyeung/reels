@@ -2,35 +2,26 @@ package backend
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
-	"net/url"
 	"os"
-	"regexp"
-	"strings"
 	"time"
 
 	"github.com/chromedp/cdproto/fetch"
-	"github.com/chromedp/cdproto/input"
 	"github.com/chromedp/chromedp"
 )
-
-// compiled once for extracting ig_cache_key from URLs
-var pkRegex = regexp.MustCompile(`ig_cache_key=([^&]+)`)
 
 // NewChromeBackend creates a new Chrome-based backend
 func NewChromeBackend(userDataDir, cacheDir, configDir string) *ChromeBackend {
 	b := ChromeBackend{
-		orderedReels: make([]Reel, 0),
-		seenPKs:      make(map[string]bool),
-		comments:     &CommentsState{},
-		events:       make(chan Event, 100),
-		userDataDir:  userDataDir,
-		cacheDir:     cacheDir,
-		configDir:    configDir,
+		reels:       make(map[string]*Reel),
+		comments:    &CommentsState{},
+		events:      make(chan Event, 100),
+		userDataDir: userDataDir,
+		cacheDir:    cacheDir,
+		configDir:   configDir,
 	}
 
 	b.initStorage()
@@ -69,14 +60,22 @@ func (b *ChromeBackend) Start(headless bool) error {
 	allocCtx, allocCancel := chromedp.NewExecAllocator(context.Background(), opts...)
 	b.allocCancel = allocCancel
 
-	ctx, cancel := chromedp.NewContext(allocCtx, chromedp.WithLogf(log.Printf))
-	b.ctx = ctx
-	b.cancel = cancel
+	feedCtx, feedCancel := chromedp.NewContext(allocCtx, chromedp.WithLogf(log.Printf))
+	b.feedCtx = feedCtx
+	b.feedCancel = feedCancel
+	b.ctx = feedCtx
 
-	chromedp.ListenTarget(ctx, b.handleFetchEvent)
+	b.feed = NewFeedCursor(feedCtx)
+	b.active = b.feed
+
+	chromedp.ListenTarget(feedCtx, func(ev interface{}) {
+		if e, ok := ev.(*fetch.EventRequestPaused); ok {
+			go b.processGraphQLBody(feedCtx, e, b.processReelResponse, nil)
+		}
+	})
 
 	// Enable fetch interception and navigate
-	err = chromedp.Run(ctx,
+	err = chromedp.Run(feedCtx,
 		fetch.Enable().WithPatterns([]*fetch.RequestPattern{
 			{
 				URLPattern:   "*graphql*",
@@ -108,10 +107,9 @@ func (b *ChromeBackend) NeedsLogin() (bool, error) {
 
 // NavigateToReels goes to /reels and syncs to first captured reel
 func (b *ChromeBackend) NavigateToReels() error {
-	// nav to reels
-	if err := chromedp.Run(b.ctx,
+	if err := chromedp.Run(b.feedCtx,
 		chromedp.Navigate("https://www.instagram.com/reels/"),
-		chromedp.Sleep(2*time.Second), // wait for reels to load (faster since it's cached)
+		chromedp.Sleep(2*time.Second),
 	); err != nil {
 		return fmt.Errorf("failed to navigate to reels: %w", err)
 	}
@@ -121,9 +119,12 @@ func (b *ChromeBackend) NavigateToReels() error {
 		info, err := b.GetCurrent()
 		if err == nil && info != nil {
 			b.events <- Event{Type: EventSyncComplete}
+			if err := b.startDMSession(); err != nil {
+				log.Printf("dm session: %v", err)
+			}
 			return nil
 		}
-		if err := b.scrollDown(); err != nil {
+		if err := b.feed.scrollDown(); err != nil {
 			return err
 		}
 		time.Sleep(time.Duration(1500+rand.Intn(500)) * time.Millisecond)
@@ -133,8 +134,9 @@ func (b *ChromeBackend) NavigateToReels() error {
 
 // Stop closes the browser
 func (b *ChromeBackend) Stop() {
-	if b.cancel != nil {
-		b.cancel()
+	b.stopDMSession()
+	if b.feedCancel != nil {
+		b.feedCancel()
 	}
 	if b.allocCancel != nil {
 		b.allocCancel()
@@ -147,257 +149,96 @@ func (b *ChromeBackend) Events() <-chan Event {
 	return b.events
 }
 
-// handleFetchEvent processes paused fetch events to capture response bodies
-func (b *ChromeBackend) handleFetchEvent(ev interface{}) {
-	switch e := ev.(type) {
-	case *fetch.EventRequestPaused:
-		go b.processResponse(e)
-	}
+// activeCursor returns whichever cursor user actions should route through.
+// Today this is always b.feed; modeMu protects future swaps when DM mode lands.
+func (b *ChromeBackend) activeCursor() Cursor {
+	b.modeMu.RLock()
+	defer b.modeMu.RUnlock()
+	return b.active
 }
 
-// getCurrentPK extracts the pk of the currently visible reel from the DOM
-func (b *ChromeBackend) getCurrentPK() (string, error) {
-	var imgSrc string
-	js := `
-		(() => {
-			const videos = document.querySelectorAll('video[playsinline]');
-			for (const video of videos) {
-				const rect = video.getBoundingClientRect();
-				const viewportHeight = window.innerHeight;
-				const videoCenter = rect.top + rect.height / 2;
-				if (videoCenter > 0 && videoCenter < viewportHeight) {
-					let parent = video.parentElement;
-					for (let i = 0; i < 10; i++) {
-						if (!parent) break;
-						const img = parent.querySelector('img[src*="ig_cache_key"]');
-						if (img) return img.src;
-						parent = parent.parentElement;
-					}
-				}
-			}
-			return "";
-		})()
-	`
-
-	if err := chromedp.Run(b.ctx, chromedp.Evaluate(js, &imgSrc)); err != nil {
-		return "", err
+// mutateReelByPK applies fn to the reel with the given PK if present.
+// Returns true if a reel was mutated.
+func (b *ChromeBackend) mutateReelByPK(pk string, fn func(*Reel)) bool {
+	b.reelsMu.Lock()
+	defer b.reelsMu.Unlock()
+	r, ok := b.reels[pk]
+	if !ok {
+		return false
 	}
+	fn(r)
+	return true
+}
 
-	if imgSrc == "" {
-		return "", fmt.Errorf("no visible reel found")
+// reelByPK returns a copy of the reel with the given PK, or false if absent.
+func (b *ChromeBackend) reelByPK(pk string) (Reel, bool) {
+	b.reelsMu.RLock()
+	defer b.reelsMu.RUnlock()
+	r, ok := b.reels[pk]
+	if !ok {
+		return Reel{}, false
 	}
-
-	// Extract ig_cache_key from URL
-	matches := pkRegex.FindStringSubmatch(imgSrc)
-	if len(matches) < 2 {
-		return "", fmt.Errorf("no ig_cache_key found")
-	}
-
-	// URL decode and get base64 part
-	decoded, err := url.QueryUnescape(matches[1])
-	if err != nil {
-		return "", err
-	}
-	b64Part := strings.Split(decoded, ".")[0]
-
-	// Base64 decode to get pk
-	pkBytes, err := base64.StdEncoding.DecodeString(b64Part)
-	if err != nil {
-		return "", err
-	}
-
-	// Instagram pks are 19 digits
-	pk := string(pkBytes)
-	if len(pk) > InstagramPKLength {
-		pk = pk[:InstagramPKLength]
-	}
-
-	return pk, nil
+	return *r, true
 }
 
 // GetCurrent returns info about the currently visible reel
 func (b *ChromeBackend) GetCurrent() (*ReelInfo, error) {
-	pk, err := b.getCurrentPK()
+	cur := b.activeCursor()
+	idx, pk, err := cur.Current()
 	if err != nil {
 		return nil, err
 	}
-
-	b.reelsMu.RLock()
-	defer b.reelsMu.RUnlock()
-
-	for i, reel := range b.orderedReels {
-		if reel.PK == pk {
-			return &ReelInfo{
-				Index: i + 1,
-				Total: len(b.orderedReels),
-				Reel:  reel,
-			}, nil
-		}
+	reel, ok := b.reelByPK(pk)
+	if !ok {
+		return nil, fmt.Errorf("reel pk=%s not in cache", pk)
 	}
-
-	return nil, fmt.Errorf("reel pk=%s not in captured list", pk)
+	return &ReelInfo{Index: idx, Total: cur.Total(), Reel: reel}, nil
 }
 
 // GetReel returns reel info by *1-BASED INDEX* from cache, no browser interaction
 func (b *ChromeBackend) GetReel(index int) (*ReelInfo, error) {
-	b.reelsMu.RLock()
-	defer b.reelsMu.RUnlock()
-
-	if index < 1 || index > len(b.orderedReels) {
-		return nil, fmt.Errorf("index %d out of range (1-%d)", index, len(b.orderedReels))
+	cur := b.activeCursor()
+	total := cur.Total()
+	if index < 1 || index > total {
+		return nil, fmt.Errorf("index %d out of range (1-%d)", index, total)
 	}
-
-	reel := b.orderedReels[index-1]
-	return &ReelInfo{
-		Index: index,
-		Total: len(b.orderedReels),
-		Reel:  reel,
-	}, nil
+	pk := cur.PKAt(index)
+	if pk == "" {
+		return nil, fmt.Errorf("no pk at index %d", index)
+	}
+	reel, ok := b.reelByPK(pk)
+	if !ok {
+		return nil, fmt.Errorf("reel pk=%s not in cache", pk)
+	}
+	return &ReelInfo{Index: index, Total: total, Reel: reel}, nil
 }
 
 // updateReelComments appends comments to a reel by PK, or sets them if none exist yet.
 func (b *ChromeBackend) updateReelComments(pk string, comments []Comment) {
-	b.reelsMu.Lock()
-	defer b.reelsMu.Unlock()
-
-	for i := range b.orderedReels {
-		if b.orderedReels[i].PK == pk {
-			if b.orderedReels[i].Comments != nil {
-				b.orderedReels[i].Comments = append(b.orderedReels[i].Comments, comments...)
-			} else {
-				b.orderedReels[i].Comments = comments
-			}
-			return
+	b.mutateReelByPK(pk, func(r *Reel) {
+		if r.Comments != nil {
+			r.Comments = append(r.Comments, comments...)
+		} else {
+			r.Comments = comments
 		}
-	}
+	})
 }
 
 // GetTotal returns total number of captured reels
 func (b *ChromeBackend) GetTotal() int {
-	b.reelsMu.RLock()
-	defer b.reelsMu.RUnlock()
-	return len(b.orderedReels)
+	return b.activeCursor().Total()
 }
 
-// SyncTo scrolls browser to match the given index
+// SyncTo navigates the active cursor to the given index. Comments are cleared
+// up-front because arrow-key scrolls don't trigger Instagram's auto-close.
 func (b *ChromeBackend) SyncTo(index int) error {
-	// Close and clear comments before scrolling (arrow keys don't trigger Instagram's auto-close)
 	b.ClearComments()
-
-	b.syncMu.Lock()
-	// if we see that there is an ongoing SyncTo call
-	// we need to cancel it and start our new SyncTo.
-	if b.syncCancel != nil {
-		b.syncCancel()
-	}
-	ctx, cancel := context.WithCancel(b.ctx)
-	b.syncCtx = ctx
-	b.syncCancel = cancel
-	b.syncMu.Unlock()
-
-	defer cancel()
-
-	// get current position from DOM first
-	currentPK, _ := b.getCurrentPK()
-
-	// then lock and validate index, get target, and find current index
-	b.reelsMu.RLock()
-
-	if index < 1 || index > len(b.orderedReels) { // out of bounds
-		b.reelsMu.RUnlock()
-		return fmt.Errorf("index %d out of range", index)
-	}
-	targetPK := b.orderedReels[index-1].PK // we are already on this reel, no op
-	if currentPK == targetPK {
-		b.reelsMu.RUnlock()
-		return nil
-	}
-	currentIndex := 0
-	for idx, reel := range b.orderedReels { // we need to scroll, find current index
-		if reel.PK == currentPK {
-			currentIndex = idx + 1
-			break
-		}
-	}
-
-	b.reelsMu.RUnlock()
-
-	// Scroll towards target
-	for i := 0; i < MaxRetries; i++ {
-		// check if we've been superseded by a new SyncTo
-		select {
-		case <-ctx.Done():
-			return nil // exit
-		default: // fall through
-		}
-
-		// verify current position before scrolling
-		pk, err := b.getCurrentPK()
-		if err == nil && pk == targetPK {
-			return nil
-		}
-
-		// Update currentIndex from fresh PK read
-		if err == nil {
-			b.reelsMu.RLock()
-			for idx, r := range b.orderedReels {
-				if r.PK == pk {
-					currentIndex = idx + 1
-					break
-				}
-			}
-			b.reelsMu.RUnlock()
-		}
-
-		if currentIndex < index {
-			if err := b.scrollDown(); err != nil {
-				return err
-			}
-		} else if currentIndex > index {
-			if err := b.scrollUp(); err != nil {
-				return err
-			}
-		} else {
-			// currentIndex == index but PK doesn't match target
-			// This shouldn't happen, but scroll down to try to recover
-			if err := b.scrollDown(); err != nil {
-				return err
-			}
-		}
-
-		time.Sleep(time.Duration(1500+rand.Intn(500)) * time.Millisecond) // wait for react
-	}
-
-	return fmt.Errorf("failed to sync to index %d after %d scrolls", index, MaxRetries)
+	return b.activeCursor().SyncTo(index)
 }
 
-// scrollDown scrolls down to the next reel using CDP keyboard input
-func (b *ChromeBackend) scrollDown() error {
-	return chromedp.Run(b.ctx,
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			// Use CDP Input.dispatchKeyEvent directly - same as Selenium's ActionChains
-			return input.DispatchKeyEvent(input.KeyDown).
-				WithKey("ArrowDown").
-				WithCode("ArrowDown").
-				WithWindowsVirtualKeyCode(40).
-				WithNativeVirtualKeyCode(40).
-				Do(ctx)
-		}),
-	)
-}
-
-// scrollUp scrolls up to the previous reel using CDP keyboard input
-func (b *ChromeBackend) scrollUp() error {
-	return chromedp.Run(b.ctx,
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			return input.DispatchKeyEvent(input.KeyDown).
-				WithKey("ArrowUp").
-				WithCode("ArrowUp").
-				WithWindowsVirtualKeyCode(38).
-				WithNativeVirtualKeyCode(38).
-				Do(ctx)
-		}),
-	)
+// IsSyncing returns true if the active cursor is mid-navigation.
+func (b *ChromeBackend) IsSyncing() bool {
+	return b.activeCursor().IsSyncing()
 }
 
 // ToggleLike clicks the like button for the current reel
@@ -406,8 +247,7 @@ func (b *ChromeBackend) ToggleLike() (bool, error) {
 		return false, fmt.Errorf("Still syncing to reel")
 	}
 
-	// Get the current reel's PK first
-	pk, err := b.getCurrentPK()
+	_, pk, err := b.activeCursor().Current()
 	if err != nil {
 		return false, err
 	}
@@ -452,23 +292,13 @@ func (b *ChromeBackend) ToggleLike() (bool, error) {
 		return false, nil
 	}
 
-	// Now use chromedp's native click on the marked element
 	if err := chromedp.Run(b.ctx,
 		chromedp.Click(`[data-reels-like-btn="true"]`, chromedp.ByQuery),
 	); err != nil {
 		return false, err
 	}
 
-	// Toggle like in the stored reel
-	b.reelsMu.Lock()
-	for i := range b.orderedReels {
-		if b.orderedReels[i].PK == pk {
-			b.orderedReels[i].Liked = !b.orderedReels[i].Liked
-			break
-		}
-	}
-	b.reelsMu.Unlock()
-
+	b.mutateReelByPK(pk, func(r *Reel) { r.Liked = !r.Liked })
 	return true, nil
 }
 
@@ -478,7 +308,7 @@ func (b *ChromeBackend) ToggleRepost() (bool, error) {
 		return false, fmt.Errorf("Still syncing to reel")
 	}
 
-	pk, err := b.getCurrentPK()
+	_, pk, err := b.activeCursor().Current()
 	if err != nil {
 		return false, err
 	}
@@ -528,15 +358,7 @@ func (b *ChromeBackend) ToggleRepost() (bool, error) {
 		return false, err
 	}
 
-	b.reelsMu.Lock()
-	for i := range b.orderedReels {
-		if b.orderedReels[i].PK == pk {
-			b.orderedReels[i].Reposted = !b.orderedReels[i].Reposted
-			break
-		}
-	}
-	b.reelsMu.Unlock()
-
+	b.mutateReelByPK(pk, func(r *Reel) { r.Reposted = !r.Reposted })
 	return true, nil
 }
 
@@ -546,12 +368,11 @@ func (b *ChromeBackend) ToggleSave() (bool, error) {
 		return false, fmt.Errorf("Still syncing to reel")
 	}
 
-	pk, err := b.getCurrentPK()
+	_, pk, err := b.activeCursor().Current()
 	if err != nil {
 		return false, err
 	}
 
-	// Clear any previous marker, then find the save button for the visible video
 	js := `
 		(() => {
 			document.querySelectorAll('[data-reels-save-btn]').forEach(el => {
@@ -596,16 +417,7 @@ func (b *ChromeBackend) ToggleSave() (bool, error) {
 		return false, err
 	}
 
-	// Toggle saved in the stored reel
-	b.reelsMu.Lock()
-	for i := range b.orderedReels {
-		if b.orderedReels[i].PK == pk {
-			b.orderedReels[i].Saved = !b.orderedReels[i].Saved
-			break
-		}
-	}
-	b.reelsMu.Unlock()
-
+	b.mutateReelByPK(pk, func(r *Reel) { r.Saved = !r.Saved })
 	return true, nil
 }
 
@@ -615,21 +427,12 @@ func (b *ChromeBackend) OpenComments() {
 		return
 	}
 
-	pk, err := b.getCurrentPK()
+	_, pk, err := b.activeCursor().Current()
 	if err != nil {
 		return
 	}
 	b.comments.Open(pk)
 	b.clickCommentsButton()
-}
-
-func (b *ChromeBackend) IsSyncing() bool {
-	b.syncMu.Lock()
-	defer b.syncMu.Unlock()
-	if b.syncCtx != nil && b.syncCtx.Err() == nil {
-		return true
-	}
-	return false
 }
 
 // CloseComments closes the comments panel UI
@@ -655,14 +458,11 @@ func (b *ChromeBackend) getCommentsPagination() *CommentsPagination {
 	if pk == "" {
 		return nil
 	}
-	b.reelsMu.RLock()
-	defer b.reelsMu.RUnlock()
-	for i := range b.orderedReels {
-		if b.orderedReels[i].PK == pk {
-			return b.orderedReels[i].CommentsPagination
-		}
+	reel, ok := b.reelByPK(pk)
+	if !ok {
+		return nil
 	}
-	return nil
+	return reel.CommentsPagination
 }
 
 // setCommentsPagination updates pagination fields on the currently open comments reel.
@@ -671,18 +471,13 @@ func (b *ChromeBackend) setCommentsPagination(cursor string, hasNextPage bool) {
 	if pk == "" {
 		return
 	}
-	b.reelsMu.Lock()
-	defer b.reelsMu.Unlock()
-	for i := range b.orderedReels {
-		if b.orderedReels[i].PK == pk {
-			if b.orderedReels[i].CommentsPagination == nil {
-				b.orderedReels[i].CommentsPagination = &CommentsPagination{}
-			}
-			b.orderedReels[i].CommentsPagination.Cursor = cursor
-			b.orderedReels[i].CommentsPagination.HasNextPage = hasNextPage
-			return
+	b.mutateReelByPK(pk, func(r *Reel) {
+		if r.CommentsPagination == nil {
+			r.CommentsPagination = &CommentsPagination{}
 		}
-	}
+		r.CommentsPagination.Cursor = cursor
+		r.CommentsPagination.HasNextPage = hasNextPage
+	})
 }
 
 // enableCommentsPagination stores the request template and marks pagination as validated.
@@ -691,18 +486,13 @@ func (b *ChromeBackend) enableCommentsPagination(template string) {
 	if pk == "" {
 		return
 	}
-	b.reelsMu.Lock()
-	defer b.reelsMu.Unlock()
-	for i := range b.orderedReels {
-		if b.orderedReels[i].PK == pk {
-			if b.orderedReels[i].CommentsPagination == nil {
-				b.orderedReels[i].CommentsPagination = &CommentsPagination{}
-			}
-			b.orderedReels[i].CommentsPagination.RequestTemplate = template
-			b.orderedReels[i].CommentsPagination.PaginationEnabled = true
-			return
+	b.mutateReelByPK(pk, func(r *Reel) {
+		if r.CommentsPagination == nil {
+			r.CommentsPagination = &CommentsPagination{}
 		}
-	}
+		r.CommentsPagination.RequestTemplate = template
+		r.CommentsPagination.PaginationEnabled = true
+	})
 }
 
 // clickCloseButton finds and clicks the Close button in the browser
