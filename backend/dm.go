@@ -15,8 +15,8 @@ import (
 )
 
 // dmInboxDrainWindow is how long collectDMInbox waits after navigation for
-// thread bodies to arrive. Heuristic — IG renders the inbox progressively.
-const dmInboxDrainWindow = 5 * time.Second
+// thread bodies to arrive.
+const dmInboxDrainWindow = 10 * time.Second
 
 // startDMSession spawns the secondary browser window, enables fetch
 // interception on it, and stores the long-lived dmCtx. Called once after the
@@ -170,8 +170,7 @@ func (b *ChromeBackend) GetDMReelsCount() int {
 
 // EnterFriendMode swaps the active cursor to a FriendCursor over the named
 // friend's entries and routes user-action ctx to the DM window. Errors if
-// the friend isn't in dmFriends. SyncTo(1) is kicked off in the background;
-// the clip body arrives async via ingestFriendReelBody.
+// the friend isn't in dmFriends.
 func (b *ChromeBackend) EnterFriendMode(username string) error {
 	b.dmMu.RLock()
 	var entries []DMReelEntry
@@ -198,8 +197,7 @@ func (b *ChromeBackend) EnterFriendMode(username string) error {
 }
 
 // ExitFriendMode restores the feed cursor and feed window. Idempotent when
-// already in feed mode. Parks the DM window on about:blank to free video
-// resources, then emits EventFriendModeExited.
+// already in feed mode. Parks the DM window on about:blank.
 func (b *ChromeBackend) ExitFriendMode() {
 	b.modeMu.Lock()
 	if b.active == b.feed {
@@ -279,8 +277,7 @@ type dmThreadResponse struct {
 }
 
 // extractDMThreadEntries parses a single thread response and returns its
-// unseen reel entries (filtered to messages newer than the viewer's watermark
-// and to inline shares whose XMA preview is decorated as REEL).
+// unseen reel entries
 func extractDMThreadEntries(body string) ([]DMReelEntry, string) {
 	var resp dmThreadResponse
 	if err := json.Unmarshal([]byte(body), &resp); err != nil {

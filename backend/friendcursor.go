@@ -9,7 +9,7 @@ import (
 )
 
 // FriendCursor navigates a fixed list of DM-shared reels in the secondary
-// window. Unlike FeedCursor, position is authoritative (we drove the
+// window. Position is authoritative (we drove the
 // navigation, so we know where we are).
 type FriendCursor struct {
 	ctx      context.Context

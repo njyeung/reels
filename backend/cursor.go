@@ -4,13 +4,11 @@ import (
 	"regexp"
 )
 
-// pkRegex extracts ig_cache_key from a URL — used to recover the visible
-// reel's PK from its cached preview image src.
+// pkRegex extracts ig_cache_key from a URL.
+// Used to recover the visible reel's PK from its cached preview image src.
 var pkRegex = regexp.MustCompile(`ig_cache_key=([^&]+)`)
 
 // Cursor abstracts how the user navigates a list of reels in the browser.
-// FeedCursor scrolls the main reels page; FriendCursor navigates to specific
-// reel URLs in a secondary DM window.
 type Cursor interface {
 	// Current returns the (1-based index, PK) of the reel the user is looking
 	// at. FeedCursor probes the DOM; FriendCursor reads its internal cursor.
