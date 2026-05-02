@@ -96,10 +96,6 @@ type Model struct {
 	// Friends panel picks a DM friend whose reels to browse
 	friends *FriendsPanel
 
-	// friendMode mirrors backend.IsFriendMode(); the TUI tracks it so panel/nav
-	// logic doesn't need to call the backend on every keypress.
-	friendMode bool
-
 	flags Config
 
 	loginSuccess bool
@@ -390,20 +386,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.Count > 0 {
 				return m, tea.Batch(m.hud.ShowDMNotify(msg.Count), m.listenForEvents)
 			}
-		case backend.EventFriendReelLoaded:
-			if m.friends.IsOpen() {
-				m.friends.Close()
-				m.closePanelLayout()
-			}
 		case backend.EventSyncComplete:
-			if m.friendMode {
+			if m.backend.IsFriendMode() {
 				m.player.Stop()
 				m.status = statusLoading
 				m.comments.Clear()
 				return m, tea.Batch(m.loadCurrentReel, m.listenForEvents)
 			}
 		case backend.EventFriendModeExited:
-			m.friendMode = false
 			if m.friends.IsOpen() {
 				m.friends.Close()
 				m.closePanelLayout()

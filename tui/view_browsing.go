@@ -246,10 +246,15 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		username := friend.Username
-		m.friendMode = true
-		m.player.Stop()
+		m.friends.Close()
+		m.closePanelLayout()
 		m.status = statusLoading
-		go m.backend.EnterFriendMode(username)
+		m.backend.EnterFriendMode(username)
+
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			m.player.Stop()
+		}()
 		return m, nil
 
 	// Share select takes priority over other keys when share panel is open
@@ -364,7 +369,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.friends.Close()
 		m.closePanelLayout()
 
-	case !m.friends.IsOpen() && slices.Contains(config.KeysFriendsClose, key) && m.friendMode:
+	case !m.friends.IsOpen() && slices.Contains(config.KeysFriendsClose, key) && m.backend.IsFriendMode():
 		// In friend mode with no panel open, close-key exits back to the feed.
 		go m.backend.ExitFriendMode()
 		return m, nil
@@ -457,7 +462,7 @@ func (m *Model) startPlayback(index int) tea.Cmd {
 func (m Model) prefetch(index int) {
 	// Friend-mode reels are navigated on demand; the next reel's VideoURL isn't
 	// known until the user actually reaches it, so prefetch is a no-op there.
-	if m.friendMode {
+	if m.backend.IsFriendMode() {
 		return
 	}
 
@@ -465,10 +470,10 @@ func (m Model) prefetch(index int) {
 	toDownload2 := index + 2
 
 	if toDownload1 <= m.backend.GetTotal() {
-		m.backend.Download(index)
+		m.backend.Download(toDownload1)
 	}
 	if toDownload2 <= m.backend.GetTotal() {
-		m.backend.Download(index)
+		m.backend.Download(toDownload2)
 	}
 }
 
@@ -543,14 +548,14 @@ func (m *Model) navigateToReel(direction int) tea.Cmd {
 		return nil
 	}
 	index := m.currentReel.Index + direction
-	if m.friendMode && direction > 0 && index > m.backend.GetTotal() {
+	if m.backend.IsFriendMode() && direction > 0 && index > m.backend.GetTotal() {
 		go m.backend.ExitFriendMode()
 		return nil
 	}
 	if index < 1 || index > m.backend.GetTotal() {
 		return nil
 	}
-	if m.friendMode {
+	if m.backend.IsFriendMode() {
 		m.player.Stop()
 		m.status = statusLoading
 		m.comments.Clear()

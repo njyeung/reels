@@ -442,6 +442,24 @@ func (b *ChromeBackend) SetVolume(vol float64) error {
 	return nil
 }
 
+// dumpVideoURL appends a video URL to hi.txt next to the running binary.
+func dumpVideoURL(url string) {
+	if url == "" {
+		return
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	path := filepath.Join(filepath.Dir(exe), "hi.txt")
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	f.WriteString(url + "\n")
+}
+
 // fetchURLs fetches multiple URLs in parallel via a single chromedp Promise.all call,
 // returning the decoded bytes for each URL (nil if the fetch failed).
 func (b *ChromeBackend) fetchURLs(urls []string) [][]byte {
@@ -577,6 +595,8 @@ func (b *ChromeBackend) Download(index int) (string, string, []FloatingPfpFile, 
 		urls = append(urls, item.ProfilePicUrl)
 		floatingIdx = append(floatingIdx, i)
 	}
+
+	dumpVideoURL(reel.VideoURL)
 
 	data := b.fetchURLs(urls)
 	if data[0] == nil {
