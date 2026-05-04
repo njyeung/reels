@@ -58,7 +58,7 @@ reels
 | `key_seek_forward` | `l` | Seek forward by 5 seconds |
 | `key_like` | `space` | Like/unlike |
 | `key_repost` | `r` | Repost/unrepost current reel |
-| `key_share_select` | `space` | Select friend in share panel. Overrides any other bind while share panel is open |
+| `key_select` | `space` | Select friend in share/friends panel. Overrides any other bind while either panel is open |
 | `key_pause` | `p` | Pause/resume current reel |
 | `key_save` | `b` | Save/Unsave (bookmark) current reel |
 | `key_navbar` | `e` | Toggle navbar, a condensed version of the help menu |
@@ -66,6 +66,8 @@ reels
 | `key_comments_close` | `C` | Close comments |
 | `key_share_open` | `s` | Open share panel. Allows you to share reels with instagram's suggested top friends. |
 | `key_share_close` | `S` | Close Share panel & sends to friends' DMs (if any are selected) |
+| `key_friends_open` | `d` | Open DM friends panel to view reels shared by friends |
+| `key_friends_close` | `D` | Close DM friends panel / exit friend mode |
 | `key_copy_link` | `y` | Copy reel link to clipboard |
 | `key_mute` | `m` | Mute current reel |
 | `key_vol_up` | `]` | Volume up |
@@ -170,7 +172,9 @@ key_seek_forward = l
 key_seek_backward = h
 key_share_open = s
 key_share_close = S
-key_share_select = space
+key_select = space
+key_friends_open = d
+key_friends_close = D
 key_comments_open = c
 key_comments_close = C
 key_help_open = ?
