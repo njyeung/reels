@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.3.0]
+- View Reels shared by friends in DMs
+- Renamed key_share_select to key_select, unified key for share and dm menu
+- Fix: bug with prefetching reels
+
 ## [1.2.11]
 - Add automatic self-update for npm-installed binaries on launch
 
