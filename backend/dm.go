@@ -98,7 +98,7 @@ func (b *ChromeBackend) ingestFriendReelBody(body string) {
 // processThreadResponse appends any reel-shares from a single DM thread body
 // into b.dmFriends
 func (b *ChromeBackend) processThreadResponse(body string) {
-	entries, _ := extractDMThreadEntries(body)
+	entries, threadKey := extractDMThreadEntries(body)
 	if len(entries) == 0 {
 		return
 	}
@@ -115,11 +115,15 @@ func (b *ChromeBackend) processThreadResponse(body string) {
 		i, ok := idx[e.SenderUsername]
 		if !ok {
 			b.dmFriends = append(b.dmFriends, DMFriend{
-				Username: e.SenderUsername,
-				Entries:  []DMReelEntry{e},
+				Username:  e.SenderUsername,
+				ThreadKey: threadKey,
+				Entries:   []DMReelEntry{e},
 			})
 			idx[e.SenderUsername] = len(b.dmFriends) - 1
 			continue
+		}
+		if b.dmFriends[i].ThreadKey == "" {
+			b.dmFriends[i].ThreadKey = threadKey
 		}
 		dup := false
 		for _, existing := range b.dmFriends[i].Entries {
@@ -169,20 +173,28 @@ func (b *ChromeBackend) GetDMReelsCount() int {
 }
 
 // EnterFriendMode swaps the active cursor to a FriendCursor over the named
-// friend's entries and routes user-action ctx to the DM window. Errors if
-// the friend isn't in dmFriends.
+// friend's entries and routes user-action ctx to the DM window. Starts at
+// SeenCount+1 so re-entry resumes after the last viewed reel. Errors if the
+// friend isn't in dmFriends.
 func (b *ChromeBackend) EnterFriendMode(username string) error {
 	b.dmMu.RLock()
 	var entries []DMReelEntry
+	var seenCount int
 	for _, f := range b.dmFriends {
 		if f.Username == username {
 			entries = f.Entries
+			seenCount = f.SeenCount
 			break
 		}
 	}
 	b.dmMu.RUnlock()
 	if len(entries) == 0 {
 		return fmt.Errorf("EnterFriendMode: unknown friend %q", username)
+	}
+
+	startIdx := seenCount + 1
+	if startIdx > len(entries) {
+		startIdx = 1
 	}
 
 	fc := NewFriendCursor(b.dmCtx, username, entries)
@@ -192,24 +204,61 @@ func (b *ChromeBackend) EnterFriendMode(username string) error {
 	b.ctx = b.dmCtx
 	b.modeMu.Unlock()
 
-	go fc.SyncTo(1)
+	go fc.SyncTo(startIdx)
 	return nil
 }
 
 // ExitFriendMode restores the feed cursor and feed window. Idempotent when
-// already in feed mode. Parks the DM window on about:blank.
+// already in feed mode. Advances the friend's SeenCount to the cursor's
+// high-water mark, then synchronously navigates the DM window to the friend's
+// thread (to mark it read on Instagram) and parks it on about:blank.
 func (b *ChromeBackend) ExitFriendMode() {
 	b.modeMu.Lock()
 	if b.active == b.feed {
 		b.modeMu.Unlock()
 		return
 	}
+	fc, _ := b.active.(*FriendCursor)
 	b.active = b.feed
 	b.ctx = b.feedCtx
 	dmCtx := b.dmCtx
 	b.modeMu.Unlock()
 
-	if dmCtx != nil {
+	var threadKey string
+	var totalReels int
+	if fc != nil {
+		username := fc.Username()
+
+		// Get where the cursor is
+		highWater := 0
+		fc.mu.RLock()
+		if fc.cursor >= 0 {
+			highWater = fc.cursor + 1
+		}
+		fc.mu.RUnlock()
+
+		// update state of friend dm
+		b.dmMu.Lock()
+		for i := range b.dmFriends {
+			if b.dmFriends[i].Username != username {
+				continue
+			}
+
+			threadKey = b.dmFriends[i].ThreadKey
+			b.dmFriends[i].SeenCount = highWater
+			totalReels = len(b.dmFriends[i].Entries)
+			break
+		}
+		b.dmMu.Unlock()
+
+		if highWater == totalReels {
+			// navigate to friend's dm
+			_ = chromedp.Run(dmCtx,
+				chromedp.Navigate("https://www.instagram.com/direct/t/"+threadKey+"/"),
+				chromedp.Sleep(1*time.Second),
+			)
+		}
+		// park in blank
 		_ = chromedp.Run(dmCtx, chromedp.Navigate("about:blank"))
 	}
 
@@ -226,8 +275,10 @@ func (b *ChromeBackend) IsFriendMode() bool {
 // DMFriend groups a sender's reel-share entries from the DM inbox. Built by
 // collectDMInbox; consumed by the friends picker UI and EnterFriendMode.
 type DMFriend struct {
-	Username string
-	Entries  []DMReelEntry
+	Username  string
+	ThreadKey string // /direct/t/<ThreadKey>/
+	SeenCount int    // number of entries from index 0 already shown to the user; advanced by ExitFriendMode
+	Entries   []DMReelEntry
 }
 
 // dmThreadResponse is the GraphQL response shape for a single DM thread
