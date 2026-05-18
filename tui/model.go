@@ -128,9 +128,9 @@ type Config struct {
 }
 
 // NewModel creates a new TUI model
-func NewModel(userDataDir, cacheDir, configDir string, output io.Writer, version string, flags Config) Model {
+func NewModel(userDataDir, logDir, cacheDir, configDir string, output io.Writer, version string, flags Config) Model {
 	backend.LoadSettings(configDir)
-
+	backend.InitLogger(logDir)
 	settings := backend.GetSettings()
 
 	playerHeight := settings.ReelHeight * settings.RetinaScale

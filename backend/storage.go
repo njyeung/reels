@@ -2,18 +2,16 @@ package backend
 
 import (
 	"bufio"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	goruntime "runtime"
 	"strconv"
 	"strings"
 	"sync"
-
-	"github.com/chromedp/cdproto/runtime"
-	"github.com/chromedp/chromedp"
+	"time"
 )
 
 type Settings struct {
@@ -442,9 +440,56 @@ func (b *ChromeBackend) SetVolume(vol float64) error {
 	return nil
 }
 
-// fetchURLs fetches multiple URLs in parallel via a single chromedp Promise.all call,
-// returning the decoded bytes for each URL (nil if the fetch failed).
-func (b *ChromeBackend) fetchURLs(urls []string) [][]byte {
+// fetchURLsHTTP fetches multiple URLs in parallel via plain Go HTTP.
+// Used for signed CDN URLs that are blocked by CORS when fetched
+// from the instagram page context.
+// Returns nil for each failed URL
+func fetchURLsHTTP(urls []string) [][]byte {
+	var gifHTTPClient = &http.Client{Timeout: 10 * time.Second}
+
+	if len(urls) == 0 {
+		return nil
+	}
+	data := make([][]byte, len(urls))
+	var wg sync.WaitGroup
+	for i, u := range urls {
+		if u == "" {
+			continue
+		}
+		wg.Add(1)
+		go func(i int, u string) {
+			defer wg.Done()
+			resp, err := gifHTTPClient.Get(u)
+			if err != nil {
+				return
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				return
+			}
+			b, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return
+			}
+			data[i] = b
+		}(i, u)
+	}
+	wg.Wait()
+	return data
+}
+
+// fetchURLsJS fetches multiple URLs in parallel from the chrome page context.
+// Used for URLs that require cookies.
+// Returns nil for each failed URL
+//
+// Currently unused. All our fetched URLs are signed CDN URLs that work over
+// plain HTTP (see fetchURLsHTTP).
+//
+// Note: cross-origin URLs that the page can't reach via fetch() (e.g.
+// cdn.fbsbx.com from instagram.com) will silently return empty bytes here
+// because of CORS.
+/*
+func (b *ChromeBackend) fetchURLsJS(urls []string) [][]byte {
 	if len(urls) == 0 {
 		return nil
 	}
@@ -495,6 +540,7 @@ func (b *ChromeBackend) fetchURLs(urls []string) [][]byte {
 	}
 	return data
 }
+*/
 
 // Download downloads a reel video and profile picture to the cache directory
 func (b *ChromeBackend) Download(index int) (string, string, []FloatingPfpFile, error) {
@@ -578,7 +624,7 @@ func (b *ChromeBackend) Download(index int) (string, string, []FloatingPfpFile, 
 		floatingIdx = append(floatingIdx, i)
 	}
 
-	data := b.fetchURLs(urls)
+	data := fetchURLsHTTP(urls)
 	if data[0] == nil {
 		return "", "", nil, fmt.Errorf("failed to download video")
 	}

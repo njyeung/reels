@@ -37,10 +37,12 @@ func main() {
 
 	// Set up directories:
 	// Browser data: 	~/.local/share/reels/
-	// Cache:			~/.cache/reels/,
+	// Logs:			~/.local/state/reels/
+	// Cache:			~/.cache/reels/
 	// Settings: 		~/.config/reels/
 	homeDir, _ := os.UserHomeDir()
 	userDataDir := filepath.Join(homeDir, ".local", "share", "reels", "chrome-data")
+	logDir := filepath.Join(homeDir, ".local", "state", "reels")
 	cacheDir := filepath.Join(homeDir, ".cache", "reels")
 	configDir := filepath.Join(homeDir, ".config", "reels")
 
@@ -48,7 +50,7 @@ func main() {
 	syncOut := &SyncFile{File: os.Stdout}
 
 	p := tea.NewProgram(
-		tui.NewModel(userDataDir, cacheDir, configDir, syncOut, Version, tui.Config{LoginMode: *loginFlag, HeadedMode: *headedFlag}),
+		tui.NewModel(userDataDir, logDir, cacheDir, configDir, syncOut, Version, tui.Config{LoginMode: *loginFlag, HeadedMode: *headedFlag}),
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
 		tea.WithOutput(syncOut),

@@ -666,7 +666,7 @@ func (b *ChromeBackend) OpenSharePanel() {
 		urls[i] = r.ImgSrc
 	}
 
-	data := b.fetchURLs(urls)
+	data := fetchURLsHTTP(urls)
 
 	friends := make([]Friend, len(raw))
 	for i, r := range raw {

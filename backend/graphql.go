@@ -174,7 +174,9 @@ func buildReel(media reelMedia) *Reel {
 }
 
 // extractComments parses comment edges from a commentsResponse.
-// GIFs (if any) are fetched in parallel via fetchURLs.
+// GIFs (if any) are fetched in parallel via fetchURLsHTTP — the comment GIF
+// CDN (cdn.fbsbx.com) blocks CORS from the instagram.com page context, so
+// chromedp's in-page fetch() returns empty bytes.
 func (b *ChromeBackend) extractComments(resp *commentsResponse) []Comment {
 	var comments []Comment
 	for _, edge := range resp.Data.Connection.Edges {
@@ -206,12 +208,16 @@ func (b *ChromeBackend) extractComments(resp *commentsResponse) []Comment {
 		return comments
 	}
 
-	data := b.fetchURLs(gifURLs)
+	data := fetchURLsHTTP(gifURLs)
 	for i, idx := range gifIndices {
 		if i >= len(data) || data[i] == nil {
 			continue
 		}
-		comments[idx].GifPath = b.cacheGif(comments[idx].PK, data[i])
+		path := b.cacheGif(comments[idx].PK, data[i])
+		if path == "" {
+			continue
+		}
+		comments[idx].GifPath = path
 	}
 
 	return comments
@@ -466,8 +472,10 @@ func (b *ChromeBackend) processGraphQLBody(ctx context.Context, e *fetch.EventRe
 					break
 				}
 			}
+			isPagination := strings.Contains(postData, paginationFriendlyName)
+
 			// Skip pagination responses, FetchMoreComments handles those directly.
-			if !strings.Contains(postData, paginationFriendlyName) {
+			if !isPagination {
 				b.processCommentsResponse(bodyStr, postData, appID)
 			}
 		case threadSink != nil && strings.Contains(bodyStr, "get_slide_thread_nullable"):
