@@ -711,11 +711,9 @@ func (m *Model) floatingPfpSlots() []player.ImageSlot {
 			}
 		}
 		if badge != nil {
-			// place it at the pfp's bottom-right cell so half the
-			// badge hangs off to the right.
 			slots = append(slots, player.ImageSlot{
 				Img: badge,
-				Row: row + 1,
+				Row: row + 2,
 				Col: col + 1,
 			})
 		}
