@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.3.2]
+- Fix: Update Instagram comments doc_ids to match new frontend
+- Move liked/repost badge right
+
 ## [1.3.1]
 - Fix: Instagram CORs now blocks requests from the browser context. Switched to direct HTTP requests
 
