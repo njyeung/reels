@@ -26,13 +26,13 @@ func (m Model) viewLoading() string {
 	var barStyle lipgloss.Style
 	if m.updateAvailable != "" {
 		barText = fmt.Sprintf("Update available: v%s ➞ v%s", m.version, m.updateAvailable)
-		barStyle = lipgloss.NewStyle().Bold(true).Foreground(colors.Yellow400Color).Background(colors.Gray900Color)
+		barStyle = lipgloss.NewStyle().Bold(true).Foreground(colors.Yellow400Color)
 	} else if len(m.loadingMessages) > 0 {
 		barText = m.loadingMessages[m.loadingMsgIndex]
 		if m.loadingFadeStep > 0 {
-			barStyle = lipgloss.NewStyle().Background(colors.Gray900Color).Foreground(lipgloss.Color(loadingFadeColor(m.loadingFadeStep)))
+			barStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(loadingFadeColor(m.loadingFadeStep)))
 		} else {
-			barStyle = lipgloss.NewStyle().Foreground(colors.Gray400Color).Background(colors.Gray900Color)
+			barStyle = lipgloss.NewStyle().Foreground(colors.Gray400Color)
 		}
 	}
 
@@ -107,9 +107,9 @@ func renderLoadingBar(text string, style lipgloss.Style, scrollOffset int) strin
 		pad := loadingBarWidth - textWidth
 		left := pad / 2
 		right := pad - left
-		return lipgloss.NewStyle().Background(colors.Gray900Color).Render(strings.Repeat(" ", left)) +
+		return strings.Repeat(" ", left) +
 			style.Render(text) +
-			lipgloss.NewStyle().Background(colors.Gray900Color).Render(strings.Repeat(" ", right))
+			strings.Repeat(" ", right)
 	}
 
 	// Marquee scroll: duplicate text with gap for seamless loop
