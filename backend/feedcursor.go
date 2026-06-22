@@ -99,7 +99,7 @@ func (fc *FeedCursor) domPK() (string, error) {
 				const videoCenter = rect.top + rect.height / 2;
 				if (videoCenter > 0 && videoCenter < viewportHeight) {
 					let parent = video.parentElement;
-					for (let i = 0; i < 10; i++) {
+					for (let i = 0; i < 12; i++) {
 						if (!parent) break;
 						const img = parent.querySelector('img[src*="ig_cache_key"]');
 						if (img) return img.src;
