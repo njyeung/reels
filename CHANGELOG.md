@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.3.3]
+- Fix: Instagram frontend change breaks reel navigation (domPK() ancestor traversal off by 1)
+- Update loading animation
+
 ## [1.3.2]
 - Fix: Update Instagram comments doc_ids to match new frontend
 - Move liked/repost badge right
