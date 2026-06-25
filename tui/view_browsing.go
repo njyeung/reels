@@ -713,8 +713,8 @@ func (m *Model) floatingPfpSlots() []player.ImageSlot {
 		if badge != nil {
 			slots = append(slots, player.ImageSlot{
 				Img: badge,
-				Row: row + 2,
-				Col: col + 1,
+				Row: row + 1,
+				Col: col + 2,
 			})
 		}
 	}
