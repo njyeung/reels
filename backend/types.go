@@ -44,6 +44,12 @@ type ChromeBackend struct {
 	dmMu      sync.RWMutex
 	dmFriends []DMFriend
 
+	// dmReqTemplate is a captured get_slide_thread_nullable POST body from the
+	// DM window, reused as the token-bearing template (fb_dtsg/lsd/etc.) to
+	// replay clips_home and prefetch DM-shared reels. Captured once.
+	dmReqTemplateMu sync.RWMutex
+	dmReqTemplate   string
+
 	// comments encapsulates all comment-related state
 	comments *CommentsState
 
@@ -156,7 +162,9 @@ type Backend interface {
 
 	// EnterFriendMode swaps the active cursor to a FriendCursor over the
 	// named friend's reel entries and routes user actions through the DM
-	// window. Errors if the friend isn't known.
+	// window. The cursor is positioned on the first reel to show (resuming
+	// after the last-seen one) so GetCurrent works immediately. Errors if the
+	// friend isn't known.
 	EnterFriendMode(username string) error
 
 	// ExitFriendMode restores the feed cursor and feed window. Idempotent
@@ -237,15 +245,6 @@ type ReelInfo struct {
 	Reel
 }
 
-// DMReelEntry is a pointer to a reel shared in a DM thread. The DM window
-// navigates to TargetURL to materialize the full Reel
-type DMReelEntry struct {
-	TargetPK       string // reel PK
-	TargetURL      string // navigate here to fetch the Reel
-	ReelAuthor     string // xmaHeaderTitle, i.e. the reel's original poster
-	SenderUsername string // who shared the reel
-}
-
 // CommentsPagination holds the resumable pagination state for a reel's comments.
 // Stored on the Reel struct so pagination can be restored after navigating away and back.
 type CommentsPagination struct {
@@ -285,7 +284,6 @@ const (
 	EventSyncComplete
 	EventError
 	EventDMReelsReady
-	EventFriendReelLoaded
 	EventFriendModeExited
 )
 

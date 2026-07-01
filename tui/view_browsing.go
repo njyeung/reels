@@ -248,14 +248,14 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		username := friend.Username
 		m.friends.Close()
 		m.closePanelLayout()
+		m.player.Stop()
 		m.status = statusLoading
-		m.backend.EnterFriendMode(username)
-
-		go func() {
-			time.Sleep(200 * time.Millisecond)
-			m.player.Stop()
-		}()
-		return m, nil
+		m.comments.Clear()
+		if err := m.backend.EnterFriendMode(username); err != nil {
+			m.status = statusReelError
+			return m, nil
+		}
+		return m, m.loadCurrentReel
 
 	// Share select takes priority over other keys when share panel is open
 	case m.share.IsOpen() && slices.Contains(config.KeysSelect, key):
@@ -460,12 +460,6 @@ func (m *Model) startPlayback(index int) tea.Cmd {
 }
 
 func (m Model) prefetch(index int) {
-	// Friend-mode reels are navigated on demand; the next reel's VideoURL isn't
-	// known until the user actually reaches it, so prefetch is a no-op there.
-	if m.backend.IsFriendMode() {
-		return
-	}
-
 	toDownload1 := index + 1
 	toDownload2 := index + 2
 
@@ -539,10 +533,8 @@ func (m *Model) scrollPanel(direction int) bool {
 	return false
 }
 
-// navigateToReel moves to a reel at currentIndex+direction if in bounds and not already loading.
-//
-// In friend mode, navigation is async: SyncTo on the FriendCursor navigates the DM window,
-// the clip body arrives later, and EventSyncComplete drives the reload.
+// navigateToReel moves to a reel at currentIndex+direction if in bounds and not
+// already loading.
 func (m *Model) navigateToReel(direction int) tea.Cmd {
 	if m.currentReel == nil || m.status == statusLoading {
 		return nil
@@ -553,13 +545,6 @@ func (m *Model) navigateToReel(direction int) tea.Cmd {
 		return nil
 	}
 	if index < 1 || index > m.backend.GetTotal() {
-		return nil
-	}
-	if m.backend.IsFriendMode() {
-		m.player.Stop()
-		m.status = statusLoading
-		m.comments.Clear()
-		go m.backend.SyncTo(index)
 		return nil
 	}
 	m.player.Stop()

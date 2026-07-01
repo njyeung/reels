@@ -4,12 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand"
+	"net/url"
+	"regexp"
 	"strconv"
 	"time"
 
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/fetch"
 	"github.com/chromedp/cdproto/network"
+	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
 )
@@ -51,7 +55,7 @@ func (b *ChromeBackend) startDMSession() error {
 
 	chromedp.ListenTarget(dmCtx, func(ev interface{}) {
 		if e, ok := ev.(*fetch.EventRequestPaused); ok {
-			go b.processGraphQLBody(dmCtx, e, b.ingestFriendReelBody, b.processThreadResponse)
+			go b.processGraphQLBody(dmCtx, e, true)
 		}
 	})
 
@@ -69,36 +73,127 @@ func (b *ChromeBackend) stopDMSession() {
 	}
 }
 
-// ingestFriendReelBody is the clipSink for the DM window
-func (b *ChromeBackend) ingestFriendReelBody(body string) {
-	var resp reelResponse
-	if err := json.Unmarshal([]byte(body), &resp); err != nil {
+// captureDMTemplate stores the first DM-window graphql POST body as the token-
+// bearing template for prefetch replays. Idempotent; ignores empties.
+func (b *ChromeBackend) captureDMTemplate(postData string) {
+	if postData == "" {
 		return
 	}
-	if len(resp.Data.Connection.Edges) == 0 {
-		return
+	b.dmReqTemplateMu.Lock()
+	if b.dmReqTemplate == "" {
+		b.dmReqTemplate = postData
 	}
-
-	b.reelsMu.Lock()
-	for _, edge := range resp.Data.Connection.Edges {
-		media := edge.Node.Media
-		if media.PK == "" {
-			continue
-		}
-		if _, exists := b.reels[media.PK]; !exists {
-			b.reels[media.PK] = buildReel(media)
-		}
-	}
-	b.reelsMu.Unlock()
-
-	b.events <- Event{Type: EventFriendReelLoaded}
-	b.events <- Event{Type: EventSyncComplete}
+	b.dmReqTemplateMu.Unlock()
 }
 
-// processThreadResponse appends any reel-shares from a single DM thread body
-// into b.dmFriends
+// prefetchReel replays clips_home for a single reel (keyed by its shortcode)
+// using the captured DM request template, and warms b.reels[pk] with the
+// resulting media so friend-mode navigation can show it without a page load.
+//
+// DM fetch listener sees the response too but ignores clip bodies, so we
+// own storage here.
+func (b *ChromeBackend) prefetchReel(code, pk string) error {
+	if code == "" {
+		return fmt.Errorf("prefetchReel: empty code")
+	}
+	b.dmReqTemplateMu.RLock()
+	template := b.dmReqTemplate
+	b.dmReqTemplateMu.RUnlock()
+	if template == "" {
+		return fmt.Errorf("prefetchReel: no DM request template captured")
+	}
+
+	params, err := url.ParseQuery(template)
+	if err != nil {
+		return err
+	}
+
+	vars := map[string]interface{}{
+		"after":  nil,
+		"before": nil,
+		"first":  1,
+		"data": map[string]interface{}{
+			"container_module":              "clips_tab_desktop_page",
+			"seen_reels":                    "[]",
+			"chaining_media_id":             code,
+			"should_refetch_chaining_media": true,
+		},
+	}
+	varsJSON, _ := json.Marshal(vars)
+
+	params.Set("doc_id", clipsDocID)
+	params.Set("fb_api_req_friendly_name", clipsFriendlyName)
+	params.Set("variables", string(varsJSON))
+
+	postBody := params.Encode()
+	lsd := params.Get("lsd")
+
+	js := fmt.Sprintf(`
+		(async () => {
+			const ac = new AbortController();
+			const tid = setTimeout(() => ac.abort(), 10000);
+			try {
+				const csrftoken = document.cookie.split('; ')
+					.find(c => c.startsWith('csrftoken='))
+					?.split('=')[1] || '';
+				const r = await fetch("https://www.instagram.com/graphql/query", {
+					method: "POST",
+					headers: {
+						"content-type": "application/x-www-form-urlencoded",
+						"x-csrftoken": csrftoken,
+						"x-fb-friendly-name": %s,
+						"x-fb-lsd": %s,
+						"x-ig-app-id": %s,
+					},
+					body: %s,
+					credentials: "include",
+					signal: ac.signal
+				});
+				return await r.text();
+			} finally {
+				clearTimeout(tid);
+			}
+		})()
+	`, jsonStringForJS(clipsFriendlyName), jsonStringForJS(lsd), expectedAppID, jsonStringForJS(postBody))
+
+	var result string
+	err = chromedp.Run(b.dmCtx,
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			return chromedp.Evaluate(js, &result, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
+				return p.WithAwaitPromise(true)
+			}).Do(ctx)
+		}),
+	)
+	if err != nil {
+		return err
+	}
+
+	var resp reelResponse
+	if err := json.Unmarshal([]byte(result), &resp); err != nil {
+		return err
+	}
+	if len(resp.Data.Connection.Edges) == 0 {
+		return fmt.Errorf("prefetchReel: no edges for %s", code)
+	}
+	media := resp.Data.Connection.Edges[0].Node.Media
+	if media.PK == "" {
+		return fmt.Errorf("prefetchReel: empty media for %s", code)
+	}
+
+	// Key by the entry's PK (the shared reel's target_id, what the cursor
+	// looks up), not media.PK, so navigation resolves the reel regardless.
+	b.reelsMu.Lock()
+	if _, exists := b.reels[pk]; !exists {
+		b.reels[pk] = buildReel(media)
+	}
+	b.reelsMu.Unlock()
+	return nil
+}
+
+// processThreadResponse merges any reel-shares from a single DM thread body
+// into b.dmFriends, keyed by the sending friend.
 func (b *ChromeBackend) processThreadResponse(body string) {
-	entries, threadKey := extractDMThreadEntries(body)
+	entries, threadKey, sender := extractDMThreadEntries(body)
 	if len(entries) == 0 {
 		return
 	}
@@ -106,42 +201,44 @@ func (b *ChromeBackend) processThreadResponse(body string) {
 	b.dmMu.Lock()
 	defer b.dmMu.Unlock()
 
-	idx := make(map[string]int, len(b.dmFriends))
+	fi := -1
 	for i, f := range b.dmFriends {
-		idx[f.Username] = i
+		if f.Username == sender {
+			fi = i
+			break
+		}
 	}
-
+	if fi == -1 {
+		b.dmFriends = append(b.dmFriends, DMFriend{
+			Username:  sender,
+			ThreadKey: threadKey,
+			Entries:   entries,
+		})
+		return
+	}
+	if b.dmFriends[fi].ThreadKey == "" {
+		b.dmFriends[fi].ThreadKey = threadKey
+	}
 	for _, e := range entries {
-		i, ok := idx[e.SenderUsername]
-		if !ok {
-			b.dmFriends = append(b.dmFriends, DMFriend{
-				Username:  e.SenderUsername,
-				ThreadKey: threadKey,
-				Entries:   []DMReelEntry{e},
-			})
-			idx[e.SenderUsername] = len(b.dmFriends) - 1
-			continue
-		}
-		if b.dmFriends[i].ThreadKey == "" {
-			b.dmFriends[i].ThreadKey = threadKey
-		}
 		dup := false
-		for _, existing := range b.dmFriends[i].Entries {
-			if existing.TargetPK == e.TargetPK {
+		for _, existing := range b.dmFriends[fi].Entries {
+			if existing.PK == e.PK {
 				dup = true
 				break
 			}
 		}
 		if !dup {
-			b.dmFriends[i].Entries = append(b.dmFriends[i].Entries, e)
+			b.dmFriends[fi].Entries = append(b.dmFriends[fi].Entries, e)
 		}
 	}
 }
 
 // collectDMInbox navigates the DM window to /direct/inbox/ and waits
-// dmInboxDrainWindow for thread bodies to flow in via the always-on
-// processThreadResponse sink. Emits EventDMReelsReady when done. Safe to call
-// repeatedly for periodic re-collection.
+// dmInboxDrainWindow for thread bodies to flow in via processThreadResponse
+// which also captures the request template.
+//
+// It then materializes every shared reel's CDN video URL up front,
+// and emits EventDMReelsReady when done.
 func (b *ChromeBackend) collectDMInbox(ctx context.Context) {
 	if err := chromedp.Run(ctx, chromedp.Navigate("https://www.instagram.com/direct/inbox/")); err != nil {
 		return
@@ -151,7 +248,36 @@ func (b *ChromeBackend) collectDMInbox(ctx context.Context) {
 	case <-ctx.Done():
 		return
 	}
+
+	// Materialize linearly with jitter.
+	for _, entry := range b.pendingReelEntries() {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		if err := b.prefetchReel(entry.Code, entry.PK); err != nil {
+			continue
+		}
+		select {
+		case <-time.After(time.Duration(300+rand.Intn(500)) * time.Millisecond):
+		case <-ctx.Done():
+			return
+		}
+	}
+
 	b.events <- Event{Type: EventDMReelsReady, Count: b.GetDMReelsCount()}
+}
+
+// pendingReelEntries returns a flat snapshot of every friend's reel entries.
+func (b *ChromeBackend) pendingReelEntries() []dmReelEntry {
+	b.dmMu.RLock()
+	defer b.dmMu.RUnlock()
+	var out []dmReelEntry
+	for _, f := range b.dmFriends {
+		out = append(out, f.Entries...)
+	}
+	return out
 }
 
 // GetDMFriends returns the cached list of friends with shared reels.
@@ -178,7 +304,7 @@ func (b *ChromeBackend) GetDMReelsCount() int {
 // friend isn't in dmFriends.
 func (b *ChromeBackend) EnterFriendMode(username string) error {
 	b.dmMu.RLock()
-	var entries []DMReelEntry
+	var entries []dmReelEntry
 	var seenCount int
 	for _, f := range b.dmFriends {
 		if f.Username == username {
@@ -197,7 +323,10 @@ func (b *ChromeBackend) EnterFriendMode(username string) error {
 		startIdx = 1
 	}
 
-	fc := NewFriendCursor(b.dmCtx, username, entries)
+	// Position the cursor up front so GetCurrent resolves the (prefetched)
+	// reel immediately; SyncTo then navigates the DM window in the background
+	// for seen-state and to enable DOM actions (gated on IsSyncing).
+	fc := NewFriendCursor(b.dmCtx, username, entries, startIdx)
 
 	b.modeMu.Lock()
 	b.active = fc
@@ -278,7 +407,24 @@ type DMFriend struct {
 	Username  string
 	ThreadKey string // /direct/t/<ThreadKey>/
 	SeenCount int    // number of entries from index 0 already shown to the user; advanced by ExitFriendMode
-	Entries   []DMReelEntry
+	Entries   []dmReelEntry
+}
+
+// Unseen returns how many of the friend's entries haven't been shown yet.
+func (f DMFriend) Unseen() int {
+	if n := len(f.Entries) - f.SeenCount; n > 0 {
+		return n
+	}
+	return 0
+}
+
+// dmReelEntry is an internal pointer to a reel shared in a DM thread. Reels are
+// prefetched by Code (the shortcode) into b.reels; the DM window navigates to
+// TargetURL in the background to update seen-state.
+type dmReelEntry struct {
+	PK        string // reel media PK (xma.target_id); keys b.reels + the cursor
+	Code      string // shortcode parsed from TargetURL; keys the prefetch replay
+	TargetURL string // permalink the DM window navigates to for seen-state
 }
 
 // dmThreadResponse is the GraphQL response shape for a single DM thread
@@ -308,10 +454,9 @@ type dmThreadResponse struct {
 							} `json:"sender"`
 							Content struct {
 								XMA *struct {
-									TargetID    string `json:"target_id"`
-									TargetURL   string `json:"target_url"`
-									HeaderTitle string `json:"xmaHeaderTitle"`
-									PreviewImg  *struct {
+									TargetID   string `json:"target_id"`
+									TargetURL  string `json:"target_url"`
+									PreviewImg *struct {
 										DecorationType string `json:"preview_image_decoration_type"`
 									} `json:"xmaPreviewImage"`
 									PreviewImg2 *struct {
@@ -327,15 +472,20 @@ type dmThreadResponse struct {
 	} `json:"data"`
 }
 
-// extractDMThreadEntries parses a single thread response and returns its
-// unseen reel entries
-func extractDMThreadEntries(body string) ([]DMReelEntry, string) {
+// reelCodeRegex pulls the shortcode out of a reel permalink
+// (…/reel/<code>/ or …/reels/<code>/).
+var reelCodeRegex = regexp.MustCompile(`/reels?/([^/?]+)`)
+
+// extractDMThreadEntries parses a single thread response and returns its unseen
+// reel entries, the thread key, and the sending friend's username. A 1:1 DM
+// thread has a single non-viewer sender, so the username is returned once.
+func extractDMThreadEntries(body string) (entries []dmReelEntry, threadKey, sender string) {
 	var resp dmThreadResponse
 	if err := json.Unmarshal([]byte(body), &resp); err != nil {
-		return nil, ""
+		return nil, "", ""
 	}
 	if resp.Data.Thread == nil || resp.Data.Thread.Inner == nil {
-		return nil, ""
+		return nil, "", ""
 	}
 
 	thread := resp.Data.Thread.Inner
@@ -351,7 +501,6 @@ func extractDMThreadEntries(body string) ([]DMReelEntry, string) {
 		}
 	}
 
-	var entries []DMReelEntry
 	for _, edge := range thread.Messages.Edges {
 		msg := edge.Node
 
@@ -374,14 +523,20 @@ func extractDMThreadEntries(body string) ([]DMReelEntry, string) {
 		if !isReel {
 			continue
 		}
+		m := reelCodeRegex.FindStringSubmatch(xma.TargetURL)
+		if len(m) < 2 {
+			continue // no shortcode -> can't prefetch
+		}
 
-		entries = append(entries, DMReelEntry{
-			TargetPK:       xma.TargetID,
-			TargetURL:      xma.TargetURL,
-			ReelAuthor:     xma.HeaderTitle,
-			SenderUsername: msg.Sender.UserDict.Username,
+		if sender == "" {
+			sender = msg.Sender.UserDict.Username
+		}
+		entries = append(entries, dmReelEntry{
+			PK:        xma.TargetID,
+			Code:      m[1],
+			TargetURL: xma.TargetURL,
 		})
 	}
 
-	return entries, thread.ThreadKey
+	return entries, thread.ThreadKey, sender
 }

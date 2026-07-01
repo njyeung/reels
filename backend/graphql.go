@@ -16,9 +16,14 @@ import (
 const (
 	initialCommentsDocID        = "26297736713236852"
 	initialCommentsFriendlyName = "PolarisPostCommentsContainerQuery"
-	paginationDocID             = "26864966453197043"
-	paginationFriendlyName      = "PolarisPostCommentsPaginationQuery"
-	expectedAppID               = "936619743392459"
+
+	paginationDocID        = "26864966453197043"
+	paginationFriendlyName = "PolarisPostCommentsPaginationQuery"
+
+	clipsDocID        = "36825039943776829"
+	clipsFriendlyName = "PolarisClipsTabDesktopPaginationQuery"
+
+	expectedAppID = "936619743392459"
 )
 
 // commentsResponse represents the xdt_api__v1__media__media_id__comments__connection GraphQL response structure
@@ -432,10 +437,28 @@ func (b *ChromeBackend) processReelResponse(body string) {
 	}
 }
 
+// decodePostData reassembles the (base64-chunked) POST body of an intercepted
+// request into a plain string.
+func decodePostData(e *fetch.EventRequestPaused) string {
+	var raw []byte
+	for _, entry := range e.Request.PostDataEntries {
+		if decoded, err := base64.StdEncoding.DecodeString(entry.Bytes); err == nil {
+			raw = append(raw, decoded...)
+		}
+	}
+	return string(raw)
+}
+
 // processGraphQLBody is the shared fetch-interception router. It reads the paused
 // response body in the window that saw the request (ctx), dispatches based on
 // body content, and continues the request.
-func (b *ChromeBackend) processGraphQLBody(ctx context.Context, e *fetch.EventRequestPaused, clipSink func(string), threadSink func(string)) {
+//
+// isDM selects the window's role:
+// - false: captures clip responses into the feed
+// - true: captures DM thread bodies and the token-bearing request template used to prefetch reels.
+//
+// Comment responses are automatically handled in whichever window is active.
+func (b *ChromeBackend) processGraphQLBody(ctx context.Context, e *fetch.EventRequestPaused, isDM bool) {
 	var body []byte
 	err := chromedp.Run(ctx,
 		chromedp.ActionFunc(func(c context.Context) error {
@@ -452,19 +475,14 @@ func (b *ChromeBackend) processGraphQLBody(ctx context.Context, e *fetch.EventRe
 		bodyStr := string(body)
 		switch {
 		case strings.Contains(bodyStr, "xdt_api__v1__clips__home__connection_v2"):
-			if clipSink != nil {
-				clipSink(bodyStr)
+			// Regular feed. Instagram client fires graphql requests in the background
+			// to get more reels. On the DM feed, this is manually done by us.
+			if !isDM {
+				b.processReelResponse(bodyStr)
 			}
 		case strings.Contains(bodyStr, "xdt_api__v1__media__media_id__comments__connection"):
-			// Decode the POST body from the intercepted request (base64-encoded)
-			var rawBytes []byte
-			for _, entry := range e.Request.PostDataEntries {
-				decoded, err := base64.StdEncoding.DecodeString(entry.Bytes)
-				if err == nil {
-					rawBytes = append(rawBytes, decoded...)
-				}
-			}
-			postData := string(rawBytes)
+			// Comments section. Captured for both regular an dm feeds.
+			postData := decodePostData(e)
 			var appID string
 			for k, v := range e.Request.Headers {
 				if strings.EqualFold(k, "x-ig-app-id") {
@@ -472,14 +490,14 @@ func (b *ChromeBackend) processGraphQLBody(ctx context.Context, e *fetch.EventRe
 					break
 				}
 			}
-			isPagination := strings.Contains(postData, paginationFriendlyName)
-
 			// Skip pagination responses, FetchMoreComments handles those directly.
-			if !isPagination {
+			if !strings.Contains(postData, paginationFriendlyName) {
 				b.processCommentsResponse(bodyStr, postData, appID)
 			}
-		case threadSink != nil && strings.Contains(bodyStr, "get_slide_thread_nullable"):
-			threadSink(bodyStr)
+		case isDM && strings.Contains(bodyStr, "get_slide_thread_nullable"):
+			// DM window initially navigates to inbox to get threads.
+			b.captureDMTemplate(decodePostData(e))
+			b.processThreadResponse(bodyStr)
 		}
 	}
 

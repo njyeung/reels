@@ -385,13 +385,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.Count > 0 {
 				return m, tea.Batch(m.hud.ShowDMNotify(msg.Count), m.listenForEvents)
 			}
-		case backend.EventSyncComplete:
-			if m.backend.IsFriendMode() {
-				m.player.Stop()
-				m.status = statusLoading
-				m.comments.Clear()
-				return m, tea.Batch(m.loadCurrentReel, m.listenForEvents)
-			}
 		case backend.EventFriendModeExited:
 			if m.friends.IsOpen() {
 				m.friends.Close()
