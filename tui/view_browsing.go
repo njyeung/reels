@@ -375,7 +375,8 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case !m.friends.IsOpen() && slices.Contains(config.KeysFriendsOpen, key):
-		if !m.panelOpen() {
+		// Gate until the background DM collection + prefetch has finished.
+		if !m.panelOpen() && m.dmReelsReady {
 			friends := m.backend.GetDMFriends()
 			m.friends.Open(friends)
 			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
