@@ -14,10 +14,10 @@ import (
 type FriendCursor struct {
 	ctx      context.Context
 	username string
-	entries  []DMReelEntry
+	entries  []dmReelEntry
 
 	mu     sync.RWMutex
-	cursor int // -1 before first SyncTo; else 0-based index into entries
+	cursor int // 0-based index into entries
 
 	syncMu     sync.Mutex
 	syncCtx    context.Context
@@ -26,9 +26,11 @@ type FriendCursor struct {
 
 // NewFriendCursor binds the cursor to the DM window's chromedp context and a
 // snapshot of the friend's entries. The entry list is treated as immutable.
-// if it changes, build a new cursor.
-func NewFriendCursor(ctx context.Context, username string, entries []DMReelEntry) *FriendCursor {
-	return &FriendCursor{ctx: ctx, username: username, entries: entries, cursor: -1}
+// if it changes, build a new cursor. startIndex (1-based) positions the cursor
+// up front — reels are prefetched, so Current() resolves before SyncTo's
+// background navigation lands.
+func NewFriendCursor(ctx context.Context, username string, entries []dmReelEntry, startIndex int) *FriendCursor {
+	return &FriendCursor{ctx: ctx, username: username, entries: entries, cursor: startIndex - 1}
 }
 
 // Username returns the friend whose entries this cursor navigates.
@@ -46,7 +48,7 @@ func (fc *FriendCursor) PKAt(index int) string {
 	if index < 1 || index > len(fc.entries) {
 		return ""
 	}
-	return fc.entries[index-1].TargetPK
+	return fc.entries[index-1].PK
 }
 
 // Current returns the (1-based index, PK) of the entry we last navigated to.
@@ -57,7 +59,7 @@ func (fc *FriendCursor) Current() (int, string, error) {
 	if fc.cursor < 0 || fc.cursor >= len(fc.entries) {
 		return 0, "", fmt.Errorf("friend cursor not yet positioned")
 	}
-	return fc.cursor + 1, fc.entries[fc.cursor].TargetPK, nil
+	return fc.cursor + 1, fc.entries[fc.cursor].PK, nil
 }
 
 // SyncTo navigates the DM window to entries[index-1].TargetURL.Returns once

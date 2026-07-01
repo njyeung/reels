@@ -70,7 +70,7 @@ func (b *ChromeBackend) Start(headless bool) error {
 
 	chromedp.ListenTarget(feedCtx, func(ev interface{}) {
 		if e, ok := ev.(*fetch.EventRequestPaused); ok {
-			go b.processGraphQLBody(feedCtx, e, b.processReelResponse, nil)
+			go b.processGraphQLBody(feedCtx, e, false)
 		}
 	})
 
