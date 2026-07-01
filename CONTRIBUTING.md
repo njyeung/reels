@@ -13,6 +13,11 @@ Two design principles worth knowing before you build something:
 
 Small bug fixes and features are always welcome. For a large change or refactor, **open an issue first** describing the problem and your intended approach.
 
+<p align="center">
+  <img src="assets/contributing-picture-1.png" width="35%" />
+  <img src="assets/contributing-picture-2.png" width="45" />
+</p>
+
 ## AI-assisted contributions
 
 AI tooling is perfectly fine. However, review AI output unless it's a repetitive task backed by a dedicated skill.
