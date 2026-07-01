@@ -86,7 +86,6 @@ func (fc *FriendCursor) SyncTo(index int) error {
 	return chromedp.Run(ctx, chromedp.Navigate(target))
 }
 
-
 // IsSyncing returns true if a SyncTo Navigate is in flight.
 func (fc *FriendCursor) IsSyncing() bool {
 	fc.syncMu.Lock()
