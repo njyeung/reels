@@ -95,6 +95,9 @@ type Model struct {
 
 	// Friends panel picks a DM friend whose reels to browse
 	friends *FriendsPanel
+	// dmReelsReady gates opening the friends panel until the background DM
+	// collection + reel prefetch has finished (EventDMReelsReady)
+	dmReelsReady bool
 
 	flags Config
 
@@ -382,6 +385,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.updateImages()
 			}
 		case backend.EventDMReelsReady:
+			m.dmReelsReady = true
 			if msg.Count > 0 {
 				return m, tea.Batch(m.hud.ShowDMNotify(msg.Count), m.listenForEvents)
 			}
