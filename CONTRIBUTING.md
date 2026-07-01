@@ -15,7 +15,7 @@ Small bug fixes and features are always welcome. For a large change or refactor,
 
 <p align="center">
   <img src="assets/contributing-picture-1.png" width="35%" />
-  <img src="assets/contributing-picture-2.png" width="45" />
+  <img src="assets/contributing-picture-2.png" width="45%" />
 </p>
 
 ## AI-assisted contributions
