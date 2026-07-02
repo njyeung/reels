@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"math/rand"
 	"net/url"
 	"regexp"
@@ -112,12 +113,15 @@ func (b *ChromeBackend) prefetchReel(code, pk string) error {
 		"after":  nil,
 		"before": nil,
 		"first":  1,
+		"last":   nil,
 		"data": map[string]interface{}{
 			"container_module":              "clips_tab_desktop_page",
 			"seen_reels":                    "[]",
 			"chaining_media_id":             code,
 			"should_refetch_chaining_media": true,
 		},
+		"__relay_internal__pv__PolarisReelsRecoDebugOverlayEnabledrelayprovider": false,
+		"__relay_internal__pv__PolarisAIGMMediaWebLabelEnabledrelayprovider":     false,
 	}
 	varsJSON, _ := json.Marshal(vars)
 
@@ -144,6 +148,7 @@ func (b *ChromeBackend) prefetchReel(code, pk string) error {
 						"x-fb-friendly-name": %s,
 						"x-fb-lsd": %s,
 						"x-ig-app-id": %s,
+						"x-root-field-name": "xdt_api__v1__clips__home__connection_v2",
 					},
 					body: %s,
 					credentials: "include",
@@ -173,6 +178,11 @@ func (b *ChromeBackend) prefetchReel(code, pk string) error {
 		return err
 	}
 	if len(resp.Data.Connection.Edges) == 0 {
+		snippet := result
+		if len(snippet) > 800 {
+			snippet = snippet[:800]
+		}
+		slog.Warn("dm: prefetch replay returned no edges", "code", code, "pk", pk, "raw", snippet)
 		return fmt.Errorf("prefetchReel: no edges for %s", code)
 	}
 	media := resp.Data.Connection.Edges[0].Node.Media
@@ -240,6 +250,8 @@ func (b *ChromeBackend) processThreadResponse(body string) {
 // It then materializes every shared reel's CDN video URL up front,
 // and emits EventDMReelsReady when done.
 func (b *ChromeBackend) collectDMInbox(ctx context.Context) {
+	slog.Debug("COLLECTING DM INBOX ENTRIES")
+
 	if err := chromedp.Run(ctx, chromedp.Navigate("https://www.instagram.com/direct/inbox/")); err != nil {
 		return
 	}
@@ -249,14 +261,21 @@ func (b *ChromeBackend) collectDMInbox(ctx context.Context) {
 		return
 	}
 
+	entries := b.pendingReelEntries()
+	b.dmReqTemplateMu.RLock()
+	haveTemplate := b.dmReqTemplate != ""
+	b.dmReqTemplateMu.RUnlock()
+	slog.Debug("dm: starting materialization", "entries", len(entries), "haveTemplate", haveTemplate)
+
 	// Materialize linearly with jitter.
-	for _, entry := range b.pendingReelEntries() {
+	for _, entry := range entries {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 		}
 		if err := b.prefetchReel(entry.Code, entry.PK); err != nil {
+			slog.Warn("dm: prefetchReel failed", "pk", entry.PK, "code", entry.Code, "err", err)
 			continue
 		}
 		select {
@@ -265,6 +284,19 @@ func (b *ChromeBackend) collectDMInbox(ctx context.Context) {
 			return
 		}
 	}
+
+	// Dump the state of every entry right before we notify the UI.
+	b.reelsMu.RLock()
+	for i, entry := range entries {
+		r, ok := b.reels[entry.PK]
+		hasVideo := ok && r.VideoURL != ""
+		slog.Debug("dm: reel state",
+			"i", i, "pk", entry.PK, "code", entry.Code,
+			"cached", ok, "hasVideo", hasVideo, "url", entry.TargetURL)
+	}
+	totalReels := len(b.reels)
+	b.reelsMu.RUnlock()
+	slog.Debug("dm: materialization done", "entries", len(entries), "reelsInMap", totalReels)
 
 	b.events <- Event{Type: EventDMReelsReady, Count: b.GetDMReelsCount()}
 }
@@ -347,6 +379,9 @@ func (b *ChromeBackend) ExitFriendMode() {
 		b.modeMu.Unlock()
 		return
 	}
+
+	b.events <- Event{Type: EventFriendModeExited}
+
 	fc, _ := b.active.(*FriendCursor)
 	b.active = b.feed
 	b.ctx = b.feedCtx
@@ -390,8 +425,6 @@ func (b *ChromeBackend) ExitFriendMode() {
 		// park in blank
 		_ = chromedp.Run(dmCtx, chromedp.Navigate("about:blank"))
 	}
-
-	b.events <- Event{Type: EventFriendModeExited}
 }
 
 // IsFriendMode reports whether the active cursor is a FriendCursor.

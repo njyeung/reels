@@ -542,6 +542,9 @@ func (m *Model) navigateToReel(direction int) tea.Cmd {
 	}
 	index := m.currentReel.Index + direction
 	if m.backend.IsFriendMode() && direction > 0 && index > m.backend.GetTotal() {
+		m.player.Stop()
+		m.status = statusLoading
+		m.comments.Clear()
 		go m.backend.ExitFriendMode()
 		return nil
 	}
