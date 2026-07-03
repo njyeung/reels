@@ -23,6 +23,9 @@ const (
 	clipsDocID        = "36825039943776829"
 	clipsFriendlyName = "PolarisClipsTabDesktopPaginationQuery"
 
+	reactionDocID        = "24374451552236906"
+	reactionFriendlyName = "IGDirectReactionSendMutation"
+
 	expectedAppID = "936619743392459"
 )
 
@@ -496,7 +499,7 @@ func (b *ChromeBackend) processGraphQLBody(ctx context.Context, e *fetch.EventRe
 			}
 		case isDM && strings.Contains(bodyStr, "get_slide_thread_nullable"):
 			// DM window initially navigates to inbox to get threads.
-			b.captureDMTemplate(decodePostData(e))
+			b.dm.CaptureTemplate(decodePostData(e))
 			b.processThreadResponse(bodyStr)
 		}
 	}

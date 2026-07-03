@@ -94,10 +94,10 @@ func (fp *FriendsPanel) View(width, height int, padding string) string {
 
 	for i := fp.scroll; i < len(fp.friends) && i-fp.scroll < availableLines; i++ {
 		friend := fp.friends[i]
-		if friend.Unseen() == 0 {
+		if friend.UnseenCount() == 0 {
 			continue
 		}
-		countLabel := fmt.Sprintf("  (%d)", friend.Unseen())
+		countLabel := fmt.Sprintf("  (%d)", friend.UnseenCount())
 		var line string
 		if i == fp.cursor {
 			line = pink500.Underline(true).Render("@"+friend.Username) + gray500.Render(countLabel)

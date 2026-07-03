@@ -390,10 +390,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(m.hud.ShowDMNotify(msg.Count), m.listenForEvents)
 			}
 		case backend.EventFriendModeExited:
-			if m.friends.IsOpen() {
-				m.friends.Close()
-				m.closePanelLayout()
-			}
 			m.player.Stop()
 			m.status = statusLoading
 			m.comments.Clear()
