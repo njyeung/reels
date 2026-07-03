@@ -148,6 +148,28 @@ func (b *ChromeBackend) dmGraphQL(docID, friendlyName, rootFieldName string, var
 	return result, nil
 }
 
+// ReactToCurrent sends emoji as a reaction to the reel the friend cursor is
+// currently on and marks that entry seen.
+func (b *ChromeBackend) ReactToCurrent(emoji string) error {
+	b.modeMu.RLock()
+	fc, ok := b.active.(*FriendCursor)
+	b.modeMu.RUnlock()
+	if !ok {
+		return fmt.Errorf("ReactToCurrent: not in friend mode")
+	}
+
+	index, _, err := fc.Current()
+	if err != nil {
+		return err
+	}
+
+	messageID, threadKey, err := b.dm.MarkSeen(fc.Username(), index)
+	if err != nil {
+		return err
+	}
+	return b.sendReaction(emoji, messageID, threadKey)
+}
+
 // sendReaction fires IGDirectReactionSendMutation for a single DM message.
 // Fire-and-forget for now
 // TODO: Future work is to use processGraphQLBody to confirm response
@@ -171,30 +193,6 @@ func (b *ChromeBackend) sendReaction(emoji, messageID, threadID string) error {
 	}
 	slog.Debug("dm: reaction sent", "message_id", messageID, "resp", body)
 	return nil
-}
-
-// ReactToCurrent sends emoji as a reaction to the reel the friend cursor is
-// currently on and marks that entry seen. Seen flips as soon as the mutation
-// is fired (fire-and-forget, per sendReaction). This is the TUI's entry point
-// from the reaction panel.
-func (b *ChromeBackend) ReactToCurrent(emoji string) error {
-	b.modeMu.RLock()
-	fc, ok := b.active.(*FriendCursor)
-	b.modeMu.RUnlock()
-	if !ok {
-		return fmt.Errorf("ReactToCurrent: not in friend mode")
-	}
-
-	index, _, err := fc.Current()
-	if err != nil {
-		return err
-	}
-
-	messageID, threadKey, err := b.dm.MarkSeen(fc.Username(), index)
-	if err != nil {
-		return err
-	}
-	return b.sendReaction(emoji, messageID, threadKey)
 }
 
 // prefetchReel replays clips_home for a single reel (keyed by its shortcode)
