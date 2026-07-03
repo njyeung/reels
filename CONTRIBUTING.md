@@ -38,13 +38,15 @@ Building from source is covered in the [README](README.md#building-from-source-f
 
 ## Building & testing
 
-Run `go vet ./...` and `gofmt` before opening a PR.
+Run `go vet ./...` and `gofmt`
 
-The build statically links FFmpeg into the binary. On a fork, push your changes and then
-tag to trigger the build. Confirm all target binaries build successfully.
+The github actions that produces consumer binaries statically links FFmpeg. While you are encouraged to dynamically link against your system's FFmpeg for development, you must ensure that your changes build valid consumer binaries.
 
-Testing is hard because there are so many ways to interact with Instagram, but `tests/`
-takes a black-box approach. `test.py` builds the binary, runs it under Kitty, and drives Reels TUI by sending keystrokes and observing browser state. You'll need a logged-in account, Kitty, Chrome, and FFmpeg 8+. Coverage is minimal and contributions are welcome, as long as they keep treating the app as a black box.
+1. On a fork, push your changes to remote.
+2. Push a new tag to trigger the build.
+3. Confirm all target binaries build successfully.
+
+Testing is hard because there are so many ways to interact with Instagram, but `tests/` takes a black-box approach. `test.py` builds the binary, runs it under Kitty, and drives Reels TUI by sending keystrokes and observing browser state. You'll need a logged-in account, Kitty, Chrome, and FFmpeg 8+. Coverage is minimal and contributions are welcome, as long as they keep treating the app as a black box.
 
 ## Commit & PR conventions
 
@@ -52,7 +54,6 @@ takes a black-box approach. `test.py` builds the binary, runs it under Kitty, an
 - Use [Conventional Commits](https://www.conventionalcommits.org/) and squash related commits.
 - I'll maintain the changelog, no need to touch it.
 - Small fixes need only a brief description; large PRs need a detailed explanation of the problem and approach.
-- Make sure the build produces all target binaries.
 
 ## Maintainer-only tasks
 
