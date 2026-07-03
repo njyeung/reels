@@ -73,11 +73,11 @@ By invoking a skill, Claude will walk you through how to obtain the new constant
 Please include:
 
 - OS and architecture
-- Terminal emulator, and whether it supports the Kitty graphics protocol
+- Terminal emulator
 - Reels version
 - Steps to reproduce
 
-Consumer binaries ship without logging, so there's usually no log to attach. If you built with logging enabled, include the relevant lines from `~/.local/state/reels/reels.log`.
+Consumer binaries ship without logging, so there's usually no log to attach. If you've forked and added logging, include the relevant lines from `~/.local/state/reels/reels.log`.
 
 ## Contact
 
