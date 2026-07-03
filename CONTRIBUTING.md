@@ -18,57 +18,6 @@ Small bug fixes and features are always welcome. For a large change or refactor,
   <img src="assets/contributing-picture-2.png" alt="Private API endpoints" width="35%" />
 </p>
 
-## AI-assisted contributions
-
-AI tooling is perfectly fine. However, review AI output unless it's a repetitive task backed by a dedicated skill.
-
-## Development setup
-
-Building from source is covered in the [README](README.md#building-from-source-for-developers) (Go 1.25+, FFmpeg 8+ dev libraries, `go build -o reels .`). FFmpeg 8+ is required because go-astiav only supports 8+; when it moves to a newer version, so do we.
-
-- Run with `--headed` to show the browser window, which makes debugging much easier.
-- `log.go` provides a logging helper. Keep logging **out of `main`**. Use it on feature branches while developing, then strip it before merging to keep consumer binaries clean.
-
-### Project layout
-
-- `backend/` - Instagram interaction, GraphQL interception, Storage, Config parsing. 
-- `tui/` - Bubble Tea UI
-- `player/` - AV playback (astiav, beep)
-- `main.go` - Entry point
-
-## Building & testing
-
-Run `go vet ./...` and `gofmt`
-
-The github actions that produces consumer binaries statically links FFmpeg. While you are encouraged to dynamically link against your system's FFmpeg for development, you must ensure that your changes build valid consumer binaries.
-
-1. On a fork, push your changes to remote.
-2. Push a new tag to trigger the build.
-3. Confirm all target binaries build successfully.
-
-Testing is hard because there are so many ways to interact with Instagram, but `tests/` takes a black-box approach. `test.py` builds the binary, runs it under Kitty, and drives Reels TUI by sending keystrokes and observing browser state. You'll need a logged-in account, Kitty, Chrome, and FFmpeg 8+. Coverage is minimal and contributions are welcome, as long as they keep treating the app as a black box.
-
-## Commit & PR conventions
-
-- Fork and open PRs against `main`.
-- Use [Conventional Commits](https://www.conventionalcommits.org/) and squash related commits.
-- I'll maintain the changelog, no need to touch it.
-- Small fixes need only a brief description; large PRs need a detailed explanation of the problem and approach.
-
-## Maintainer-only tasks
-
-Releases and package distribution (AUR / Homebrew / npm submodules) are handled by the
-maintainer. Contributors don't touch version tags, changelog release entries, or the
-distribution submodules.
-
-## Updating Instagram's GraphQL constants
-
-Instagram periodically changes their frontend GraphQL API. When they do, some features that rely on hitting their private endpoints will stop working. The fix involves updating constants in the code, such as `doc_id`s, `fb_api_req_friendly_name` values, and the `x-ig-app-id` header.
-
-This is automated with several Claude skills in [`skills/`](skills/). See [`skills/README.md`](skills/README.md).
-
-By invoking a skill, Claude will walk you through how to obtain the new constants via the network tab. Thus, fixing these makes for great first-time PRs!
-
 ## Reporting issues
 
 Please include:
@@ -79,6 +28,58 @@ Please include:
 - Steps to reproduce
 
 Consumer binaries ship without logging, so there's usually no log to attach. If you've forked and added logging, include the relevant lines from `~/.local/state/reels/reels.log`.
+
+### Project layout
+
+- `backend/` - Instagram interaction, GraphQL interception, Storage, Config parsing. 
+- `tui/` - Bubble Tea UI
+- `player/` - AV playback (astiav, beep)
+- `main.go` - Entry point
+
+## Development setup
+
+Building from source is covered in the [README](README.md#building-from-source-for-developers) (Go 1.25+, FFmpeg 8+ dev libraries). FFmpeg 8+ is required because go-astiav only supports 8+; when it moves to a newer version, so do we.
+
+- Run with `--headed` to show the browser window, which makes debugging much easier.
+- `log.go` provides a logging helper. Keep logging **out of `main`**. Use it on feature branches while developing, then strip it before merging to keep consumer binaries clean.
+
+## Building & testing
+
+During development, you are encouraged to dynamically link against your system's FFmpeg and build with `go build -o reels` for convenience.
+
+However, you must also ensure that your final code builds valid consumer binaries with statically linked FFmpeg via Github Actions.
+
+1. On a fork, push your changes to remote.
+2. Push a new tag to trigger the build.
+3. Confirm all target binaries build successfully.
+
+Testing is difficult because there are so many ways to interact with Instagram, but `tests/` takes a black-box approach. `test.py` builds the binary, runs it under Kitty, and drives Reels TUI by sending keystrokes and observing browser state. You'll need a logged-in account, Kitty, Chrome, and FFmpeg 8+. Coverage is minimal and contributions are welcome, as long as they keep treating the app as a black box.
+
+## Commit & PR conventions
+
+- Fork and open PRs against `main`.
+- - Run `go vet ./...` and `gofmt`.
+- Use [Conventional Commits](https://www.conventionalcommits.org/) and squash related commits.
+- I'll maintain the changelog, no need to touch it.
+- Small fixes need only a brief description; large PRs need a detailed explanation of the problem and approach.
+
+## Updating Instagram's GraphQL constants
+
+Instagram periodically changes their frontend GraphQL API. When they do, some features that rely on hitting their private endpoints will stop working. The fix involves updating constants in the code, such as `doc_id`s, `fb_api_req_friendly_name` values, and the `x-ig-app-id` header.
+
+This is automated with several Claude skills in [`skills/`](skills/). See [`skills/README.md`](skills/README.md).
+
+By invoking a skill, Claude will walk you through how to obtain the new constants via the network tab. Thus, fixing these makes for great first-time PRs!
+
+## AI-assisted contributions
+
+AI tooling is perfectly fine. However, review AI output unless it's a repetitive task backed by a dedicated skill.
+
+## Maintainer-only tasks
+
+Releases and package distribution (AUR / Homebrew / npm submodules) are handled by the
+maintainer. Contributors don't touch version tags, changelog release entries, or the
+distribution submodules.
 
 ## Contact
 
