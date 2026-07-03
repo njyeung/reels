@@ -74,63 +74,37 @@ func (b *ChromeBackend) stopDMSession() {
 	}
 }
 
-// captureDMTemplate stores the first DM-window graphql POST body as the token-
-// bearing template for prefetch replays. Idempotent; ignores empties.
-func (b *ChromeBackend) captureDMTemplate(postData string) {
-	if postData == "" {
-		return
-	}
-	b.dmReqTemplateMu.Lock()
-	if b.dmReqTemplate == "" {
-		b.dmReqTemplate = postData
-	}
-	b.dmReqTemplateMu.Unlock()
-}
-
-// prefetchReel replays clips_home for a single reel (keyed by its shortcode)
-// using the captured DM request template, and warms b.reels[pk] with the
-// resulting media so friend-mode navigation can show it without a page load.
-//
-// DM fetch listener sees the response too but ignores clip bodies, so we
-// own storage here.
-func (b *ChromeBackend) prefetchReel(code, pk string) error {
-	if code == "" {
-		return fmt.Errorf("prefetchReel: empty code")
-	}
-	b.dmReqTemplateMu.RLock()
-	template := b.dmReqTemplate
-	b.dmReqTemplateMu.RUnlock()
+// dmGraphQL replays the captured DM request template as a graphql POST with
+// the given doc_id / friendly name / variables, executed as a fetch() inside
+// the DM window so cookies and tokens match a real client. rootFieldName sets
+// the x-root-field-name header; pass "" to omit it (the clips query sends it,
+// the reaction mutation was captured without one). Returns the raw response
+// body.
+func (b *ChromeBackend) dmGraphQL(docID, friendlyName, rootFieldName string, variables any) (string, error) {
+	template, lsd := b.dm.Template()
 	if template == "" {
-		return fmt.Errorf("prefetchReel: no DM request template captured")
+		return "", fmt.Errorf("dmGraphQL: no DM request template captured")
 	}
 
 	params, err := url.ParseQuery(template)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	vars := map[string]interface{}{
-		"after":  nil,
-		"before": nil,
-		"first":  1,
-		"last":   nil,
-		"data": map[string]interface{}{
-			"container_module":              "clips_tab_desktop_page",
-			"seen_reels":                    "[]",
-			"chaining_media_id":             code,
-			"should_refetch_chaining_media": true,
-		},
-		"__relay_internal__pv__PolarisReelsRecoDebugOverlayEnabledrelayprovider": false,
-		"__relay_internal__pv__PolarisAIGMMediaWebLabelEnabledrelayprovider":     false,
+	varsJSON, err := json.Marshal(variables)
+	if err != nil {
+		return "", err
 	}
-	varsJSON, _ := json.Marshal(vars)
 
-	params.Set("doc_id", clipsDocID)
-	params.Set("fb_api_req_friendly_name", clipsFriendlyName)
+	params.Set("doc_id", docID)
+	params.Set("fb_api_req_friendly_name", friendlyName)
 	params.Set("variables", string(varsJSON))
-
 	postBody := params.Encode()
-	lsd := params.Get("lsd")
+
+	rootFieldHeader := ""
+	if rootFieldName != "" {
+		rootFieldHeader = "\n\t\t\t\t\t\t\"x-root-field-name\": " + jsonStringForJS(rootFieldName) + ","
+	}
 
 	js := fmt.Sprintf(`
 		(async () => {
@@ -147,8 +121,7 @@ func (b *ChromeBackend) prefetchReel(code, pk string) error {
 						"x-csrftoken": csrftoken,
 						"x-fb-friendly-name": %s,
 						"x-fb-lsd": %s,
-						"x-ig-app-id": %s,
-						"x-root-field-name": "xdt_api__v1__clips__home__connection_v2",
+						"x-ig-app-id": %s,%s
 					},
 					body: %s,
 					credentials: "include",
@@ -159,7 +132,7 @@ func (b *ChromeBackend) prefetchReel(code, pk string) error {
 				clearTimeout(tid);
 			}
 		})()
-	`, jsonStringForJS(clipsFriendlyName), jsonStringForJS(lsd), expectedAppID, jsonStringForJS(postBody))
+	`, jsonStringForJS(friendlyName), jsonStringForJS(lsd), expectedAppID, rootFieldHeader, jsonStringForJS(postBody))
 
 	var result string
 	err = chromedp.Run(b.dmCtx,
@@ -169,6 +142,89 @@ func (b *ChromeBackend) prefetchReel(code, pk string) error {
 			}).Do(ctx)
 		}),
 	)
+	if err != nil {
+		return "", err
+	}
+	return result, nil
+}
+
+// sendReaction fires IGDirectReactionSendMutation for a single DM message.
+// Fire-and-forget for now
+// TODO: Future work is to use processGraphQLBody to confirm response
+func (b *ChromeBackend) sendReaction(emoji, messageID, threadID string) error {
+	vars := map[string]interface{}{
+		"input": map[string]interface{}{
+			"emoji":           emoji,
+			"item_id":         "",
+			"message_id":      messageID,
+			"reaction_status": "created",
+			"thread_id":       threadID,
+		},
+	}
+
+	body, err := b.dmGraphQL(reactionDocID, reactionFriendlyName, "", vars)
+	if err != nil {
+		return err
+	}
+	if len(body) > 300 {
+		body = body[:300]
+	}
+	slog.Debug("dm: reaction sent", "message_id", messageID, "resp", body)
+	return nil
+}
+
+// ReactToCurrent sends emoji as a reaction to the reel the friend cursor is
+// currently on and marks that entry seen. Seen flips as soon as the mutation
+// is fired (fire-and-forget, per sendReaction). This is the TUI's entry point
+// from the reaction panel.
+func (b *ChromeBackend) ReactToCurrent(emoji string) error {
+	b.modeMu.RLock()
+	fc, ok := b.active.(*FriendCursor)
+	b.modeMu.RUnlock()
+	if !ok {
+		return fmt.Errorf("ReactToCurrent: not in friend mode")
+	}
+
+	index, _, err := fc.Current()
+	if err != nil {
+		return err
+	}
+
+	messageID, threadKey, err := b.dm.MarkSeen(fc.Username(), index)
+	if err != nil {
+		return err
+	}
+	return b.sendReaction(emoji, messageID, threadKey)
+}
+
+// prefetchReel replays clips_home for a single reel (keyed by its shortcode)
+// using the captured DM request template, and warms b.reels[pk] with the
+// resulting media so friend-mode navigation can show it without a page load.
+//
+// DM fetch listener sees the response too but ignores clip bodies, so we
+// own storage here.
+func (b *ChromeBackend) prefetchReel(code, pk string) error {
+	if code == "" {
+		return fmt.Errorf("prefetchReel: empty code")
+	}
+
+	vars := map[string]interface{}{
+		"after":  nil,
+		"before": nil,
+		"first":  1,
+		"last":   nil,
+		"data": map[string]interface{}{
+			"container_module":              "clips_tab_desktop_page",
+			"seen_reels":                    "[]",
+			"chaining_media_id":             code,
+			"should_refetch_chaining_media": true,
+		},
+		"__relay_internal__pv__PolarisReelsRecoDebugOverlayEnabledrelayprovider": false,
+		"__relay_internal__pv__PolarisAIGMMediaWebLabelEnabledrelayprovider":     false,
+	}
+
+	result, err := b.dmGraphQL(clipsDocID, clipsFriendlyName,
+		"xdt_api__v1__clips__home__connection_v2", vars)
 	if err != nil {
 		return err
 	}
@@ -201,46 +257,10 @@ func (b *ChromeBackend) prefetchReel(code, pk string) error {
 }
 
 // processThreadResponse merges any reel-shares from a single DM thread body
-// into b.dmFriends, keyed by the sending friend.
+// into the DM friends list, keyed by the sending friend.
 func (b *ChromeBackend) processThreadResponse(body string) {
 	entries, threadKey, sender := extractDMThreadEntries(body)
-	if len(entries) == 0 {
-		return
-	}
-
-	b.dmMu.Lock()
-	defer b.dmMu.Unlock()
-
-	fi := -1
-	for i, f := range b.dmFriends {
-		if f.Username == sender {
-			fi = i
-			break
-		}
-	}
-	if fi == -1 {
-		b.dmFriends = append(b.dmFriends, DMFriend{
-			Username:  sender,
-			ThreadKey: threadKey,
-			Entries:   entries,
-		})
-		return
-	}
-	if b.dmFriends[fi].ThreadKey == "" {
-		b.dmFriends[fi].ThreadKey = threadKey
-	}
-	for _, e := range entries {
-		dup := false
-		for _, existing := range b.dmFriends[fi].Entries {
-			if existing.PK == e.PK {
-				dup = true
-				break
-			}
-		}
-		if !dup {
-			b.dmFriends[fi].Entries = append(b.dmFriends[fi].Entries, e)
-		}
-	}
+	b.dm.MergeThread(entries, threadKey, sender)
 }
 
 // collectDMInbox navigates the DM window to /direct/inbox/ and waits
@@ -261,11 +281,9 @@ func (b *ChromeBackend) collectDMInbox(ctx context.Context) {
 		return
 	}
 
-	entries := b.pendingReelEntries()
-	b.dmReqTemplateMu.RLock()
-	haveTemplate := b.dmReqTemplate != ""
-	b.dmReqTemplateMu.RUnlock()
-	slog.Debug("dm: starting materialization", "entries", len(entries), "haveTemplate", haveTemplate)
+	entries := b.dm.PendingEntries()
+	template, _ := b.dm.Template()
+	slog.Debug("dm: starting materialization", "entries", len(entries), "haveTemplate", template != "")
 
 	// Materialize linearly with jitter.
 	for _, entry := range entries {
@@ -301,57 +319,37 @@ func (b *ChromeBackend) collectDMInbox(ctx context.Context) {
 	b.events <- Event{Type: EventDMReelsReady, Count: b.GetDMReelsCount()}
 }
 
-// pendingReelEntries returns a flat snapshot of every friend's reel entries.
-func (b *ChromeBackend) pendingReelEntries() []dmReelEntry {
-	b.dmMu.RLock()
-	defer b.dmMu.RUnlock()
-	var out []dmReelEntry
-	for _, f := range b.dmFriends {
-		out = append(out, f.Entries...)
-	}
-	return out
-}
-
 // GetDMFriends returns the cached list of friends with shared reels.
 func (b *ChromeBackend) GetDMFriends() []DMFriend {
-	b.dmMu.RLock()
-	defer b.dmMu.RUnlock()
-	return b.dmFriends
+	b.dm.mu.RLock()
+	defer b.dm.mu.RUnlock()
+	return b.dm.friends
 }
 
 // GetDMReelsCount returns the total number of unseen friend-shared reels.
 func (b *ChromeBackend) GetDMReelsCount() int {
-	b.dmMu.RLock()
-	defer b.dmMu.RUnlock()
+	b.dm.mu.RLock()
+	defer b.dm.mu.RUnlock()
 	total := 0
-	for _, f := range b.dmFriends {
-		total += len(f.Entries)
+	for _, f := range b.dm.friends {
+		total += f.UnseenCount()
 	}
 	return total
 }
 
 // EnterFriendMode swaps the active cursor to a FriendCursor over the named
-// friend's entries and routes user-action ctx to the DM window. Starts at
-// SeenCount+1 so re-entry resumes after the last viewed reel. Errors if the
-// friend isn't in dmFriends.
+// friend's entries and routes user-action ctx to the DM window. Starts at the
+// saved LastIndex bookmark so re-entry resumes where the user left off.
+// Errors if the friend isn't known.
 func (b *ChromeBackend) EnterFriendMode(username string) error {
-	b.dmMu.RLock()
-	var entries []dmReelEntry
-	var seenCount int
-	for _, f := range b.dmFriends {
-		if f.Username == username {
-			entries = f.Entries
-			seenCount = f.SeenCount
-			break
-		}
-	}
-	b.dmMu.RUnlock()
-	if len(entries) == 0 {
+	friend, ok := b.dm.Friend(username)
+	if !ok || len(friend.Entries) == 0 {
 		return fmt.Errorf("EnterFriendMode: unknown friend %q", username)
 	}
+	entries := friend.Entries
 
-	startIdx := seenCount + 1
-	if startIdx > len(entries) {
+	startIdx := friend.LastIndex
+	if startIdx < 1 || startIdx > len(entries) {
 		startIdx = 1
 	}
 
@@ -370,9 +368,14 @@ func (b *ChromeBackend) EnterFriendMode(username string) error {
 }
 
 // ExitFriendMode restores the feed cursor and feed window. Idempotent when
-// already in feed mode. Advances the friend's SeenCount to the cursor's
-// high-water mark, then synchronously navigates the DM window to the friend's
-// thread (to mark it read on Instagram) and parks it on about:blank.
+// already in feed mode.
+//
+// 1. Saves the cursor position as the friend's resume bookmark;
+//
+// 2. If every entry has been reacted to, synchronously navigates the
+// DM window to the friend's thread (to mark it read on Instagram)
+//
+// 3. Parks on about:blank.
 func (b *ChromeBackend) ExitFriendMode() {
 	b.modeMu.Lock()
 	if b.active == b.feed {
@@ -388,34 +391,17 @@ func (b *ChromeBackend) ExitFriendMode() {
 	dmCtx := b.dmCtx
 	b.modeMu.Unlock()
 
-	var threadKey string
-	var totalReels int
 	if fc != nil {
 		username := fc.Username()
 
-		// Get where the cursor is
-		highWater := 0
-		fc.mu.RLock()
-		if fc.cursor >= 0 {
-			highWater = fc.cursor + 1
+		lastIndex := 0
+		if idx, _, err := fc.Current(); err == nil {
+			lastIndex = idx
 		}
-		fc.mu.RUnlock()
 
-		// update state of friend dm
-		b.dmMu.Lock()
-		for i := range b.dmFriends {
-			if b.dmFriends[i].Username != username {
-				continue
-			}
+		threadKey, allSeen := b.dm.SaveExit(username, lastIndex)
 
-			threadKey = b.dmFriends[i].ThreadKey
-			b.dmFriends[i].SeenCount = highWater
-			totalReels = len(b.dmFriends[i].Entries)
-			break
-		}
-		b.dmMu.Unlock()
-
-		if highWater == totalReels {
+		if allSeen && threadKey != "" {
 			// navigate to friend's dm
 			_ = chromedp.Run(dmCtx,
 				chromedp.Navigate("https://www.instagram.com/direct/t/"+threadKey+"/"),
@@ -432,32 +418,6 @@ func (b *ChromeBackend) IsFriendMode() bool {
 	b.modeMu.RLock()
 	defer b.modeMu.RUnlock()
 	return b.active != b.feed
-}
-
-// DMFriend groups a sender's reel-share entries from the DM inbox. Built by
-// collectDMInbox; consumed by the friends picker UI and EnterFriendMode.
-type DMFriend struct {
-	Username  string
-	ThreadKey string // /direct/t/<ThreadKey>/
-	SeenCount int    // number of entries from index 0 already shown to the user; advanced by ExitFriendMode
-	Entries   []dmReelEntry
-}
-
-// Unseen returns how many of the friend's entries haven't been shown yet.
-func (f DMFriend) Unseen() int {
-	if n := len(f.Entries) - f.SeenCount; n > 0 {
-		return n
-	}
-	return 0
-}
-
-// dmReelEntry is an internal pointer to a reel shared in a DM thread. Reels are
-// prefetched by Code (the shortcode) into b.reels; the DM window navigates to
-// TargetURL in the background to update seen-state.
-type dmReelEntry struct {
-	PK        string // reel media PK (xma.target_id); keys b.reels + the cursor
-	Code      string // shortcode parsed from TargetURL; keys the prefetch replay
-	TargetURL string // permalink the DM window navigates to for seen-state
 }
 
 // dmThreadResponse is the GraphQL response shape for a single DM thread
@@ -477,6 +437,7 @@ type dmThreadResponse struct {
 				Messages struct {
 					Edges []struct {
 						Node struct {
+							MessageID   string `json:"message_id"`
 							SenderFBID  string `json:"sender_fbid"`
 							ContentType string `json:"content_type"`
 							TimestampMS string `json:"timestamp_ms"`
@@ -567,6 +528,7 @@ func extractDMThreadEntries(body string) (entries []dmReelEntry, threadKey, send
 		entries = append(entries, dmReelEntry{
 			PK:        xma.TargetID,
 			Code:      m[1],
+			MessageID: msg.MessageID,
 			TargetURL: xma.TargetURL,
 		})
 	}

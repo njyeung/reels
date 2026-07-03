@@ -18,6 +18,7 @@ func NewChromeBackend(userDataDir, cacheDir, configDir string) *ChromeBackend {
 	b := ChromeBackend{
 		reels:       make(map[string]*Reel),
 		comments:    &CommentsState{},
+		dm:          &dmState{},
 		events:      make(chan Event, 100),
 		userDataDir: userDataDir,
 		cacheDir:    cacheDir,

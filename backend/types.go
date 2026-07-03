@@ -39,16 +39,12 @@ type ChromeBackend struct {
 	dmCtx    context.Context
 	dmCancel context.CancelFunc
 
-	// dmMu guards dmFriends. Merged into by processThreadResponse on every DM
-	// thread body; read by GetDMFriends / GetDMReelsCount / EnterFriendMode.
-	dmMu      sync.RWMutex
-	dmFriends []DMFriend
-
-	// dmReqTemplate is a captured get_slide_thread_nullable POST body from the
-	// DM window, reused as the token-bearing template (fb_dtsg/lsd/etc.) to
-	// replay clips_home and prefetch DM-shared reels. Captured once.
-	dmReqTemplateMu sync.RWMutex
-	dmReqTemplate   string
+	// dm owns the synchronized DM data: friends with their shared-reel
+	// entries, plus the captured request template used for:
+	// - reels prefetch
+	// - reactions
+	// See dmstate.go.
+	dm *dmState
 
 	// comments encapsulates all comment-related state
 	comments *CommentsState
@@ -173,6 +169,11 @@ type Backend interface {
 
 	// IsFriendMode reports whether the active cursor is a FriendCursor.
 	IsFriendMode() bool
+
+	// ReactToCurrent sends emoji as a DM reaction to the reel the friend
+	// cursor is currently on and marks that entry seen (seen == reacted).
+	// Errors when not in friend mode.
+	ReactToCurrent(emoji string) error
 }
 
 const (
