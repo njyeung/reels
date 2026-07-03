@@ -60,11 +60,13 @@ Releases and package distribution (AUR / Homebrew / npm submodules) are handled 
 maintainer. Contributors don't touch version tags, changelog release entries, or the
 distribution submodules.
 
-## ⚠️ Updating Instagram's GraphQL constants
+## Updating Instagram's GraphQL constants
 
 Instagram periodically changes their frontend GraphQL API. When they do, some features that rely on hitting their private endpoints will stop working. The fix involves updating constants in the code, such as `doc_id`s, `fb_api_req_friendly_name` values, and the `x-ig-app-id` header.
 
 This is automated with several Claude skills in [`skills/`](skills/). See [`skills/README.md`](skills/README.md).
+
+By invoking a skill, Claude will walk you through how to obtain the new constants via the network tab. Thus, fixing these makes for great first-time PRs!
 
 ## Reporting issues
 
