@@ -2,7 +2,6 @@ package backend
 
 import (
 	"fmt"
-	"net/url"
 	"sync"
 )
 
@@ -15,20 +14,19 @@ type dmState struct {
 
 	// template is a captured get_slide_thread_nullable POST body from the DM
 	// window, reused as the token-bearing template (fb_dtsg/lsd/etc.) for
-	// graphql replays: reel prefetch and reactions. Captured once; lsd is the
-	// template's lsd token, parsed once and treated as a session constant.
+	// graphql replays: reel prefetch and reactions. Captured once.
 	templateMu sync.RWMutex
 	template   string
-	lsd        string
 }
 
 // DMFriend groups a sender's reel-share entries from the DM inbox. Built by
 // collectDMInbox; consumed by the friends picker UI and EnterFriendMode.
 type DMFriend struct {
-	Username  string
-	ThreadKey string // /direct/t/<ThreadKey>/
-	LastIndex int    // 1-based resume bookmark saved by ExitFriendMode; 0 = never entered
-	Entries   []dmReelEntry
+	Username   string
+	ThreadKey  string // thread_key; the /direct/t/<ThreadKey>/ mark-read URL
+	ThreadFBID string // thread_fbid; the reaction mutation's thread_id
+	LastIndex  int    // 1-based resume bookmark saved by ExitFriendMode; 0 = never entered
+	Entries    []dmReelEntry
 }
 
 // UnseenCount returns how many of the friend's entries haven't been reacted
@@ -55,8 +53,7 @@ type dmReelEntry struct {
 }
 
 // CaptureTemplate stores the first DM-window graphql POST body as the token-
-// bearing template for graphql replays, and parses its lsd token once as a
-// session constant. Idempotent.
+// bearing template for graphql replays. Idempotent.
 func (d *dmState) CaptureTemplate(postData string) {
 	if postData == "" {
 		return
@@ -67,22 +64,20 @@ func (d *dmState) CaptureTemplate(postData string) {
 		return
 	}
 	d.template = postData
-	if params, err := url.ParseQuery(postData); err == nil {
-		d.lsd = params.Get("lsd")
-	}
 }
 
-// Template returns the captured request template and its lsd token; the
-// template is empty if none was captured yet.
-func (d *dmState) Template() (template, lsd string) {
+// Template returns the captured request template, or "" if none was captured
+// yet.
+func (d *dmState) Template() string {
 	d.templateMu.RLock()
 	defer d.templateMu.RUnlock()
-	return d.template, d.lsd
+	return d.template
 }
 
 // MergeThread merges one thread's reel-share entries into the friends list,
-// keyed by the sending friend. Entries already present (by PK) are skipped.
-func (d *dmState) MergeThread(entries []dmReelEntry, threadKey, sender string) {
+// keyed by the sending friend. threadKey drives the mark-read URL, threadFBID
+// the reaction mutation. Entries already present (by PK) are skipped.
+func (d *dmState) MergeThread(entries []dmReelEntry, threadKey, threadFBID, sender string) {
 	if len(entries) == 0 {
 		return
 	}
@@ -99,14 +94,18 @@ func (d *dmState) MergeThread(entries []dmReelEntry, threadKey, sender string) {
 	}
 	if fi == -1 {
 		d.friends = append(d.friends, DMFriend{
-			Username:  sender,
-			ThreadKey: threadKey,
-			Entries:   entries,
+			Username:   sender,
+			ThreadKey:  threadKey,
+			ThreadFBID: threadFBID,
+			Entries:    entries,
 		})
 		return
 	}
 	if d.friends[fi].ThreadKey == "" {
 		d.friends[fi].ThreadKey = threadKey
+	}
+	if d.friends[fi].ThreadFBID == "" {
+		d.friends[fi].ThreadFBID = threadFBID
 	}
 	for _, e := range entries {
 		dup := false
@@ -137,9 +136,10 @@ func (d *dmState) Friend(username string) (DMFriend, bool) {
 }
 
 // MarkSeen marks the friend's index-th (1-based) entry as seen and returns
-// the ids the reaction mutation needs. Nothing is marked when the entry can't
-// be reacted to (missing message id or thread key).
-func (d *dmState) MarkSeen(username string, index int) (messageID, threadKey string, err error) {
+// the ids the reaction mutation needs: the message id and the thread_fbid.
+// Nothing is marked when the entry can't be reacted to (missing message id or
+// thread_fbid).
+func (d *dmState) MarkSeen(username string, index int) (messageID, threadFBID string, err error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	for i := range d.friends {
@@ -151,11 +151,11 @@ func (d *dmState) MarkSeen(username string, index int) (messageID, threadKey str
 			return "", "", fmt.Errorf("MarkSeen: index %d out of range for %q", index, username)
 		}
 		e := &f.Entries[index-1]
-		if e.MessageID == "" || f.ThreadKey == "" {
-			return "", "", fmt.Errorf("MarkSeen: entry %d of %q has no message id or thread key", index, username)
+		if e.MessageID == "" || f.ThreadFBID == "" {
+			return "", "", fmt.Errorf("MarkSeen: entry %d of %q has no message id or thread fbid", index, username)
 		}
 		e.Seen = true
-		return e.MessageID, f.ThreadKey, nil
+		return e.MessageID, f.ThreadFBID, nil
 	}
 	return "", "", fmt.Errorf("MarkSeen: unknown friend %q", username)
 }
