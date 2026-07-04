@@ -27,41 +27,10 @@ const (
 	reactionFriendlyName = "IGDirectReactionSendMutation"
 
 	expectedAppID = "936619743392459"
-)
 
-// commentsResponse represents the xdt_api__v1__media__media_id__comments__connection GraphQL response structure
-type commentsResponse struct {
-	Data struct {
-		Connection struct {
-			Edges []struct {
-				Node struct {
-					PK                string `json:"pk"`
-					CreatedAt         int64  `json:"created_at"`
-					ChildCommentCount int    `json:"child_comment_count"`
-					User              struct {
-						IsVerified    bool   `json:"is_verified"`
-						ProfilePicUrl string `json:"profile_pic_url"`
-						Username      string `json:"username"`
-					} `json:"user"`
-					HasLikedComment  bool   `json:"has_liked_comment"`
-					Text             string `json:"text"`
-					CommentLikeCount int    `json:"comment_like_count"`
-					GiphyMediaInfo   struct {
-						FirstPartyCdnProxiedImages struct {
-							FixedHeight struct {
-								Url string `json:"url"`
-							} `json:"fixed_height"`
-						} `json:"first_party_cdn_proxied_images"`
-					} `json:"giphy_media_info"`
-				} `json:"node"`
-			} `json:"edges"`
-			PageInfo struct {
-				EndCursor   string `json:"end_cursor"`
-				HasNextPage bool   `json:"has_next_page"`
-			} `json:"page_info"`
-		} `json:"xdt_api__v1__media__media_id__comments__connection"`
-	} `json:"data"`
-}
+	readEndpoint   = "https://www.instagram.com/graphql/query" // clips, comments
+	mutateEndpoint = "https://www.instagram.com/api/graphql"   // friend reel reactions
+)
 
 // reelMedia is the Media payload inside one clip edge.
 type reelMedia struct {
@@ -181,164 +150,60 @@ func buildReel(media reelMedia) *Reel {
 	}
 }
 
-// extractComments parses comment edges from a commentsResponse.
-// GIFs (if any) are fetched in parallel via fetchURLsHTTP — the comment GIF
-// CDN (cdn.fbsbx.com) blocks CORS from the instagram.com page context, so
-// chromedp's in-page fetch() returns empty bytes.
-func (b *ChromeBackend) extractComments(resp *commentsResponse) []Comment {
-	var comments []Comment
-	for _, edge := range resp.Data.Connection.Edges {
-		node := edge.Node
-		comments = append(comments, Comment{
-			PK:                node.PK,
-			CreatedAt:         node.CreatedAt,
-			ChildCommentCount: node.ChildCommentCount,
-			HasLikedComment:   node.HasLikedComment,
-			CommentLikeCount:  node.CommentLikeCount,
-			Text:              node.Text,
-			ProfilePicUrl:     node.User.ProfilePicUrl,
-			Username:          node.User.Username,
-			IsVerified:        node.User.IsVerified,
-			GifUrl:            node.GiphyMediaInfo.FirstPartyCdnProxiedImages.FixedHeight.Url,
-		})
-	}
-
-	// Collect indices and URLs of comments that have GIFs
-	var gifIndices []int
-	var gifURLs []string
-	for i, c := range comments {
-		if c.GifUrl != "" {
-			gifIndices = append(gifIndices, i)
-			gifURLs = append(gifURLs, c.GifUrl)
-		}
-	}
-	if len(gifURLs) == 0 {
-		return comments
-	}
-
-	data := fetchURLsHTTP(gifURLs)
-	for i, idx := range gifIndices {
-		if i >= len(data) || data[i] == nil {
-			continue
-		}
-		path := b.cacheGif(comments[idx].PK, data[i])
-		if path == "" {
-			continue
-		}
-		comments[idx].GifPath = path
-	}
-
-	return comments
+// jsonStringForJS converts a Go string to a JS string literal
+func jsonStringForJS(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
 }
 
-// validateCommentsRequest checks that the intercepted request matches expected Instagram API shape.
-// Returns false if anything looks off, pagination will be silently disabled.
-func validateCommentsRequest(postData string, appID string) bool {
-	if postData == "" {
-		return false
+// graphqlRequest describes one replay of a captured Instagram GraphQL request.
+// The template is a previously captured x-www-form-urlencoded POST body that
+// carries the session tokens (lsd, fb_dtsg, csrf, …); execGraphQL swaps in the
+// doc_id / friendly name / variables and reuses everything else.
+type graphqlRequest struct {
+	ctx           context.Context // page context whose window runs the fetch
+	template      string          // captured token-bearing urlencoded request body
+	docID         string
+	friendlyName  string
+	rootFieldName string // x-root-field-name header; "" to omit
+	endpoint      string // POST target; "" defaults to readEndpoint
+	variables     any
+}
+
+// execGraphQL replays a captured GraphQL request as an in-page fetch() so the
+// browser attaches the real cookies/CSRF and the tokens in the template match a
+// genuine client. The x-fb-lsd header is taken from the template's lsd param.
+// Returns the raw response body.
+func (b *ChromeBackend) execGraphQL(req graphqlRequest) (string, error) {
+	if req.template == "" {
+		return "", fmt.Errorf("execGraphQL: empty request template")
 	}
 
-	params, err := url.ParseQuery(postData)
+	params, err := url.ParseQuery(req.template)
 	if err != nil {
-		return false
+		return "", err
 	}
 
-	// Core API identifiers
-	// if these change, Instagram has updated their frontend
-	if params.Get("doc_id") != initialCommentsDocID {
-		return false
-	}
-	if params.Get("fb_api_req_friendly_name") != initialCommentsFriendlyName {
-		return false
-	}
-
-	if appID != expectedAppID {
-		return false
-	}
-
-	if params.Get("lsd") == "" || params.Get("fb_dtsg") == "" {
-		return false
-	}
-
-	return true
-}
-
-// processCommentsResponse extracts comments from a GraphQL response.
-// Stores the request template and pagination cursor for later use.
-func (b *ChromeBackend) processCommentsResponse(body string, requestPostData string, appID string) {
-	var resp commentsResponse
-	if err := json.Unmarshal([]byte(body), &resp); err != nil {
-		return
-	}
-
-	comments := b.extractComments(&resp)
-
-	reelPK := b.comments.GetReelPK()
-	if reelPK != "" {
-		b.updateReelComments(reelPK, comments)
-	}
-
-	pageInfo := resp.Data.Connection.PageInfo
-
-	// Only enable pagination if the request passes validation
-	if validateCommentsRequest(requestPostData, appID) && (!pageInfo.HasNextPage || pageInfo.EndCursor != "") {
-		b.setCommentsPagination(pageInfo.EndCursor, pageInfo.HasNextPage)
-		b.enableCommentsPagination(requestPostData)
-	}
-
-	b.events <- Event{Type: EventCommentsCaptured, Count: len(comments)}
-}
-
-// FetchMoreComments fetches the next page of comments using the stored request template and cursor.
-// Called by the TUI when the user scrolls to the bottom of the comments list.
-func (b *ChromeBackend) FetchMoreComments() {
-	defer func() {
-		b.events <- Event{Type: EventCommentsCaptured}
-	}()
-
-	p := b.getCommentsPagination()
-	if p == nil || !p.PaginationEnabled || !p.HasNextPage || p.Cursor == "" {
-		return
-	}
-	if !b.comments.StartFetch() {
-		return // already fetching
-	}
-
-	defer b.comments.FinishFetch()
-
-	template := p.RequestTemplate
-	cursor := p.Cursor
-	reelPK := b.comments.GetReelPK()
-	if template == "" || cursor == "" || reelPK == "" {
-		return
-	}
-
-	params, err := url.ParseQuery(template)
+	varsJSON, err := json.Marshal(req.variables)
 	if err != nil {
-		return
+		return "", err
 	}
 
-	// Build pagination variables
-	vars := map[string]interface{}{
-		"after":      cursor,
-		"before":     nil,
-		"first":      10,
-		"last":       nil,
-		"media_id":   reelPK,
-		"sort_order": "popular",
-		"__relay_internal__pv__PolarisIsLoggedInrelayprovider": true,
-	}
-	varsJSON, _ := json.Marshal(vars)
-
-	// Swap to pagination query
-	params.Set("doc_id", paginationDocID)
-	params.Set("fb_api_req_friendly_name", paginationFriendlyName)
+	params.Set("doc_id", req.docID)
+	params.Set("fb_api_req_friendly_name", req.friendlyName)
 	params.Set("variables", string(varsJSON))
-
 	postBody := params.Encode()
 
-	// Make the fetch from browser context with required headers
-	lsd := params.Get("lsd")
+	rootFieldHeader := ""
+	if req.rootFieldName != "" {
+		rootFieldHeader = "\n\t\t\t\t\t\t\"x-root-field-name\": " + jsonStringForJS(req.rootFieldName) + ","
+	}
+
+	endpoint := req.endpoint
+	if endpoint == "" {
+		endpoint = readEndpoint
+	}
+
 	js := fmt.Sprintf(`
 		(async () => {
 			const ac = new AbortController();
@@ -347,14 +212,14 @@ func (b *ChromeBackend) FetchMoreComments() {
 				const csrftoken = document.cookie.split('; ')
 					.find(c => c.startsWith('csrftoken='))
 					?.split('=')[1] || '';
-				const r = await fetch("https://www.instagram.com/graphql/query", {
+				const r = await fetch(%s, {
 					method: "POST",
 					headers: {
 						"content-type": "application/x-www-form-urlencoded",
 						"x-csrftoken": csrftoken,
 						"x-fb-friendly-name": %s,
 						"x-fb-lsd": %s,
-						"x-ig-app-id": %s,
+						"x-ig-app-id": %s,%s
 					},
 					body: %s,
 					credentials: "include",
@@ -365,10 +230,10 @@ func (b *ChromeBackend) FetchMoreComments() {
 				clearTimeout(tid);
 			}
 		})()
-	`, jsonStringForJS(paginationFriendlyName), jsonStringForJS(lsd), expectedAppID, jsonStringForJS(postBody))
+	`, jsonStringForJS(endpoint), jsonStringForJS(req.friendlyName), jsonStringForJS(params.Get("lsd")), expectedAppID, rootFieldHeader, jsonStringForJS(postBody))
 
 	var result string
-	err = chromedp.Run(b.ctx,
+	err = chromedp.Run(req.ctx,
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			return chromedp.Evaluate(js, &result, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
 				return p.WithAwaitPromise(true)
@@ -376,42 +241,9 @@ func (b *ChromeBackend) FetchMoreComments() {
 		}),
 	)
 	if err != nil {
-		b.setCommentsPagination("", false)
-		return
+		return "", err
 	}
-
-	var paginationResp commentsResponse
-	if err := json.Unmarshal([]byte(result), &paginationResp); err != nil {
-		return
-	}
-
-	// Drop stale results if the user switched reels while fetching.
-	if b.comments.GetReelPK() != reelPK {
-		return
-	}
-
-	// Drop stale results if pagination state changed mid-fetch.
-	p = b.getCommentsPagination()
-	if p == nil || p.RequestTemplate != template || p.Cursor != cursor {
-		return
-	}
-
-	newComments := b.extractComments(&paginationResp)
-	if len(newComments) > 0 {
-		b.updateReelComments(reelPK, newComments)
-	}
-
-	// Update cursor for next pagination
-	b.setCommentsPagination(
-		paginationResp.Data.Connection.PageInfo.EndCursor,
-		paginationResp.Data.Connection.PageInfo.HasNextPage,
-	)
-}
-
-// jsonStringForJS converts a Go string to a JS string literal
-func jsonStringForJS(s string) string {
-	b, _ := json.Marshal(s)
-	return string(b)
+	return result, nil
 }
 
 // processReelResponse extracts reels from a GraphQL response. New PKs are

@@ -132,11 +132,22 @@ ids in one lock hold; `SaveExit` stores `LastIndex` and reports all-seen).
 
 ## Phase 3 — friend-mode UI (tui)
 
+**Design change (2026-07-03):** the banner is *ephemeral*, not persistent —
+the HUD has no resting-state concept and Nick chose not to add one. Step 10
+is implemented as a third transient `hudItem` (dmNotify-style 5s hold + fade,
+gen-guarded like volume; dismissed early on friend-mode exit). The
+*persistent* friend-mode indicator moves onto the video instead: a colored
+accent outline drawn into the frame (progress-bar pattern, ~2k px/frame) and
+the sender's pfp as a static image slot over the video (render-cache makes it
+~free) — both pending. `KeysReact` (default `x`) added to storage.go with the
+banner since its text references it.
+
 10. **Friend banner via the HUD framework** (tui/hud.go:23-29 priority enum):
     add `hudFriendBanner` as the lowest-priority `hudItem`, persistent while
     `IsFriendMode()` (no fade ticks), superseded by volume/DM-notify exactly
     like `h.active > hudVolume` gates today. Content: "From: <username>" +
-    "Press <key> to react".
+    "Press <key> to react". **Status: implemented 2026-07-03** (as ephemeral,
+    per the design change above).
     - **Pfp:** CONFIRMED — the thread response's `sender.user_dict` carries
       `profile_pic_url` (thread-body capture, 2026-07-02). Parse it, cache
       via the `cacheSharePfp` pattern (browser.go:675), render with
@@ -148,7 +159,10 @@ ids in one lock hold; `SaveExit` stores `LastIndex` and reports all-seen).
     (❤ 😂 😮 😢 😡 👍; only ❤ is capture-verified, spot-check one other).
     Select → `go m.backend.ReactToCurrent(emoji)` → close panel. Register in
     `panelOpen()` (view_browsing.go:501-503) and `scrollPanel`
-    (view_browsing.go:507).
+    (view_browsing.go:507). **Status: implemented 2026-07-04**
+    (tui/react_panel.go; `KeysReact` default `x` toggles open/close;
+    `GetDMFriends` now returns deep copies so panel reads don't race
+    `MarkSeen`).
 12. Friends panel badge keeps working via `Unseen()`; the startup
     `ShowDMNotify(count)` is unaffected (entries are watermark-filtered, all
     unseen at startup).
@@ -170,25 +184,72 @@ ids in one lock hold; `SaveExit` stores `LastIndex` and reports all-seen).
 
 Response:
 
-```json
-{"data":{"xig_direct_reaction_send_with_slide_messaging_response":{"slide_message":{"reactions":[{"reaction":"❤","reaction_timestamp_ms":"1783016186946","sender_fbid":"120626922662535"}],"id":"mid.$gAAbYsKNt8jylVSjgvWfI-OXaMOik"}}},"extensions":{"server_metadata":{"request_start_time_ms":1783016186333,"time_at_flush_ms":1783016187252},"is_final":true}}
-```
+{"data":{"xig_direct_reaction_send_with_slide_messaging_response":{"slide_message":{"reactions":[{"reaction":"❤","reaction_timestamp_ms":"1783150308568","sender_fbid":"120626922662535"}],"id":"mid.$gAB9PJxNhin6lWkw14WfKQbs_0Hf9"}}},"extensions":{"server_metadata":{"request_start_time_ms":1783150308332,"time_at_flush_ms":1783150308949},"is_final":true}}
 
-Payload (form-encoded; template-covered fields elided — `av`, `__user`,
-`__dyn`, `__csr`, `fb_dtsg`, `jazoest`, `lsd`, etc. all come from the captured
-DM request template):
+Payload:
 
-```
-fb_api_caller_class    RelayModern
-fb_api_req_friendly_name  IGDirectReactionSendMutation
-server_timestamps      true
-variables              {"input":{"emoji":"❤","item_id":"","message_id":"mid.$gAAbYsKNt8jylVSjgvWfI-OXaMOik","reaction_status":"created","thread_id":"1927103027999292"}}
-doc_id                 24374451552236906
-qpl_active_flow_ids    354954279
-fb_api_analytics_tags  ["qpl_active_flow_ids=354954279"]
-__crn                  comet.igweb.PolarisDirectInboxRoute
-```
-
+av
+17841406987567961
+__d
+www
+__user
+0
+__a
+1
+__req
+28
+__hs
+20638.HYP:instagram_web_pkg.2.1...0
+dpr
+1
+__ccg
+GOOD
+__rev
+1042624505
+__s
+jfc011:ssn6im:qwezr4
+__hsi
+7658571853027154730
+__dyn
+7xeUjG1mxu1syaxG4Vp41twpUnwgU7SbzEdF8aUco2qwJyEiw9-1DwUx609vCwjE1EEc87m0yE462mcw5Mx62G5UswoEcE7O2l0Fwqo5W1yw9O1lwxwQzXwae4UaEW2G0AEco5G0zK5o4q1qwl81wEbUGdwtUeo9UaQ0Lo6-bwHwKG1pg2fwxyo6O1FwlAcwBwUQp6x6U42UnAwCAxW1oxe6U5q0EoKmUhw4UxWawOwi84q2i1cweW3m9J0
+__csr
+gF7MlT2ATqidkQgItRZ8lsDaSmAcykBSOaG9ARkLA99EFnvWHAkRGhtp5mWVt4W8BKnQW8ldkKHFau_aul2ltuBGp4mWTHK9sSBjgNVQFnWigHQyBylBWp9eC8gRp9XUO9Giim9-KtyGGF4HGmmp2aGpG6V9qADF2oV6jytaXKucKty-pohAHmc8RAAhep-EGqEGdKiminBgKcgy4ohCHDDxCq8UKqAVEiKFFlK8m9A-4VV8ymnFtw1hq01g7w0jbU034qwo8sw3lo4a043pik0uSawbnAwtE0Oq8S0p7xu9g0Z8wdE1lo2DwHgbE4W0Lrwuk4ES3-0Fiw2a85Uk0hS0ak4a541sR8ECbgG2y1xwQora0exzE4u8U05pO0ajw0z2Q08uo19E6G0fPw1Se8Ow
+__hsdp
+g4fEhb1Dq88qYnA6B8l5nh4Vz0Abn8l3A7kGx0m985iPvFMxvbf6KirEUoGS1fWwr8J2EaQow2hxycyUg8t5xeuui8AxsMfEd8Oey8O0IU4zwDwywxx-7po9U7GfAwroG7UG361vG13yUhAwxwHxe6Hgak11Azqw7Xw13C3y08XwQwho1QU6ubxa04J83zw3785q0mDG3e5U1tErwfy09Fw12K22q0jp0
+__hblp
+4wPU23wyxefxK2G4d0wgt-6o4Sm2by9EB3VTyo-7_yGAgS1wyo460AeFHx1rigkBz6VaXVVAi8AwwG5F8CmGBiDLx-FV8W8z8-5oSax2aUF16EckE8Wz8G9Qmu68K5EsAxeby9ETJ2ErKm4E943t3F8mzosyUvBAhpXz8GnwFwnWzE8Ehyax6i26bxKUjxmiSq5UnwFKl4zqwae0GF_wa3x60esw8y2u48566UgxO2-0SUW1mwJwQwho14Ue826wpUK4Ee83bwaCE2NwbW0p60F8deu0hK2e0G8522i0Lo5q682DwgE6nG798hxu1RwrU2gxK1zxO3-3p0bu2WE1686q0aSzoy0gq13xa22q9w4Ig
+__sjsp
+g4fIYI8gB7Sy26KAOV1Fi5hlQheoM9ilO5gV1RaEg5yi1kITWsuCOPNHACWe1Swu40X8O
+__comet_req
+7
+fb_dtsg
+NAfywO14OTVonznvaawhGiOAguaNCwEu4dBdrm2W-v_riEoXYlT3Osg:17864642926059691:1782958700
+jazoest
+26585
+lsd
+0ygVA0vjFFiTlEvJr73Mvq
+__spin_r
+1042624505
+__spin_b
+trunk
+__spin_t
+1783150214
+__crn
+comet.igweb.PolarisDirectInboxRoute
+qpl_active_flow_ids
+354954279
+fb_api_caller_class
+RelayModern
+fb_api_req_friendly_name
+IGDirectReactionSendMutation
+server_timestamps
+true
+variables
+{"input":{"emoji":"❤","item_id":"","message_id":"mid.$gAB9PJxNhin6lWkw14WfKQbs_0Hf9","reaction_status":"created","thread_id":"8812753525508734"}}
+doc_id
+24374451552236906
+fb_api_analytics_tags
+["qpl_active_flow_ids=354954279"]
 
 ## Appendix - Raw thread body for group chat (includes heart reaction)
 ## be careful to not fill your context, this is long

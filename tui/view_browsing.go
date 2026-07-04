@@ -160,6 +160,8 @@ func (m Model) viewBrowsing() string {
 			b.WriteString(m.help.View(videoWidthChars, maxPanelLines, padding))
 		} else if m.friends.IsOpen() {
 			b.WriteString(m.friends.View(videoWidthChars, maxPanelLines, padding))
+		} else if m.react.IsOpen() {
+			b.WriteString(m.react.View(videoWidthChars, maxPanelLines, padding))
 		} else {
 			// Normal caption view
 			var captionLines []string
@@ -255,7 +257,18 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.status = statusReelError
 			return m, nil
 		}
-		return m, m.loadCurrentReel
+		return m, tea.Batch(m.loadCurrentReel, m.hud.ShowFriendBanner(username, config.KeysReact))
+
+	// React select sends the highlighted reaction to the current reel
+	case m.react.IsOpen() && slices.Contains(config.KeysSelect, key):
+		emoji := m.react.CursorEmoji()
+		if emoji == "" {
+			return m, nil
+		}
+		go m.backend.ReactToCurrent(emoji)
+		m.react.Close()
+		m.closePanelLayout()
+		return m, nil
 
 	// Share select takes priority over other keys when share panel is open
 	case m.share.IsOpen() && slices.Contains(config.KeysSelect, key):
@@ -361,6 +374,17 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case !m.help.IsOpen() && slices.Contains(config.KeysHelpOpen, key):
 		if !m.panelOpen() {
 			m.help.Open()
+			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
+			m.player.RedrawVideo()
+		}
+
+	case m.react.IsOpen() && slices.Contains(config.KeysReact, key):
+		m.react.Close()
+		m.closePanelLayout()
+
+	case !m.react.IsOpen() && slices.Contains(config.KeysReact, key):
+		if m.backend.IsFriendMode() && !m.panelOpen() && !m.backend.IsSyncing() {
+			m.react.Open()
 			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
 			m.player.RedrawVideo()
 		}
@@ -497,9 +521,9 @@ func (m Model) sendShare() tea.Cmd {
 	}
 }
 
-// panelOpen returns true if any overlay panel (comments, share, help, friends) is open.
+// panelOpen returns true if any overlay panel (comments, share, help, friends, react) is open.
 func (m Model) panelOpen() bool {
-	return m.comments.IsOpen() || m.share.IsOpen() || m.help.IsOpen() || m.friends.IsOpen()
+	return m.comments.IsOpen() || m.share.IsOpen() || m.help.IsOpen() || m.friends.IsOpen() || m.react.IsOpen()
 }
 
 // scrollPanel dispatches scroll/cursor movement to the active panel.
@@ -519,6 +543,10 @@ func (m *Model) scrollPanel(direction int) bool {
 	}
 	if m.friends.IsOpen() {
 		m.friends.MoveCursor(direction)
+		return true
+	}
+	if m.react.IsOpen() {
+		m.react.MoveCursor(direction)
 		return true
 	}
 	if m.comments.IsOpen() {

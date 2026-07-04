@@ -12,10 +12,12 @@ import (
 
 // HUD message types
 type (
-	volumeHoldMsg       struct{ gen int }
-	volumeFadeTickMsg   struct{}
-	dmNotifyHoldMsg     struct{}
-	dmNotifyFadeTickMsg struct{}
+	volumeHoldMsg           struct{ gen int }
+	volumeFadeTickMsg       struct{}
+	dmNotifyHoldMsg         struct{}
+	dmNotifyFadeTickMsg     struct{}
+	friendBannerHoldMsg     struct{ gen int }
+	friendBannerFadeTickMsg struct{}
 )
 
 // hudItem identifies which overlay is currently displayed.
@@ -24,6 +26,7 @@ type hudItem int
 
 const (
 	hudNone hudItem = iota
+	hudFriendBanner
 	hudVolume
 	hudDMNotify
 )
@@ -39,6 +42,12 @@ type HUD struct {
 	// DM notification: 0=hidden, 1=visible (holding), 2-7=fading out
 	dmNotifyFadeStep int
 	dmNotifyCount    int
+
+	// friend banner: 0=hidden, 1=visible (holding), 2-7=fading out
+	friendBannerFadeStep int
+	friendBannerGen      int
+	friendBannerUser     string
+	friendBannerKeys     []string
 }
 
 // ShowVolume triggers the volume indicator
@@ -61,6 +70,32 @@ func (h *HUD) ShowDMNotify(count int) tea.Cmd {
 	h.dmNotifyFadeStep = 1
 	h.dmNotifyCount = count
 	return h.dmNotifyHoldTick()
+}
+
+// ShowFriendBanner triggers the ephemeral friend-mode banner
+func (h *HUD) ShowFriendBanner(username string, KeysReact []string) tea.Cmd {
+	if h.active == hudVolume {
+		h.volumeFadeStep = 0
+	}
+	if h.active == hudDMNotify {
+		h.dmNotifyFadeStep = 0
+	}
+	h.active = hudFriendBanner
+	h.friendBannerFadeStep = 1
+	h.friendBannerUser = username
+	h.friendBannerKeys = KeysReact
+	h.friendBannerGen++
+	return h.friendBannerHoldTick()
+}
+
+// HideFriendBanner dismisses the banner immediately. Called on friend-mode
+// exit, where the react hint would be stale.
+func (h *HUD) HideFriendBanner() {
+	h.friendBannerFadeStep = 0
+	h.friendBannerGen++
+	if h.active == hudFriendBanner {
+		h.active = hudNone
+	}
 }
 
 // viewHUD renders the heads-up display overlay area above the video.
@@ -95,6 +130,19 @@ func (m Model) viewHUD(videoWidthChars, topPad int, padding string) string {
 		emptyStyle := lipgloss.NewStyle().Foreground(fadeColor).Faint(true)
 		volBar := filledStyle.Render(strings.Repeat("█", filled)) + emptyStyle.Render(strings.Repeat("░", barWidth-filled))
 		b.WriteString(padding + volBar + "\n\n")
+
+	case hudFriendBanner:
+		fadeColor := lipgloss.Color(hudFadeColor(m.hud.friendBannerFadeStep))
+		style := lipgloss.NewStyle().Foreground(fadeColor)
+		reactKeys := displayKeys(m.hud.friendBannerKeys)
+		text := fmt.Sprintf("From: @%s | press %s to react", m.hud.friendBannerUser, reactKeys)
+		maxWidth := videoWidthChars - 1
+		if runewidth.StringWidth(text) > maxWidth {
+			text = truncateByWidth(text, maxWidth-3) + "..."
+		}
+		textWidth := runewidth.StringWidth(text)
+		leftPad := (maxWidth - textWidth) / 2
+		b.WriteString(padding + strings.Repeat(" ", leftPad) + style.Render(text) + "\n\n")
 	}
 
 	return b.String()
@@ -147,6 +195,30 @@ func (m Model) updateHUD(msg tea.Msg) (bool, Model, tea.Cmd) {
 			return true, m, nil
 		}
 		return true, m, m.hud.dmNotifyFadeTick()
+
+	case friendBannerHoldMsg:
+		if msg.gen != m.hud.friendBannerGen {
+			return true, m, nil
+		}
+		if m.hud.friendBannerFadeStep == 1 {
+			m.hud.friendBannerFadeStep = 2
+			return true, m, m.hud.friendBannerFadeTick()
+		}
+		return true, m, nil
+
+	case friendBannerFadeTickMsg:
+		if m.hud.friendBannerFadeStep < 2 {
+			return true, m, nil
+		}
+		m.hud.friendBannerFadeStep++
+		if m.hud.friendBannerFadeStep > 7 {
+			m.hud.friendBannerFadeStep = 0
+			if m.hud.active == hudFriendBanner {
+				m.hud.active = hudNone
+			}
+			return true, m, nil
+		}
+		return true, m, m.hud.friendBannerFadeTick()
 	}
 
 	return false, m, nil
@@ -174,6 +246,19 @@ func (h HUD) dmNotifyHoldTick() tea.Cmd {
 func (h HUD) dmNotifyFadeTick() tea.Cmd {
 	return tea.Tick(60*time.Millisecond, func(t time.Time) tea.Msg {
 		return dmNotifyFadeTickMsg{}
+	})
+}
+
+func (h HUD) friendBannerHoldTick() tea.Cmd {
+	gen := h.friendBannerGen
+	return tea.Tick(5*time.Second, func(t time.Time) tea.Msg {
+		return friendBannerHoldMsg{gen: gen}
+	})
+}
+
+func (h HUD) friendBannerFadeTick() tea.Cmd {
+	return tea.Tick(60*time.Millisecond, func(t time.Time) tea.Msg {
+		return friendBannerFadeTickMsg{}
 	})
 }
 

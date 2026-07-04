@@ -40,8 +40,8 @@ type Settings struct {
 	KeysSave         []string
 	KeysSeekForward  []string
 	KeysSeekBackward []string
-
-	KeysSelect []string
+	KeysReact        []string
+	KeysSelect       []string
 
 	KeysShareOpen  []string
 	KeysShareClose []string
@@ -214,8 +214,8 @@ func defaultSettings() Settings {
 		KeysSave:         []string{"b"},
 		KeysSeekForward:  []string{"l"},
 		KeysSeekBackward: []string{"h"},
-
-		KeysSelect: []string{" "},
+		KeysReact:        []string{"x"},
+		KeysSelect:       []string{" "},
 
 		KeysShareOpen:  []string{"s"},
 		KeysShareClose: []string{"S"},
@@ -322,6 +322,7 @@ func LoadSettings(configDir string) {
 	loadKey(conf, "key_help_close", &s.KeysHelpClose)
 	loadKey(conf, "key_friends_open", &s.KeysFriendsOpen)
 	loadKey(conf, "key_friends_close", &s.KeysFriendsClose)
+	loadKey(conf, "key_react", &s.KeysReact)
 
 	Config = s
 }
@@ -376,6 +377,7 @@ func writeConf(path string, s Settings) error {
 	writeKeys(&b, "key_help_close", s.KeysHelpClose)
 	writeKeys(&b, "key_friends_open", s.KeysFriendsOpen)
 	writeKeys(&b, "key_friends_close", s.KeysFriendsClose)
+	writeKeys(&b, "key_react", s.KeysReact)
 
 	return os.WriteFile(path, []byte(b.String()), 0644)
 }

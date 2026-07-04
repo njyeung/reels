@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand"
-	"net/url"
 	"regexp"
 	"strconv"
 	"time"
@@ -14,7 +13,6 @@ import (
 	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/cdproto/fetch"
 	"github.com/chromedp/cdproto/network"
-	"github.com/chromedp/cdproto/runtime"
 	"github.com/chromedp/cdproto/target"
 	"github.com/chromedp/chromedp"
 )
@@ -75,77 +73,22 @@ func (b *ChromeBackend) stopDMSession() {
 }
 
 // dmGraphQL replays the captured DM request template as a graphql POST with
-// the given doc_id / friendly name / variables, executed as a fetch() inside
-// the DM window so cookies and tokens match a real client. rootFieldName sets
-// the x-root-field-name header; pass "" to omit it (the clips query sends it,
-// the reaction mutation was captured without one). Returns the raw response
-// body.
-func (b *ChromeBackend) dmGraphQL(docID, friendlyName, rootFieldName string, variables any) (string, error) {
-	template, lsd := b.dm.Template()
+// the given doc_id / friendly name / variables, executed inside the DM window
+// so cookies and tokens match a real client.
+func (b *ChromeBackend) dmGraphQL(docID, friendlyName, rootFieldName, endpoint string, variables any) (string, error) {
+	template := b.dm.Template()
 	if template == "" {
 		return "", fmt.Errorf("dmGraphQL: no DM request template captured")
 	}
-
-	params, err := url.ParseQuery(template)
-	if err != nil {
-		return "", err
-	}
-
-	varsJSON, err := json.Marshal(variables)
-	if err != nil {
-		return "", err
-	}
-
-	params.Set("doc_id", docID)
-	params.Set("fb_api_req_friendly_name", friendlyName)
-	params.Set("variables", string(varsJSON))
-	postBody := params.Encode()
-
-	rootFieldHeader := ""
-	if rootFieldName != "" {
-		rootFieldHeader = "\n\t\t\t\t\t\t\"x-root-field-name\": " + jsonStringForJS(rootFieldName) + ","
-	}
-
-	js := fmt.Sprintf(`
-		(async () => {
-			const ac = new AbortController();
-			const tid = setTimeout(() => ac.abort(), 10000);
-			try {
-				const csrftoken = document.cookie.split('; ')
-					.find(c => c.startsWith('csrftoken='))
-					?.split('=')[1] || '';
-				const r = await fetch("https://www.instagram.com/graphql/query", {
-					method: "POST",
-					headers: {
-						"content-type": "application/x-www-form-urlencoded",
-						"x-csrftoken": csrftoken,
-						"x-fb-friendly-name": %s,
-						"x-fb-lsd": %s,
-						"x-ig-app-id": %s,%s
-					},
-					body: %s,
-					credentials: "include",
-					signal: ac.signal
-				});
-				return await r.text();
-			} finally {
-				clearTimeout(tid);
-			}
-		})()
-	`, jsonStringForJS(friendlyName), jsonStringForJS(lsd), expectedAppID, rootFieldHeader, jsonStringForJS(postBody))
-
-	var result string
-	err = chromedp.Run(b.dmCtx,
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			return chromedp.Evaluate(js, &result, func(p *runtime.EvaluateParams) *runtime.EvaluateParams {
-				return p.WithAwaitPromise(true)
-			}).Do(ctx)
-		}),
-	)
-	if err != nil {
-		return "", err
-	}
-	return result, nil
+	return b.execGraphQL(graphqlRequest{
+		ctx:           b.dmCtx,
+		template:      template,
+		docID:         docID,
+		friendlyName:  friendlyName,
+		rootFieldName: rootFieldName,
+		endpoint:      endpoint,
+		variables:     variables,
+	})
 }
 
 // ReactToCurrent sends emoji as a reaction to the reel the friend cursor is
@@ -158,22 +101,25 @@ func (b *ChromeBackend) ReactToCurrent(emoji string) error {
 		return fmt.Errorf("ReactToCurrent: not in friend mode")
 	}
 
-	index, _, err := fc.Current()
+	index, pk, err := fc.Current()
 	if err != nil {
 		return err
 	}
 
-	messageID, threadKey, err := b.dm.MarkSeen(fc.Username(), index)
+	messageID, threadFBID, err := b.dm.MarkSeen(fc.Username(), index)
 	if err != nil {
 		return err
 	}
-	return b.sendReaction(emoji, messageID, threadKey)
+	slog.Debug("dm: reacting to current",
+		"username", fc.Username(), "index", index, "pk", pk,
+		"message_id", messageID, "thread_id", threadFBID, "emoji", emoji)
+	return b.sendReaction(emoji, messageID, threadFBID)
 }
 
 // sendReaction fires IGDirectReactionSendMutation for a single DM message.
 // Fire-and-forget for now
-// TODO: Future work is to use processGraphQLBody to confirm response
 func (b *ChromeBackend) sendReaction(emoji, messageID, threadID string) error {
+
 	vars := map[string]interface{}{
 		"input": map[string]interface{}{
 			"emoji":           emoji,
@@ -184,14 +130,15 @@ func (b *ChromeBackend) sendReaction(emoji, messageID, threadID string) error {
 		},
 	}
 
-	body, err := b.dmGraphQL(reactionDocID, reactionFriendlyName, "", vars)
+	body, err := b.dmGraphQL(reactionDocID, reactionFriendlyName, "", mutateEndpoint, vars)
 	if err != nil {
 		return err
 	}
-	if len(body) > 300 {
-		body = body[:300]
+	if len(body) > 2000 {
+		body = body[:2000]
 	}
-	slog.Debug("dm: reaction sent", "message_id", messageID, "resp", body)
+	slog.Debug("dm: reaction sent",
+		"emoji", emoji, "message_id", messageID, "thread_id", threadID, "resp", body)
 	return nil
 }
 
@@ -222,7 +169,7 @@ func (b *ChromeBackend) prefetchReel(code, pk string) error {
 	}
 
 	result, err := b.dmGraphQL(clipsDocID, clipsFriendlyName,
-		"xdt_api__v1__clips__home__connection_v2", vars)
+		"xdt_api__v1__clips__home__connection_v2", "", vars)
 	if err != nil {
 		return err
 	}
@@ -257,8 +204,8 @@ func (b *ChromeBackend) prefetchReel(code, pk string) error {
 // processThreadResponse merges any reel-shares from a single DM thread body
 // into the DM friends list, keyed by the sending friend.
 func (b *ChromeBackend) processThreadResponse(body string) {
-	entries, threadKey, sender := extractDMThreadEntries(body)
-	b.dm.MergeThread(entries, threadKey, sender)
+	entries, threadKey, threadFBID, sender := extractDMThreadEntries(body)
+	b.dm.MergeThread(entries, threadKey, threadFBID, sender)
 }
 
 // collectDMInbox navigates the DM window to /direct/inbox/ and waits
@@ -280,7 +227,7 @@ func (b *ChromeBackend) collectDMInbox(ctx context.Context) {
 	}
 
 	entries := b.dm.PendingEntries()
-	template, _ := b.dm.Template()
+	template := b.dm.Template()
 	slog.Debug("dm: starting materialization", "entries", len(entries), "haveTemplate", template != "")
 
 	// Materialize linearly with jitter.
@@ -321,7 +268,12 @@ func (b *ChromeBackend) collectDMInbox(ctx context.Context) {
 func (b *ChromeBackend) GetDMFriends() []DMFriend {
 	b.dm.mu.RLock()
 	defer b.dm.mu.RUnlock()
-	return b.dm.friends
+	friends := make([]DMFriend, len(b.dm.friends))
+	copy(friends, b.dm.friends)
+	for i := range friends {
+		friends[i].Entries = append([]dmReelEntry(nil), friends[i].Entries...)
+	}
+	return friends
 }
 
 // GetDMReelsCount returns the total number of unseen friend-shared reels.
@@ -424,8 +376,10 @@ type dmThreadResponse struct {
 	Data struct {
 		Thread *struct {
 			Inner *struct {
-				ThreadKey string `json:"thread_key"`
-				Viewer    struct {
+				ThreadKey  string `json:"thread_key"`  // thread_key is the /direct/t/<id>/ URL id
+				ThreadFBID string `json:"thread_fbid"` //thread_fbid is used for reaction mutations
+				// ^ idky they use 2 different thread ids bruh
+				Viewer struct {
 					FBID string `json:"interop_messaging_user_fbid"`
 				}
 				ReadReceipts []struct {
@@ -469,15 +423,15 @@ type dmThreadResponse struct {
 var reelCodeRegex = regexp.MustCompile(`/reels?/([^/?]+)`)
 
 // extractDMThreadEntries parses a single thread response and returns its unseen
-// reel entries, the thread key, and the sending friend's username. A 1:1 DM
-// thread has a single non-viewer sender, so the username is returned once.
-func extractDMThreadEntries(body string) (entries []dmReelEntry, threadKey, sender string) {
+// reel entries, the thread_key, the thread_fbid, and the sending friend's username.
+// A 1:1 DM thread has a single non-viewer sender, so the username is returned once.
+func extractDMThreadEntries(body string) (entries []dmReelEntry, threadKey, threadFBID, sender string) {
 	var resp dmThreadResponse
 	if err := json.Unmarshal([]byte(body), &resp); err != nil {
-		return nil, "", ""
+		return nil, "", "", ""
 	}
 	if resp.Data.Thread == nil || resp.Data.Thread.Inner == nil {
-		return nil, "", ""
+		return nil, "", "", ""
 	}
 
 	thread := resp.Data.Thread.Inner
@@ -531,5 +485,5 @@ func extractDMThreadEntries(body string) (entries []dmReelEntry, threadKey, send
 		})
 	}
 
-	return entries, thread.ThreadKey, sender
+	return entries, thread.ThreadKey, thread.ThreadFBID, sender
 }
