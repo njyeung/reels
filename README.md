@@ -31,10 +31,14 @@
 
 ### Terminal
 You need a terminal that supports the **Kitty graphics protocol**:
-- [Kitty](https://sw.kovidgoyal.net/kitty/) (most performant)
-- [WezTerm](https://wezfurlong.org/wezterm/)
-- [Ghostty](https://ghostty.org)
+- [Kitty](https://sw.kovidgoyal.net/kitty/) (recommended)
+- [Ghostty](https://ghostty.org/) (recommended)
+- [WezTerm](https://wezfurlong.org/wezterm/) (recommended)
+- [iTerm2](https://iterm2.com/) (recommended)
+- [st](https://st.suckless.org/) (recommended)
 - [Konsole](https://konsole.kde.org/)
+- [Warp](https://www.warp.dev/)
+- [wayst](https://github.com/91861/wayst)
 
 ### Chrome (LINUX ARM64 ONLY)
 Chrome is automatically downloaded on first run if no system Chrome/Chromium is found; No action is needed for most platforms. The exception is Linux ARM64, where Chrome For Testing isn't available yet ([coming Q2 2026!](https://blog.chromium.org/2026/03/bringing-chrome-to-arm64-linux-devices.html)). If you are on Linux ARM64, you'll need to install Chrome, Chromium, or Brave manually before running Reels.
