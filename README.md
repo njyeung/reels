@@ -33,6 +33,7 @@
 You need a terminal that supports the **Kitty graphics protocol**:
 - [Kitty](https://sw.kovidgoyal.net/kitty/) (most performant)
 - [WezTerm](https://wezfurlong.org/wezterm/)
+- [Ghostty](https://ghostty.org)
 - [Konsole](https://konsole.kde.org/)
 
 ### Chrome (LINUX ARM64 ONLY)
