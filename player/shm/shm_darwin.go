@@ -38,13 +38,15 @@ import (
 	"fmt"
 	"sync"
 	"unsafe" // for passing Go memory to C without allocation
+
+	"github.com/gammazero/deque"
 )
 
 // shmNames tracks created shm object names so ShmCleanupAll can unlink them,
 // since macOS has no /dev/shm directory to glob.
 var shmNames struct {
 	mu sync.Mutex
-	m  map[string]struct{}
+	q  deque.Deque[string]
 }
 
 // ShmWrite creates a POSIX shared memory object and writes data into it.
@@ -63,10 +65,12 @@ func ShmWrite(name string, data []byte) error {
 	}
 
 	shmNames.mu.Lock()
-	if shmNames.m == nil {
-		shmNames.m = make(map[string]struct{})
+	shmNames.q.PushBack(name)
+	// KGP unlinks after read. By the time 500 frames have been written, we can assume
+	// the shm file has already been unlinked.
+	if shmNames.q.Len() > 500 {
+		shmNames.q.PopFront()
 	}
-	shmNames.m[name] = struct{}{}
 	shmNames.mu.Unlock()
 
 	return nil
@@ -77,20 +81,12 @@ func ShmUnlink(name string) {
 	cname := C.CString(name)
 	defer C.free(unsafe.Pointer(cname))
 	C.shm_unlink(cname)
-
-	shmNames.mu.Lock()
-	delete(shmNames.m, name)
-	shmNames.mu.Unlock()
 }
 
 // ShmCleanupAll unlinks all tracked shared memory objects.
 func ShmCleanupAll() {
-	shmNames.mu.Lock()
-	m := shmNames.m
-	shmNames.m = nil
-	shmNames.mu.Unlock()
-
-	for name := range m {
+	for shmNames.q.Len() != 0 {
+		name := shmNames.q.PopFront()
 		cname := C.CString(name)
 		C.shm_unlink(cname)
 		C.free(unsafe.Pointer(cname))
