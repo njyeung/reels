@@ -181,14 +181,12 @@ func (b *ChromeBackend) FetchMoreComments() {
 		"sort_order": "popular",
 		"__relay_internal__pv__PolarisIsLoggedInrelayprovider": true,
 	}
-
-	result, err := b.execGraphQL(graphqlRequest{
-		ctx:          b.ctx,
-		template:     template,
-		docID:        paginationDocID,
-		friendlyName: paginationFriendlyName,
-		variables:    vars,
-	})
+	req, err := newGraphQLRequest(b.ctx, template, paginationDocID, paginationFriendlyName, readEndpoint, vars)
+	if err != nil {
+		b.setCommentsPagination("", false)
+		return
+	}
+	result, err := b.execGraphQL(req)
 	if err != nil {
 		b.setCommentsPagination("", false)
 		return

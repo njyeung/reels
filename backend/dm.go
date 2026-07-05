@@ -72,25 +72,6 @@ func (b *ChromeBackend) stopDMSession() {
 	}
 }
 
-// dmGraphQL replays the captured DM request template as a graphql POST with
-// the given doc_id / friendly name / variables, executed inside the DM window
-// so cookies and tokens match a real client.
-func (b *ChromeBackend) dmGraphQL(docID, friendlyName, rootFieldName, endpoint string, variables any) (string, error) {
-	template := b.dm.Template()
-	if template == "" {
-		return "", fmt.Errorf("dmGraphQL: no DM request template captured")
-	}
-	return b.execGraphQL(graphqlRequest{
-		ctx:           b.dmCtx,
-		template:      template,
-		docID:         docID,
-		friendlyName:  friendlyName,
-		rootFieldName: rootFieldName,
-		endpoint:      endpoint,
-		variables:     variables,
-	})
-}
-
 // ReactToCurrent sends emoji as a reaction to the reel the friend cursor is
 // currently on and marks that entry seen.
 func (b *ChromeBackend) ReactToCurrent(emoji string) error {
@@ -129,16 +110,16 @@ func (b *ChromeBackend) sendReaction(emoji, messageID, threadID string) error {
 			"thread_id":       threadID,
 		},
 	}
-
-	body, err := b.dmGraphQL(reactionDocID, reactionFriendlyName, "", mutateEndpoint, vars)
+	template := b.dm.Template()
+	if template == "" {
+		return fmt.Errorf("no DM request template captured")
+	}
+	req, err := newGraphQLRequest(b.dmCtx, template, reactionDocID, reactionFriendlyName, mutateEndpoint, vars)
 	if err != nil {
 		return err
 	}
-	if len(body) > 2000 {
-		body = body[:2000]
-	}
-	slog.Debug("dm: reaction sent",
-		"emoji", emoji, "message_id", messageID, "thread_id", threadID, "resp", body)
+	b.execGraphQL(req)
+
 	return nil
 }
 
@@ -146,8 +127,7 @@ func (b *ChromeBackend) sendReaction(emoji, messageID, threadID string) error {
 // using the captured DM request template, and warms b.reels[pk] with the
 // resulting media so friend-mode navigation can show it without a page load.
 //
-// DM fetch listener sees the response too but ignores clip bodies, so we
-// own storage here.
+// WARNING: DM fetch listener sees the response too but ignores clip bodies
 func (b *ChromeBackend) prefetchReel(code, pk string) error {
 	if code == "" {
 		return fmt.Errorf("prefetchReel: empty code")
@@ -168,8 +148,15 @@ func (b *ChromeBackend) prefetchReel(code, pk string) error {
 		"__relay_internal__pv__PolarisAIGMMediaWebLabelEnabledrelayprovider":     false,
 	}
 
-	result, err := b.dmGraphQL(clipsDocID, clipsFriendlyName,
-		"xdt_api__v1__clips__home__connection_v2", "", vars)
+	template := b.dm.Template()
+	if template == "" {
+		return fmt.Errorf("no DM request template captured")
+	}
+	req, err := newGraphQLRequest(b.dmCtx, template, clipsDocID, clipsFriendlyName, readEndpoint, vars)
+	if err != nil {
+		return err
+	}
+	result, err := b.execGraphQL(req)
 	if err != nil {
 		return err
 	}
@@ -177,14 +164,6 @@ func (b *ChromeBackend) prefetchReel(code, pk string) error {
 	var resp reelResponse
 	if err := json.Unmarshal([]byte(result), &resp); err != nil {
 		return err
-	}
-	if len(resp.Data.Connection.Edges) == 0 {
-		snippet := result
-		if len(snippet) > 800 {
-			snippet = snippet[:800]
-		}
-		slog.Warn("dm: prefetch replay returned no edges", "code", code, "pk", pk, "raw", snippet)
-		return fmt.Errorf("prefetchReel: no edges for %s", code)
 	}
 	media := resp.Data.Connection.Edges[0].Node.Media
 	if media.PK == "" {

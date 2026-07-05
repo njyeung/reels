@@ -27,9 +27,13 @@ const (
 	reactionFriendlyName = "IGDirectReactionSendMutation"
 
 	expectedAppID = "936619743392459"
+)
 
-	readEndpoint   = "https://www.instagram.com/graphql/query" // clips, comments
-	mutateEndpoint = "https://www.instagram.com/api/graphql"   // friend reel reactions
+type Endpoint = int
+
+const (
+	readEndpoint   Endpoint = iota // clips, comments
+	mutateEndpoint                 // reel reactions
 )
 
 // reelMedia is the Media payload inside one clip edge.
@@ -160,23 +164,49 @@ func jsonStringForJS(s string) string {
 // The template is a previously captured x-www-form-urlencoded POST body that
 // carries the session tokens (lsd, fb_dtsg, csrf, …); execGraphQL swaps in the
 // doc_id / friendly name / variables and reuses everything else.
-type graphqlRequest struct {
-	ctx           context.Context // page context whose window runs the fetch
-	template      string          // captured token-bearing urlencoded request body
-	docID         string
-	friendlyName  string
-	rootFieldName string // x-root-field-name header; "" to omit
-	endpoint      string // POST target; "" defaults to readEndpoint
-	variables     any
+type graphQLRequest struct {
+	ctx          context.Context // page context whose window runs the fetch
+	template     string          // captured token-bearing urlencoded request body
+	docID        string
+	friendlyName string
+	endpoint     string
+	variables    any
+	valid        bool // used by factory
+}
+
+func newGraphQLRequest(ctx context.Context, template string, docID string, friendlyName string, endpointEnum Endpoint, variables any) (graphQLRequest, error) {
+	if template == "" {
+		return graphQLRequest{valid: false}, fmt.Errorf("execGraphQL: empty request template")
+	}
+
+	req := graphQLRequest{
+		ctx:          ctx,
+		template:     template,
+		docID:        docID,
+		friendlyName: friendlyName,
+		variables:    variables,
+		valid:        true,
+	}
+
+	switch endpointEnum {
+	case readEndpoint:
+		req.endpoint = "https://www.instagram.com/graphql/query"
+	case mutateEndpoint:
+		req.endpoint = "https://www.instagram.com/api/graphql"
+	default:
+		return graphQLRequest{valid: false}, fmt.Errorf("Not a valid endpoint")
+	}
+
+	return req, nil
 }
 
 // execGraphQL replays a captured GraphQL request as an in-page fetch() so the
 // browser attaches the real cookies/CSRF and the tokens in the template match a
 // genuine client. The x-fb-lsd header is taken from the template's lsd param.
 // Returns the raw response body.
-func (b *ChromeBackend) execGraphQL(req graphqlRequest) (string, error) {
-	if req.template == "" {
-		return "", fmt.Errorf("execGraphQL: empty request template")
+func (b *ChromeBackend) execGraphQL(req graphQLRequest) (string, error) {
+	if req.valid == false {
+		return "", fmt.Errorf("invalid graphQLRequest struct")
 	}
 
 	params, err := url.ParseQuery(req.template)
@@ -194,15 +224,7 @@ func (b *ChromeBackend) execGraphQL(req graphqlRequest) (string, error) {
 	params.Set("variables", string(varsJSON))
 	postBody := params.Encode()
 
-	rootFieldHeader := ""
-	if req.rootFieldName != "" {
-		rootFieldHeader = "\n\t\t\t\t\t\t\"x-root-field-name\": " + jsonStringForJS(req.rootFieldName) + ","
-	}
-
 	endpoint := req.endpoint
-	if endpoint == "" {
-		endpoint = readEndpoint
-	}
 
 	js := fmt.Sprintf(`
 		(async () => {
@@ -219,7 +241,7 @@ func (b *ChromeBackend) execGraphQL(req graphqlRequest) (string, error) {
 						"x-csrftoken": csrftoken,
 						"x-fb-friendly-name": %s,
 						"x-fb-lsd": %s,
-						"x-ig-app-id": %s,%s
+						"x-ig-app-id": %s,
 					},
 					body: %s,
 					credentials: "include",
@@ -230,7 +252,7 @@ func (b *ChromeBackend) execGraphQL(req graphqlRequest) (string, error) {
 				clearTimeout(tid);
 			}
 		})()
-	`, jsonStringForJS(endpoint), jsonStringForJS(req.friendlyName), jsonStringForJS(params.Get("lsd")), expectedAppID, rootFieldHeader, jsonStringForJS(postBody))
+	`, jsonStringForJS(endpoint), jsonStringForJS(req.friendlyName), jsonStringForJS(params.Get("lsd")), expectedAppID, jsonStringForJS(postBody))
 
 	var result string
 	err = chromedp.Run(req.ctx,
