@@ -23,7 +23,7 @@ const dmInboxDrainWindow = 10 * time.Second
 
 // startDMSession spawns the secondary browser window, enables fetch
 // interception on it, and stores the long-lived dmCtx. Called once after the
-// feed is up so friend-mode navigation can reuse the window for the rest of
+// feed is up so chat-mode navigation can reuse the window for the rest of
 // the session.
 func (b *ChromeBackend) startDMSession() error {
 	var targetID target.ID
@@ -54,7 +54,7 @@ func (b *ChromeBackend) startDMSession() error {
 
 	chromedp.ListenTarget(dmCtx, func(ev interface{}) {
 		if e, ok := ev.(*fetch.EventRequestPaused); ok {
-			go b.processGraphQLBody(dmCtx, e, true)
+			go b.processDMGraphQLBody(dmCtx, e)
 		}
 	})
 
@@ -72,28 +72,25 @@ func (b *ChromeBackend) stopDMSession() {
 	}
 }
 
-// ReactToCurrent sends emoji as a reaction to the reel the friend cursor is
+// ReactToCurrent sends emoji as a reaction to the reel the chat cursor is
 // currently on and marks that entry seen.
 func (b *ChromeBackend) ReactToCurrent(emoji string) error {
 	b.modeMu.RLock()
-	fc, ok := b.active.(*FriendCursor)
+	cc, ok := b.active.(*ChatCursor)
 	b.modeMu.RUnlock()
 	if !ok {
-		return fmt.Errorf("ReactToCurrent: not in friend mode")
+		return fmt.Errorf("ReactToCurrent: not in chat mode")
 	}
 
-	index, pk, err := fc.Current()
+	index, _, err := cc.Current()
 	if err != nil {
 		return err
 	}
 
-	messageID, threadFBID, err := b.dm.MarkSeen(fc.Username(), index)
+	messageID, threadFBID, err := b.dm.MarkSeen(cc.ThreadKey(), index)
 	if err != nil {
 		return err
 	}
-	slog.Debug("dm: reacting to current",
-		"username", fc.Username(), "index", index, "pk", pk,
-		"message_id", messageID, "thread_id", threadFBID, "emoji", emoji)
 	return b.sendReaction(emoji, messageID, threadFBID)
 }
 
@@ -125,7 +122,7 @@ func (b *ChromeBackend) sendReaction(emoji, messageID, threadID string) error {
 
 // prefetchReel replays clips_home for a single reel (keyed by its shortcode)
 // using the captured DM request template, and warms b.reels[pk] with the
-// resulting media so friend-mode navigation can show it without a page load.
+// resulting media so chat-mode navigation can show it without a page load.
 //
 // WARNING: DM fetch listener sees the response too but ignores clip bodies
 func (b *ChromeBackend) prefetchReel(code, pk string) error {
@@ -181,10 +178,11 @@ func (b *ChromeBackend) prefetchReel(code, pk string) error {
 }
 
 // processThreadResponse merges any reel-shares from a single DM thread body
-// into the DM friends list, keyed by the sending friend.
+// into the DM chats list, keyed by the thread.
 func (b *ChromeBackend) processThreadResponse(body string) {
-	entries, threadKey, threadFBID, sender := extractDMThreadEntries(body)
-	b.dm.MergeThread(entries, threadKey, threadFBID, sender)
+	if chat, ok := extractDMThread(body); ok {
+		b.dm.MergeThread(chat)
+	}
 }
 
 // collectDMInbox navigates the DM window to /direct/inbox/ and waits
@@ -243,16 +241,16 @@ func (b *ChromeBackend) collectDMInbox(ctx context.Context) {
 	b.events <- Event{Type: EventDMReelsReady, Count: b.GetDMReelsCount()}
 }
 
-// GetDMFriends returns the cached list of friends with shared reels.
-func (b *ChromeBackend) GetDMFriends() []DMFriend {
+// GetDMChats returns the cached list of chats with shared reels.
+func (b *ChromeBackend) GetDMChats() []DMChat {
 	b.dm.mu.RLock()
 	defer b.dm.mu.RUnlock()
-	friends := make([]DMFriend, len(b.dm.friends))
-	copy(friends, b.dm.friends)
-	for i := range friends {
-		friends[i].Entries = append([]dmReelEntry(nil), friends[i].Entries...)
+	chats := make([]DMChat, len(b.dm.chats))
+	copy(chats, b.dm.chats)
+	for i := range chats {
+		chats[i].Entries = append([]dmReelEntry(nil), chats[i].Entries...)
 	}
-	return friends
+	return chats
 }
 
 // GetDMReelsCount returns the total number of unseen friend-shared reels.
@@ -260,24 +258,24 @@ func (b *ChromeBackend) GetDMReelsCount() int {
 	b.dm.mu.RLock()
 	defer b.dm.mu.RUnlock()
 	total := 0
-	for _, f := range b.dm.friends {
-		total += f.UnseenCount()
+	for _, c := range b.dm.chats {
+		total += c.UnseenCount()
 	}
 	return total
 }
 
-// EnterFriendMode swaps the active cursor to a FriendCursor over the named
-// friend's entries and routes user-action ctx to the DM window. Starts at the
+// EnterChatMode swaps the active cursor to a ChatCursor over the chat's
+// entries and routes user-action ctx to the DM window. Starts at the
 // saved LastIndex bookmark so re-entry resumes where the user left off.
-// Errors if the friend isn't known.
-func (b *ChromeBackend) EnterFriendMode(username string) error {
-	friend, ok := b.dm.Friend(username)
-	if !ok || len(friend.Entries) == 0 {
-		return fmt.Errorf("EnterFriendMode: unknown friend %q", username)
+// Errors if the chat isn't known.
+func (b *ChromeBackend) EnterChatMode(threadKey string) error {
+	chat, ok := b.dm.Chat(threadKey)
+	if !ok || len(chat.Entries) == 0 {
+		return fmt.Errorf("EnterChatMode: unknown chat %q", threadKey)
 	}
-	entries := friend.Entries
+	entries := chat.Entries
 
-	startIdx := friend.LastIndex
+	startIdx := chat.LastIndex
 	if startIdx < 1 || startIdx > len(entries) {
 		startIdx = 1
 	}
@@ -285,53 +283,53 @@ func (b *ChromeBackend) EnterFriendMode(username string) error {
 	// Position the cursor up front so GetCurrent resolves the (prefetched)
 	// reel immediately; SyncTo then navigates the DM window in the background
 	// for seen-state and to enable DOM actions (gated on IsSyncing).
-	fc := NewFriendCursor(b.dmCtx, username, entries, startIdx)
+	cc := NewChatCursor(b.dmCtx, threadKey, entries, startIdx)
 
 	b.modeMu.Lock()
-	b.active = fc
+	b.active = cc
 	b.ctx = b.dmCtx
 	b.modeMu.Unlock()
 
-	go fc.SyncTo(startIdx)
+	go cc.SyncTo(startIdx)
 	return nil
 }
 
-// ExitFriendMode restores the feed cursor and feed window. Idempotent when
+// ExitChatMode restores the feed cursor and feed window. Idempotent when
 // already in feed mode.
 //
-// 1. Saves the cursor position as the friend's resume bookmark;
+// 1. Saves the cursor position as the chat's resume bookmark;
 //
 // 2. If every entry has been reacted to, synchronously navigates the
-// DM window to the friend's thread (to mark it read on Instagram)
+// DM window to the chat's thread (to mark it read on Instagram)
 //
 // 3. Parks on about:blank.
-func (b *ChromeBackend) ExitFriendMode() {
+func (b *ChromeBackend) ExitChatMode() {
 	b.modeMu.Lock()
 	if b.active == b.feed {
 		b.modeMu.Unlock()
 		return
 	}
 
-	b.events <- Event{Type: EventFriendModeExited}
+	b.events <- Event{Type: EventChatModeExited}
 
-	fc, _ := b.active.(*FriendCursor)
+	cc, _ := b.active.(*ChatCursor)
 	b.active = b.feed
 	b.ctx = b.feedCtx
 	dmCtx := b.dmCtx
 	b.modeMu.Unlock()
 
-	if fc != nil {
-		username := fc.Username()
+	if cc != nil {
+		threadKey := cc.ThreadKey()
 
 		lastIndex := 0
-		if idx, _, err := fc.Current(); err == nil {
+		if idx, _, err := cc.Current(); err == nil {
 			lastIndex = idx
 		}
 
-		threadKey, allSeen := b.dm.SaveExit(username, lastIndex)
+		allSeen := b.dm.SaveExit(threadKey, lastIndex)
 
 		if allSeen && threadKey != "" {
-			// navigate to friend's dm
+			// navigate to the chat's thread
 			_ = chromedp.Run(dmCtx,
 				chromedp.Navigate("https://www.instagram.com/direct/t/"+threadKey+"/"),
 				chromedp.Sleep(1*time.Second),
@@ -342,8 +340,8 @@ func (b *ChromeBackend) ExitFriendMode() {
 	}
 }
 
-// IsFriendMode reports whether the active cursor is a FriendCursor.
-func (b *ChromeBackend) IsFriendMode() bool {
+// IsChatMode reports whether the active cursor is a ChatCursor.
+func (b *ChromeBackend) IsChatMode() bool {
 	b.modeMu.RLock()
 	defer b.modeMu.RUnlock()
 	return b.active != b.feed
@@ -358,7 +356,9 @@ type dmThreadResponse struct {
 				ThreadKey  string `json:"thread_key"`  // thread_key is the /direct/t/<id>/ URL id
 				ThreadFBID string `json:"thread_fbid"` //thread_fbid is used for reaction mutations
 				// ^ idky they use 2 different thread ids bruh
-				Viewer struct {
+				ThreadSubtype string `json:"thread_subtype"` // IGD_GROUP or IG_ONLY_ONE_TO_ONE
+				ThreadTitle   string `json:"thread_title"`   // peer's display name (1:1) or group name
+				Viewer        struct {
 					FBID string `json:"interop_messaging_user_fbid"`
 				}
 				ReadReceipts []struct {
@@ -374,7 +374,8 @@ type dmThreadResponse struct {
 							TimestampMS string `json:"timestamp_ms"`
 							Sender      struct {
 								UserDict struct {
-									Username string `json:"username"`
+									Username      string `json:"username"`
+									ProfilePicURL string `json:"profile_pic_url"`
 								} `json:"user_dict"`
 							} `json:"sender"`
 							Content struct {
@@ -401,20 +402,27 @@ type dmThreadResponse struct {
 // (…/reel/<code>/ or …/reels/<code>/).
 var reelCodeRegex = regexp.MustCompile(`/reels?/([^/?]+)`)
 
-// extractDMThreadEntries parses a single thread response and returns its unseen
-// reel entries, the thread_key, the thread_fbid, and the sending friend's username.
-// A 1:1 DM thread has a single non-viewer sender, so the username is returned once.
-func extractDMThreadEntries(body string) (entries []dmReelEntry, threadKey, threadFBID, sender string) {
+// extractDMThread parses a single thread response into a DMChat with its
+// unseen reel entries. ok is false when the body isn't
+// a thread response.
+func extractDMThread(body string) (chat DMChat, ok bool) {
 	var resp dmThreadResponse
 	if err := json.Unmarshal([]byte(body), &resp); err != nil {
-		return nil, "", "", ""
+		return DMChat{}, false
 	}
 	if resp.Data.Thread == nil || resp.Data.Thread.Inner == nil {
-		return nil, "", "", ""
+		return DMChat{}, false
 	}
 
 	thread := resp.Data.Thread.Inner
 	viewerFBID := thread.Viewer.FBID
+
+	chat = DMChat{
+		ThreadKey:  thread.ThreadKey,
+		ThreadFBID: thread.ThreadFBID,
+		Title:      thread.ThreadTitle,
+		IsGroup:    thread.ThreadSubtype == "IGD_GROUP",
+	}
 
 	var watermark int64
 	for _, r := range thread.ReadReceipts {
@@ -453,16 +461,17 @@ func extractDMThreadEntries(body string) (entries []dmReelEntry, threadKey, thre
 			continue // no shortcode -> can't prefetch
 		}
 
-		if sender == "" {
-			sender = msg.Sender.UserDict.Username
-		}
-		entries = append(entries, dmReelEntry{
+		chat.Entries = append(chat.Entries, dmReelEntry{
 			PK:        xma.TargetID,
 			Code:      m[1],
 			MessageID: msg.MessageID,
 			TargetURL: xma.TargetURL,
+			Sender: Friend{
+				Name:   msg.Sender.UserDict.Username,
+				ImgSrc: msg.Sender.UserDict.ProfilePicURL,
+			},
 		})
 	}
 
-	return entries, thread.ThreadKey, thread.ThreadFBID, sender
+	return chat, true
 }

@@ -14,7 +14,7 @@ type ChromeBackend struct {
 	feedCancel  context.CancelFunc
 	allocCancel context.CancelFunc
 
-	// modeMu guards swaps of ctx and active when entering/exiting friend mode.
+	// modeMu guards swaps of ctx and active when entering/exiting chat mode.
 	// Read paths in user-action methods access ctx directly; modeMu only
 	// matters at swap boundaries.
 	modeMu sync.RWMutex
@@ -28,18 +28,18 @@ type ChromeBackend struct {
 	reels   map[string]*Reel
 
 	// feed is the always-present cursor for the main reels page.
-	// active is whichever cursor user-action methods route through; today
-	// always == feed. A future FriendCursor will be swapped in alongside ctx.
+	// active is whichever cursor user-action methods route through: the feed
+	// cursor, or a ChatCursor swapped in alongside ctx in chat mode.
 	feed   *FeedCursor
 	active Cursor
 
-	// dmCtx is the secondary chromedp window used for friend-mode navigation
+	// dmCtx is the secondary chromedp window used for chat-mode navigation
 	// and DM-inbox collection. Created once by startDMSession after the feed
 	// is up; lives until Stop. Nil if the session never started.
 	dmCtx    context.Context
 	dmCancel context.CancelFunc
 
-	// dm owns the synchronized DM data: friends with their shared-reel
+	// dm owns the synchronized DM data: chats with their shared-reel
 	// entries, plus the captured request template used for:
 	// - reels prefetch
 	// - reactions
@@ -148,31 +148,31 @@ type Backend interface {
 	// Events returns a channel for backend events (new reels captured, etc)
 	Events() <-chan Event
 
-	// GetDMFriends returns the friends who have shared reels in DMs, grouped
-	// by sender. Populated by the background DM-inbox collection.
-	GetDMFriends() []DMFriend
+	// GetDMChats returns the chats with shared reels in DMs, grouped by
+	// thread (1:1 or group). Populated by the background DM-inbox collection.
+	GetDMChats() []DMChat
 
 	// GetDMReelsCount returns the total number of unseen friend-shared reels
-	// across all friends. Used by the startup HUD notification.
+	// across all chats. Used by the startup HUD notification.
 	GetDMReelsCount() int
 
-	// EnterFriendMode swaps the active cursor to a FriendCursor over the
-	// named friend's reel entries and routes user actions through the DM
+	// EnterChatMode swaps the active cursor to a ChatCursor over the
+	// chat's reel entries and routes user actions through the DM
 	// window. The cursor is positioned on the first reel to show (resuming
 	// after the last-seen one) so GetCurrent works immediately. Errors if the
-	// friend isn't known.
-	EnterFriendMode(username string) error
+	// chat isn't known.
+	EnterChatMode(threadKey string) error
 
-	// ExitFriendMode restores the feed cursor and feed window. Idempotent
-	// when not in friend mode. Emits EventFriendModeExited on transition.
-	ExitFriendMode()
+	// ExitChatMode restores the feed cursor and feed window. Idempotent
+	// when not in chat mode. Emits EventChatModeExited on transition.
+	ExitChatMode()
 
-	// IsFriendMode reports whether the active cursor is a FriendCursor.
-	IsFriendMode() bool
+	// IsChatMode reports whether the active cursor is a ChatCursor.
+	IsChatMode() bool
 
-	// ReactToCurrent sends emoji as a DM reaction to the reel the friend
+	// ReactToCurrent sends emoji as a DM reaction to the reel the chat
 	// cursor is currently on and marks that entry seen (seen == reacted).
-	// Errors when not in friend mode.
+	// Errors when not in chat mode.
 	ReactToCurrent(emoji string) error
 }
 
@@ -269,10 +269,11 @@ type Comment struct {
 	GifPath           string // local path to downloaded GIF file
 }
 
-// Friend represents a user shown in the share modal's friend list
+// Friend represents another Instagram user: a share-modal list entry or the
+// sender of a DM reel share.
 type Friend struct {
-	Name    string // display name from the DOM
-	ImgSrc  string // profile pic URL from the DOM
+	Name    string // display name (share modal) or username (DM sender)
+	ImgSrc  string // profile pic URL
 	ImgPath string // local path to downloaded profile pic
 }
 
@@ -285,7 +286,7 @@ const (
 	EventSyncComplete
 	EventError
 	EventDMReelsReady
-	EventFriendModeExited
+	EventChatModeExited
 )
 
 // Event is sent from backend to frontend

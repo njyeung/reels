@@ -5,12 +5,12 @@ import (
 	"sync"
 )
 
-// dmState owns the synchronized DM data: friends with their shared-reel
+// dmState owns the synchronized DM data: chats with their shared-reel
 // entries, and the captured token-bearing request template. Anything that
 // must read and write together under one lock hold is a single method here.
 type dmState struct {
-	mu      sync.RWMutex
-	friends []DMFriend
+	mu    sync.RWMutex
+	chats []DMChat
 
 	// template is a captured get_slide_thread_nullable POST body from the DM
 	// window, reused as the token-bearing template (fb_dtsg/lsd/etc.) for
@@ -19,21 +19,24 @@ type dmState struct {
 	template   string
 }
 
-// DMFriend groups a sender's reel-share entries from the DM inbox. Built by
-// collectDMInbox; consumed by the friends picker UI and EnterFriendMode.
-type DMFriend struct {
-	Username   string
-	ThreadKey  string // thread_key; the /direct/t/<ThreadKey>/ mark-read URL
+// DMChat groups one DM thread's reel-share entries — a 1:1 chat or a group
+// chat. In a group chat entries may come from different senders, so each
+// entry carries its own Sender. Built by collectDMInbox; consumed by the
+// chats picker UI and EnterChatMode.
+type DMChat struct {
+	ThreadKey  string // thread_key; unique chat id, also the /direct/t/<ThreadKey>/ mark-read URL
 	ThreadFBID string // thread_fbid; the reaction mutation's thread_id
-	LastIndex  int    // 1-based resume bookmark saved by ExitFriendMode; 0 = never entered
+	Title      string // thread_title; the peer's display name for 1:1 chats, the group name for groups
+	IsGroup    bool   // thread_subtype == IGD_GROUP
+	LastIndex  int    // 1-based resume bookmark saved by ExitChatMode; 0 = never entered
 	Entries    []dmReelEntry
 }
 
-// UnseenCount returns how many of the friend's entries haven't been reacted
+// UnseenCount returns how many of the chat's entries haven't been reacted
 // to yet (seen == reacted).
-func (f DMFriend) UnseenCount() int {
+func (c DMChat) UnseenCount() int {
 	n := 0
-	for _, e := range f.Entries {
+	for _, e := range c.Entries {
 		if !e.Seen {
 			n++
 		}
@@ -50,6 +53,7 @@ type dmReelEntry struct {
 	MessageID string // mid.$… message id; keys the reaction mutation
 	TargetURL string // permalink the DM window navigates to for seen-state
 	Seen      bool   // user reacted to this entry; guarded by dmState.mu
+	Sender    Friend // who shared the reel (username + pfp from sender.user_dict)
 }
 
 // CaptureTemplate stores the first DM-window graphql POST body as the token-
@@ -74,117 +78,111 @@ func (d *dmState) Template() string {
 	return d.template
 }
 
-// MergeThread merges one thread's reel-share entries into the friends list,
-// keyed by the sending friend. threadKey drives the mark-read URL, threadFBID
-// the reaction mutation. Entries already present (by PK) are skipped.
-func (d *dmState) MergeThread(entries []dmReelEntry, threadKey, threadFBID, sender string) {
-	if len(entries) == 0 {
+// MergeThread merges one thread's reel-share entries into the chats list,
+// keyed by ThreadKey. Entries already present (by PK) are skipped.
+func (d *dmState) MergeThread(chat DMChat) {
+	if len(chat.Entries) == 0 {
 		return
 	}
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	fi := -1
-	for i, f := range d.friends {
-		if f.Username == sender {
-			fi = i
+	ci := -1
+	for i, c := range d.chats {
+		if c.ThreadKey == chat.ThreadKey {
+			ci = i
 			break
 		}
 	}
-	if fi == -1 {
-		d.friends = append(d.friends, DMFriend{
-			Username:   sender,
-			ThreadKey:  threadKey,
-			ThreadFBID: threadFBID,
-			Entries:    entries,
-		})
+	if ci == -1 {
+		d.chats = append(d.chats, chat)
 		return
 	}
-	if d.friends[fi].ThreadKey == "" {
-		d.friends[fi].ThreadKey = threadKey
+	existing := &d.chats[ci]
+	if existing.ThreadFBID == "" {
+		existing.ThreadFBID = chat.ThreadFBID
 	}
-	if d.friends[fi].ThreadFBID == "" {
-		d.friends[fi].ThreadFBID = threadFBID
+	if existing.Title == "" {
+		existing.Title = chat.Title
 	}
-	for _, e := range entries {
+	for _, e := range chat.Entries {
 		dup := false
-		for _, existing := range d.friends[fi].Entries {
-			if existing.PK == e.PK {
+		for _, ex := range existing.Entries {
+			if ex.PK == e.PK {
 				dup = true
 				break
 			}
 		}
 		if !dup {
-			d.friends[fi].Entries = append(d.friends[fi].Entries, e)
+			existing.Entries = append(existing.Entries, e)
 		}
 	}
 }
 
-// Friend returns the friend with the given username. Entries is a copy, so
+// Chat returns the chat with the given thread key. Entries is a copy, so
 // callers get a stable snapshot while dmState mutates seen-state underneath.
-func (d *dmState) Friend(username string) (DMFriend, bool) {
+func (d *dmState) Chat(threadKey string) (DMChat, bool) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
-	for _, f := range d.friends {
-		if f.Username == username {
-			f.Entries = append([]dmReelEntry(nil), f.Entries...)
-			return f, true
+	for _, c := range d.chats {
+		if c.ThreadKey == threadKey {
+			c.Entries = append([]dmReelEntry(nil), c.Entries...)
+			return c, true
 		}
 	}
-	return DMFriend{}, false
+	return DMChat{}, false
 }
 
-// MarkSeen marks the friend's index-th (1-based) entry as seen and returns
+// MarkSeen marks the chat's index-th (1-based) entry as seen and returns
 // the ids the reaction mutation needs: the message id and the thread_fbid.
 // Nothing is marked when the entry can't be reacted to (missing message id or
 // thread_fbid).
-func (d *dmState) MarkSeen(username string, index int) (messageID, threadFBID string, err error) {
+func (d *dmState) MarkSeen(threadKey string, index int) (messageID, threadFBID string, err error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	for i := range d.friends {
-		f := &d.friends[i]
-		if f.Username != username {
+	for i := range d.chats {
+		c := &d.chats[i]
+		if c.ThreadKey != threadKey {
 			continue
 		}
-		if index < 1 || index > len(f.Entries) {
-			return "", "", fmt.Errorf("MarkSeen: index %d out of range for %q", index, username)
+		if index < 1 || index > len(c.Entries) {
+			return "", "", fmt.Errorf("MarkSeen: index %d out of range for chat %q", index, threadKey)
 		}
-		e := &f.Entries[index-1]
-		if e.MessageID == "" || f.ThreadFBID == "" {
-			return "", "", fmt.Errorf("MarkSeen: entry %d of %q has no message id or thread fbid", index, username)
+		e := &c.Entries[index-1]
+		if e.MessageID == "" || c.ThreadFBID == "" {
+			return "", "", fmt.Errorf("MarkSeen: entry %d of chat %q has no message id or thread fbid", index, threadKey)
 		}
 		e.Seen = true
-		return e.MessageID, f.ThreadFBID, nil
+		return e.MessageID, c.ThreadFBID, nil
 	}
-	return "", "", fmt.Errorf("MarkSeen: unknown friend %q", username)
+	return "", "", fmt.Errorf("MarkSeen: unknown chat %q", threadKey)
 }
 
-// PendingEntries returns a flat snapshot of every friend's reel entries.
+// PendingEntries returns a flat snapshot of every chat's reel entries.
 func (d *dmState) PendingEntries() []dmReelEntry {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	var out []dmReelEntry
-	for _, f := range d.friends {
-		out = append(out, f.Entries...)
+	for _, c := range d.chats {
+		out = append(out, c.Entries...)
 	}
 	return out
 }
 
-// SaveExit records the friend-mode exit position as the friend's resume
-// bookmark. Returns the friend's thread key and whether every entry has been
-// reacted to (drives the mark-read thread navigation).
-func (d *dmState) SaveExit(username string, lastIndex int) (threadKey string, allSeen bool) {
+// SaveExit records the chat-mode exit position as the chat's resume
+// bookmark. Returns whether every entry has been reacted to (drives the
+// mark-read thread navigation).
+func (d *dmState) SaveExit(threadKey string, lastIndex int) (allSeen bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	for i := range d.friends {
-		if d.friends[i].Username != username {
+	for i := range d.chats {
+		if d.chats[i].ThreadKey != threadKey {
 			continue
 		}
-		threadKey = d.friends[i].ThreadKey
-		d.friends[i].LastIndex = lastIndex
-		allSeen = d.friends[i].UnseenCount() == 0
+		d.chats[i].LastIndex = lastIndex
+		allSeen = d.chats[i].UnseenCount() == 0
 		break
 	}
-	return threadKey, allSeen
+	return allSeen
 }

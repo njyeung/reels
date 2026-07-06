@@ -158,8 +158,8 @@ func (m Model) viewBrowsing() string {
 			b.WriteString(m.comments.View(videoWidthChars, maxPanelLines, padding))
 		} else if m.help.IsOpen() {
 			b.WriteString(m.help.View(videoWidthChars, maxPanelLines, padding))
-		} else if m.friends.IsOpen() {
-			b.WriteString(m.friends.View(videoWidthChars, maxPanelLines, padding))
+		} else if m.chats.IsOpen() {
+			b.WriteString(m.chats.View(videoWidthChars, maxPanelLines, padding))
 		} else if m.react.IsOpen() {
 			b.WriteString(m.react.View(videoWidthChars, maxPanelLines, padding))
 		} else {
@@ -241,23 +241,23 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 
 	switch {
-	// Friends panel select takes priority over other keys
-	case m.friends.IsOpen() && slices.Contains(config.KeysSelect, key):
-		friend := m.friends.CursorFriend()
-		if friend == nil {
+	// Chats panel select takes priority over other keys
+	case m.chats.IsOpen() && slices.Contains(config.KeysSelect, key):
+		chat := m.chats.CursorChat()
+		if chat == nil {
 			return m, nil
 		}
-		username := friend.Username
-		m.friends.Close()
+		threadKey, title := chat.ThreadKey, chat.Title
+		m.chats.Close()
 		m.closePanelLayout()
 		m.player.Stop()
 		m.status = statusLoading
 		m.comments.Clear()
-		if err := m.backend.EnterFriendMode(username); err != nil {
+		if err := m.backend.EnterChatMode(threadKey); err != nil {
 			m.status = statusReelError
 			return m, nil
 		}
-		return m, tea.Batch(m.loadCurrentReel, m.hud.ShowFriendBanner(username, config.KeysReact))
+		return m, tea.Batch(m.loadCurrentReel, m.hud.ShowChatBanner(title, config.KeysReact))
 
 	// React select sends the highlighted reaction to the current reel
 	case m.react.IsOpen() && slices.Contains(config.KeysSelect, key):
@@ -383,26 +383,26 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.closePanelLayout()
 
 	case !m.react.IsOpen() && slices.Contains(config.KeysReact, key):
-		if m.backend.IsFriendMode() && !m.panelOpen() && !m.backend.IsSyncing() {
+		if m.backend.IsChatMode() && !m.panelOpen() && !m.backend.IsSyncing() {
 			m.react.Open()
 			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
 			m.player.RedrawVideo()
 		}
 
-	case m.friends.IsOpen() && slices.Contains(config.KeysFriendsClose, key):
-		m.friends.Close()
+	case m.chats.IsOpen() && slices.Contains(config.KeysChatsClose, key):
+		m.chats.Close()
 		m.closePanelLayout()
 
-	case !m.friends.IsOpen() && slices.Contains(config.KeysFriendsClose, key) && m.backend.IsFriendMode():
-		// In friend mode with no panel open, close-key exits back to the feed.
-		go m.backend.ExitFriendMode()
+	case !m.chats.IsOpen() && slices.Contains(config.KeysChatsClose, key) && m.backend.IsChatMode():
+		// In chat mode with no panel open, close-key exits back to the feed.
+		go m.backend.ExitChatMode()
 		return m, nil
 
-	case !m.friends.IsOpen() && slices.Contains(config.KeysFriendsOpen, key):
+	case !m.chats.IsOpen() && slices.Contains(config.KeysChatsOpen, key):
 		// Gate until the background DM collection + prefetch has finished.
 		if !m.panelOpen() && m.dmReelsReady {
-			friends := m.backend.GetDMFriends()
-			m.friends.Open(friends)
+			chats := m.backend.GetDMChats()
+			m.chats.Open(chats)
 			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
 			m.player.RedrawVideo()
 		}
@@ -521,9 +521,9 @@ func (m Model) sendShare() tea.Cmd {
 	}
 }
 
-// panelOpen returns true if any overlay panel (comments, share, help, friends, react) is open.
+// panelOpen returns true if any overlay panel (comments, share, help, chats, react) is open.
 func (m Model) panelOpen() bool {
-	return m.comments.IsOpen() || m.share.IsOpen() || m.help.IsOpen() || m.friends.IsOpen() || m.react.IsOpen()
+	return m.comments.IsOpen() || m.share.IsOpen() || m.help.IsOpen() || m.chats.IsOpen() || m.react.IsOpen()
 }
 
 // scrollPanel dispatches scroll/cursor movement to the active panel.
@@ -541,8 +541,8 @@ func (m *Model) scrollPanel(direction int) bool {
 		m.updateImages()
 		return true
 	}
-	if m.friends.IsOpen() {
-		m.friends.MoveCursor(direction)
+	if m.chats.IsOpen() {
+		m.chats.MoveCursor(direction)
 		return true
 	}
 	if m.react.IsOpen() {
@@ -569,11 +569,11 @@ func (m *Model) navigateToReel(direction int) tea.Cmd {
 		return nil
 	}
 	index := m.currentReel.Index + direction
-	if m.backend.IsFriendMode() && direction > 0 && index > m.backend.GetTotal() {
+	if m.backend.IsChatMode() && direction > 0 && index > m.backend.GetTotal() {
 		m.player.Stop()
 		m.status = statusLoading
 		m.comments.Clear()
-		go m.backend.ExitFriendMode()
+		go m.backend.ExitChatMode()
 		return nil
 	}
 	if index < 1 || index > m.backend.GetTotal() {

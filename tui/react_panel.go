@@ -23,8 +23,8 @@ var reactions = []reaction{
 	{"👍", "like"},
 }
 
-// ReactPanel picks a reaction to send to the current friend-mode reel.
-// Mirrors FriendsPanel's cursor/scroll/render conventions.
+// ReactPanel picks a reaction to send to the current chat-mode reel.
+// Mirrors ChatsPanel's cursor/scroll/render conventions.
 type ReactPanel struct {
 	isOpen       bool
 	cursor       int
