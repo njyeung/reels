@@ -11,7 +11,7 @@ var pkRegex = regexp.MustCompile(`ig_cache_key=([^&]+)`)
 // Cursor abstracts how the user navigates a list of reels in the browser.
 type Cursor interface {
 	// Current returns the (1-based index, PK) of the reel the user is looking
-	// at. FeedCursor probes the DOM; FriendCursor reads its internal cursor.
+	// at. FeedCursor probes the DOM; ChatCursor reads its internal cursor.
 	Current() (index int, pk string, err error)
 
 	// Total returns the number of reels in this source.

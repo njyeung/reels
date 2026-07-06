@@ -3,6 +3,9 @@ package backend
 import (
 	"encoding/json"
 	"net/url"
+	"strings"
+
+	"github.com/chromedp/cdproto/fetch"
 )
 
 // commentsResponse represents the xdt_api__v1__media__media_id__comments__connection GraphQL response structure
@@ -123,7 +126,15 @@ func validateCommentsRequest(postData string, appID string) bool {
 
 // processCommentsResponse extracts comments from a GraphQL response.
 // Stores the request template and pagination cursor for later use.
-func (b *ChromeBackend) processCommentsResponse(body string, requestPostData string, appID string) {
+func (b *ChromeBackend) processCommentsResponse(body string, requestPostData string, e *fetch.EventRequestPaused) {
+	var appID string
+	for k, v := range e.Request.Headers {
+		if strings.EqualFold(k, "x-ig-app-id") {
+			appID, _ = v.(string)
+			break
+		}
+	}
+
 	var resp commentsResponse
 	if err := json.Unmarshal([]byte(body), &resp); err != nil {
 		return

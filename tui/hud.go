@@ -12,12 +12,12 @@ import (
 
 // HUD message types
 type (
-	volumeHoldMsg           struct{ gen int }
-	volumeFadeTickMsg       struct{}
-	dmNotifyHoldMsg         struct{}
-	dmNotifyFadeTickMsg     struct{}
-	friendBannerHoldMsg     struct{ gen int }
-	friendBannerFadeTickMsg struct{}
+	volumeHoldMsg         struct{ gen int }
+	volumeFadeTickMsg     struct{}
+	dmNotifyHoldMsg       struct{}
+	dmNotifyFadeTickMsg   struct{}
+	chatBannerHoldMsg     struct{ gen int }
+	chatBannerFadeTickMsg struct{}
 )
 
 // hudItem identifies which overlay is currently displayed.
@@ -26,7 +26,7 @@ type hudItem int
 
 const (
 	hudNone hudItem = iota
-	hudFriendBanner
+	hudChatBanner
 	hudVolume
 	hudDMNotify
 )
@@ -43,11 +43,11 @@ type HUD struct {
 	dmNotifyFadeStep int
 	dmNotifyCount    int
 
-	// friend banner: 0=hidden, 1=visible (holding), 2-7=fading out
-	friendBannerFadeStep int
-	friendBannerGen      int
-	friendBannerUser     string
-	friendBannerKeys     []string
+	// chat banner: 0=hidden, 1=visible (holding), 2-7=fading out
+	chatBannerFadeStep int
+	chatBannerGen      int
+	chatBannerTitle    string
+	chatBannerKeys     []string
 }
 
 // ShowVolume triggers the volume indicator
@@ -72,28 +72,28 @@ func (h *HUD) ShowDMNotify(count int) tea.Cmd {
 	return h.dmNotifyHoldTick()
 }
 
-// ShowFriendBanner triggers the ephemeral friend-mode banner
-func (h *HUD) ShowFriendBanner(username string, KeysReact []string) tea.Cmd {
+// ShowChatBanner triggers the ephemeral chat-mode banner
+func (h *HUD) ShowChatBanner(title string, KeysReact []string) tea.Cmd {
 	if h.active == hudVolume {
 		h.volumeFadeStep = 0
 	}
 	if h.active == hudDMNotify {
 		h.dmNotifyFadeStep = 0
 	}
-	h.active = hudFriendBanner
-	h.friendBannerFadeStep = 1
-	h.friendBannerUser = username
-	h.friendBannerKeys = KeysReact
-	h.friendBannerGen++
-	return h.friendBannerHoldTick()
+	h.active = hudChatBanner
+	h.chatBannerFadeStep = 1
+	h.chatBannerTitle = title
+	h.chatBannerKeys = KeysReact
+	h.chatBannerGen++
+	return h.chatBannerHoldTick()
 }
 
-// HideFriendBanner dismisses the banner immediately. Called on friend-mode
+// HideChatBanner dismisses the banner immediately. Called on chat-mode
 // exit, where the react hint would be stale.
-func (h *HUD) HideFriendBanner() {
-	h.friendBannerFadeStep = 0
-	h.friendBannerGen++
-	if h.active == hudFriendBanner {
+func (h *HUD) HideChatBanner() {
+	h.chatBannerFadeStep = 0
+	h.chatBannerGen++
+	if h.active == hudChatBanner {
 		h.active = hudNone
 	}
 }
@@ -131,11 +131,11 @@ func (m Model) viewHUD(videoWidthChars, topPad int, padding string) string {
 		volBar := filledStyle.Render(strings.Repeat("█", filled)) + emptyStyle.Render(strings.Repeat("░", barWidth-filled))
 		b.WriteString(padding + volBar + "\n\n")
 
-	case hudFriendBanner:
-		fadeColor := lipgloss.Color(hudFadeColor(m.hud.friendBannerFadeStep))
+	case hudChatBanner:
+		fadeColor := lipgloss.Color(hudFadeColor(m.hud.chatBannerFadeStep))
 		style := lipgloss.NewStyle().Foreground(fadeColor)
-		reactKeys := displayKeys(m.hud.friendBannerKeys)
-		text := fmt.Sprintf("From: @%s | press %s to react", m.hud.friendBannerUser, reactKeys)
+		reactKeys := displayKeys(m.hud.chatBannerKeys)
+		text := fmt.Sprintf("From: %s | press %s to react", m.hud.chatBannerTitle, reactKeys)
 		maxWidth := videoWidthChars - 1
 		if runewidth.StringWidth(text) > maxWidth {
 			text = truncateByWidth(text, maxWidth-3) + "..."
@@ -196,29 +196,29 @@ func (m Model) updateHUD(msg tea.Msg) (bool, Model, tea.Cmd) {
 		}
 		return true, m, m.hud.dmNotifyFadeTick()
 
-	case friendBannerHoldMsg:
-		if msg.gen != m.hud.friendBannerGen {
+	case chatBannerHoldMsg:
+		if msg.gen != m.hud.chatBannerGen {
 			return true, m, nil
 		}
-		if m.hud.friendBannerFadeStep == 1 {
-			m.hud.friendBannerFadeStep = 2
-			return true, m, m.hud.friendBannerFadeTick()
+		if m.hud.chatBannerFadeStep == 1 {
+			m.hud.chatBannerFadeStep = 2
+			return true, m, m.hud.chatBannerFadeTick()
 		}
 		return true, m, nil
 
-	case friendBannerFadeTickMsg:
-		if m.hud.friendBannerFadeStep < 2 {
+	case chatBannerFadeTickMsg:
+		if m.hud.chatBannerFadeStep < 2 {
 			return true, m, nil
 		}
-		m.hud.friendBannerFadeStep++
-		if m.hud.friendBannerFadeStep > 7 {
-			m.hud.friendBannerFadeStep = 0
-			if m.hud.active == hudFriendBanner {
+		m.hud.chatBannerFadeStep++
+		if m.hud.chatBannerFadeStep > 7 {
+			m.hud.chatBannerFadeStep = 0
+			if m.hud.active == hudChatBanner {
 				m.hud.active = hudNone
 			}
 			return true, m, nil
 		}
-		return true, m, m.hud.friendBannerFadeTick()
+		return true, m, m.hud.chatBannerFadeTick()
 	}
 
 	return false, m, nil
@@ -249,16 +249,16 @@ func (h HUD) dmNotifyFadeTick() tea.Cmd {
 	})
 }
 
-func (h HUD) friendBannerHoldTick() tea.Cmd {
-	gen := h.friendBannerGen
+func (h HUD) chatBannerHoldTick() tea.Cmd {
+	gen := h.chatBannerGen
 	return tea.Tick(5*time.Second, func(t time.Time) tea.Msg {
-		return friendBannerHoldMsg{gen: gen}
+		return chatBannerHoldMsg{gen: gen}
 	})
 }
 
-func (h HUD) friendBannerFadeTick() tea.Cmd {
+func (h HUD) chatBannerFadeTick() tea.Cmd {
 	return tea.Tick(60*time.Millisecond, func(t time.Time) tea.Msg {
-		return friendBannerFadeTickMsg{}
+		return chatBannerFadeTickMsg{}
 	})
 }
 

@@ -93,12 +93,12 @@ type Model struct {
 	// Help panel displays all keybinds
 	help *HelpPanel
 
-	// Friends panel picks a DM friend whose reels to browse
-	friends *FriendsPanel
+	// Chats panel picks a DM chat whose reels to browse
+	chats *ChatsPanel
 
-	// React panel picks a reaction to send to the current friend-mode reel
+	// React panel picks a reaction to send to the current chat-mode reel
 	react *ReactPanel
-	// dmReelsReady gates opening the friends panel until the background DM
+	// dmReelsReady gates opening the chats panel until the background DM
 	// collection + reel prefetch has finished (EventDMReelsReady)
 	dmReelsReady bool
 
@@ -165,7 +165,7 @@ func NewModel(userDataDir, logDir, cacheDir, configDir string, output io.Writer,
 		comments:      NewCommentsPanel(),
 		share:         NewSharePanel(),
 		help:          NewHelpPanel(),
-		friends:       NewFriendsPanel(),
+		chats:         NewChatsPanel(),
 		react:         NewReactPanel(),
 		flags:         flags,
 		showNavbar:    settings.ShowNavbar,
@@ -393,11 +393,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.Count > 0 {
 				return m, tea.Batch(m.hud.ShowDMNotify(msg.Count), m.listenForEvents)
 			}
-		case backend.EventFriendModeExited:
+		case backend.EventChatModeExited:
 			m.player.Stop()
 			m.status = statusLoading
 			m.comments.Clear()
-			m.hud.HideFriendBanner()
+			m.hud.HideChatBanner()
 			return m, tea.Batch(m.loadCurrentReel, m.listenForEvents)
 		}
 		return m, m.listenForEvents
@@ -415,7 +415,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.musicTick()
 
 	case volumeHoldMsg, volumeFadeTickMsg, dmNotifyHoldMsg, dmNotifyFadeTickMsg,
-		friendBannerHoldMsg, friendBannerFadeTickMsg:
+		chatBannerHoldMsg, chatBannerFadeTickMsg:
 		if handled, updated, cmd := m.updateHUD(msg); handled {
 			return updated, cmd
 		}
