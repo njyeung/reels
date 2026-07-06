@@ -55,6 +55,8 @@ However, you must also ensure that your final code builds valid consumer binarie
 
 Testing is difficult because there are so many ways to interact with Instagram, but `tests/` takes a black-box approach. `test.py` builds the binary, runs it under Kitty, and drives Reels TUI by sending keystrokes and observing browser state. You'll need a logged-in account, Kitty, Chrome, and FFmpeg 8+. Coverage is minimal and contributions are welcome, as long as they keep treating the app as a black box.
 
+You are also welcome to scroll reels for a few minutes to test your feature. That is already more coverage than the existing tests.
+
 ## Commit & PR conventions
 
 - Fork and open PRs against `main`.
