@@ -170,6 +170,11 @@ type Backend interface {
 	// IsChatMode reports whether the active cursor is a ChatCursor.
 	IsChatMode() bool
 
+	// ChatSender returns the sender of the chat entry at 1-based index
+	// (username + local pfp path). ok is false when not in chat mode or the
+	// index is out of range.
+	ChatSender(index int) (Friend, bool)
+
 	// ReactToCurrent sends emoji as a DM reaction to the reel the chat
 	// cursor is currently on and marks that entry seen (seen == reacted).
 	// Errors when not in chat mode.
@@ -185,8 +190,9 @@ const (
 
 	// FIFO cache limits per asset type
 	ReelCacheSize     = 50
-	GifCacheSize      = 1000
+	GifCacheSize      = 1000 // surely your screen isn't big enough to store 1000 gifs
 	SharePfpCacheSize = 50
+	DMPfpCacheSize    = 1000 // surely you don't have 1000 friends
 )
 
 // MusicInfo contains song metadata when a reel has music
@@ -208,6 +214,7 @@ type FloatingContextItem struct {
 const (
 	FloatingTypeReposted = "REPOSTED_BY"
 	FloatingTypeLiked    = "LIKED_BY"
+	FloatingTypeSent     = "SENT_BY" // synthetic: not an IG floating_context_item_type
 )
 
 // FloatingPfpFile is a downloaded floating-context pfp paired with its type

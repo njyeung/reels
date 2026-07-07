@@ -118,6 +118,7 @@ var (
 	reelPfpCache  *fifoCache
 	sharePfpCache *fifoCache
 	gifCache      *fifoCache
+	dmPfpCache    *fifoCache
 
 	cacheMu sync.Mutex
 	// inProgress tracks downloads currently in flight; channel is closed when done
@@ -133,6 +134,7 @@ func (b *ChromeBackend) initStorage() error {
 	reelPfpCache = newFIFOCache(ReelCacheSize)
 	sharePfpCache = newFIFOCache(SharePfpCacheSize)
 	gifCache = newFIFOCache(GifCacheSize)
+	dmPfpCache = newFIFOCache(DMPfpCacheSize)
 	inProgress = make(map[string]chan struct{})
 	liked = make(map[string]bool)
 
@@ -175,6 +177,18 @@ func (b *ChromeBackend) cacheReelPfp(name string, data []byte) string {
 		return ""
 	}
 	reelPfpCache.add(path)
+	return path
+}
+
+// cacheDMPfp writes a DM sender profile picture to the cache directory with
+// FIFO eviction. The cap is large enough that entries effectively live for
+// the whole session.
+func (b *ChromeBackend) cacheDMPfp(name string, data []byte) string {
+	path := filepath.Join(b.cacheDir, name)
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return ""
+	}
+	dmPfpCache.add(path)
 	return path
 }
 

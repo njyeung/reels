@@ -1,6 +1,7 @@
 package player
 
 import (
+	"image/color"
 	_ "image/jpeg"
 	"io"
 	"math"
@@ -17,6 +18,7 @@ type AVPlayer struct {
 	width  int
 	height int
 	useShm bool
+	border color.Color // nil = none
 
 	playing        atomic.Bool
 	paused         atomic.Bool
@@ -58,6 +60,7 @@ func (p *AVPlayer) sessionConfig() sessionConfig {
 		useShm:   p.useShm,
 		videoRow: p.videoRow,
 		videoCol: p.videoCol,
+		border:   p.border,
 	}
 }
 
@@ -290,6 +293,29 @@ func (p *AVPlayer) SetVolume(vol float64) {
 // Volume returns the current volume
 func (p *AVPlayer) Volume() float64 {
 	return p.volume.Load().(float64)
+}
+
+// SetBorder sets the outline color drawn on the video's top, left, and right edges.
+func (p *AVPlayer) SetBorder(c color.Color) {
+	p.configMu.Lock()
+	p.border = c
+	p.configMu.Unlock()
+
+	p.withSession(func(s *playSession) {
+		s.setBorder(c)
+	})
+}
+
+// ClearBorder removes the outline.
+func (p *AVPlayer) ClearBorder() {
+	p.SetBorder(nil)
+}
+
+// Border returns the current outline color, or nil if none.
+func (p *AVPlayer) Border() color.Color {
+	p.configMu.Lock()
+	defer p.configMu.Unlock()
+	return p.border
 }
 
 // Pause toggles pause state

@@ -51,6 +51,16 @@ func (cc *ChatCursor) PKAt(index int) string {
 	return cc.entries[index-1].PK
 }
 
+// SenderAt returns the sender of the entry at 1-based index, or false if out
+// of range. ImgPath is set when the pfp was downloaded during inbox
+// materialization.
+func (cc *ChatCursor) SenderAt(index int) (Friend, bool) {
+	if index < 1 || index > len(cc.entries) {
+		return Friend{}, false
+	}
+	return cc.entries[index-1].Sender, true
+}
+
 // Current returns the (1-based index, PK) of the entry we last navigated to.
 // Errors if SyncTo hasn't been called yet.
 func (cc *ChatCursor) Current() (int, string, error) {

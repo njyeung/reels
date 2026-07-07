@@ -14,6 +14,7 @@ import (
 	"github.com/mattn/go-runewidth"
 	"github.com/njyeung/reels/backend"
 	"github.com/njyeung/reels/player"
+	"github.com/njyeung/reels/tui/colors"
 )
 
 func (m Model) viewBrowsing() string {
@@ -257,6 +258,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.status = statusReelError
 			return m, nil
 		}
+		m.player.SetBorder(colors.Blue300Color)
 		return m, tea.Batch(m.loadCurrentReel, m.hud.ShowChatBanner(title, config.KeysReact))
 
 	// React select sends the highlighted reaction to the current reel
@@ -395,6 +397,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case !m.chats.IsOpen() && slices.Contains(config.KeysChatsClose, key) && m.backend.IsChatMode():
 		// In chat mode with no panel open, close-key exits back to the feed.
+		m.player.ClearBorder()
 		go m.backend.ExitChatMode()
 		return m, nil
 
@@ -463,6 +466,12 @@ func (m *Model) startPlayback(index int) tea.Cmd {
 				pfp = loaded
 			}
 		}
+		// In chat mode, the sender's pfp (downloaded during inbox
+		// materialization) joins the floating pfps
+		if sender, ok := m.backend.ChatSender(index); ok && sender.ImgPath != "" {
+			floatingFiles = append(floatingFiles, backend.FloatingPfpFile{Path: sender.ImgPath, Type: backend.FloatingTypeSent})
+		}
+
 		floatingPfps := make([]*player.PFP, 0, len(floatingFiles))
 		floatingTypes := make([]string, 0, len(floatingFiles))
 		for _, f := range floatingFiles {
@@ -473,13 +482,14 @@ func (m *Model) startPlayback(index int) tea.Cmd {
 			if err != nil {
 				continue
 			}
-			loaded.ResizeToCells(2)
+			loaded.ResizeToCells(3)
 			floatingPfps = append(floatingPfps, loaded)
 			floatingTypes = append(floatingTypes, f.Type)
 		}
 		if err := m.player.Play(videoPath); err != nil {
 			return videoErrorMsg{err}
 		}
+
 		return videoReadyMsg{index: index, pfp: pfp, floatingPfps: floatingPfps, floatingTypes: floatingTypes}
 	}
 }
@@ -725,13 +735,16 @@ func (m *Model) floatingPfpSlots() []player.ImageSlot {
 				badge = player.RepostIcon()
 			case backend.FloatingTypeLiked:
 				badge = player.HeartIcon()
+			case backend.FloatingTypeSent:
+				badge = player.SentIcon()
 			}
 		}
 		if badge != nil {
+			badge.ResizeToCells(2)
 			slots = append(slots, player.ImageSlot{
 				Img: badge,
-				Row: row + 1,
-				Col: col + 2,
+				Row: row + 2,
+				Col: col + 3,
 			})
 		}
 	}
