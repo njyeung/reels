@@ -275,13 +275,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.reelPFP.ResizeToCells(2)
 		}
 		for _, p := range m.floatingPfps {
-			p.ResizeToCells(2)
-		}
-		if heart := player.HeartIcon(); heart != nil {
-			heart.ResizeToCells(1)
-		}
-		if repost := player.RepostIcon(); repost != nil {
-			repost.ResizeToCells(1)
+			p.ResizeToCells(3)
 		}
 		if m.share.IsOpen() {
 			m.share.ResizePfps()

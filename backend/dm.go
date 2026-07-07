@@ -177,6 +177,55 @@ func (b *ChromeBackend) prefetchReel(code, pk string) error {
 	return nil
 }
 
+// downloadDMPfps downloads every DM sender's profile picture into the cache
+// and writes the local paths back onto the entries. Synchronous; runs during
+// inbox materialization so paths are set before EventDMReelsReady.
+func (b *ChromeBackend) downloadDMPfps() {
+	// Collect one pfp URL per sender, deduped by username
+	b.dm.mu.RLock()
+	seen := make(map[string]bool)
+	var names, urls []string
+	for _, c := range b.dm.chats {
+		for _, e := range c.Entries {
+			s := e.Sender
+			if s.Name == "" || s.ImgSrc == "" || seen[s.Name] {
+				continue
+			}
+			seen[s.Name] = true
+			names = append(names, s.Name)
+			urls = append(urls, s.ImgSrc)
+		}
+	}
+	b.dm.mu.RUnlock()
+
+	if len(urls) == 0 {
+		return
+	}
+
+	data := fetchURLsHTTP(urls)
+	paths := make(map[string]string, len(names))
+	for i, name := range names {
+		if data[i] == nil {
+			continue
+		}
+		if path := b.cacheDMPfp(fmt.Sprintf("dmpfp_%s.jpg", name), data[i]); path != "" {
+			paths[name] = path
+		}
+	}
+
+	// Write the local paths back onto every matching entry sender.
+	b.dm.mu.Lock()
+	for i := range b.dm.chats {
+		for j := range b.dm.chats[i].Entries {
+			s := &b.dm.chats[i].Entries[j].Sender
+			if p, ok := paths[s.Name]; ok {
+				s.ImgPath = p
+			}
+		}
+	}
+	b.dm.mu.Unlock()
+}
+
 // processThreadResponse merges any reel-shares from a single DM thread body
 // into the DM chats list, keyed by the thread.
 func (b *ChromeBackend) processThreadResponse(body string) {
@@ -192,7 +241,7 @@ func (b *ChromeBackend) processThreadResponse(body string) {
 // It then materializes every shared reel's CDN video URL up front,
 // and emits EventDMReelsReady when done.
 func (b *ChromeBackend) collectDMInbox(ctx context.Context) {
-	slog.Debug("COLLECTING DM INBOX ENTRIES")
+	// slog.Debug("COLLECTING DM INBOX ENTRIES")
 
 	if err := chromedp.Run(ctx, chromedp.Navigate("https://www.instagram.com/direct/inbox/")); err != nil {
 		return
@@ -204,8 +253,8 @@ func (b *ChromeBackend) collectDMInbox(ctx context.Context) {
 	}
 
 	entries := b.dm.PendingEntries()
-	template := b.dm.Template()
-	slog.Debug("dm: starting materialization", "entries", len(entries), "haveTemplate", template != "")
+	// template := b.dm.Template()
+	// slog.Debug("dm: starting materialization", "entries", len(entries), "haveTemplate", template != "")
 
 	// Materialize linearly with jitter.
 	for _, entry := range entries {
@@ -225,18 +274,22 @@ func (b *ChromeBackend) collectDMInbox(ctx context.Context) {
 		}
 	}
 
+	// Download every sender's pfp while we're still in the "materializing"
+	// phase, so entries carry local paths before the UI is notified.
+	b.downloadDMPfps()
+
 	// Dump the state of every entry right before we notify the UI.
-	b.reelsMu.RLock()
-	for i, entry := range entries {
-		r, ok := b.reels[entry.PK]
-		hasVideo := ok && r.VideoURL != ""
-		slog.Debug("dm: reel state",
-			"i", i, "pk", entry.PK, "code", entry.Code,
-			"cached", ok, "hasVideo", hasVideo, "url", entry.TargetURL)
-	}
-	totalReels := len(b.reels)
-	b.reelsMu.RUnlock()
-	slog.Debug("dm: materialization done", "entries", len(entries), "reelsInMap", totalReels)
+	// b.reelsMu.RLock()
+	// for i, entry := range entries {
+	// 	r, ok := b.reels[entry.PK]
+	// 	hasVideo := ok && r.VideoURL != ""
+	// 	slog.Debug("dm: reel state",
+	// 		"i", i, "pk", entry.PK, "code", entry.Code,
+	// 		"cached", ok, "hasVideo", hasVideo, "url", entry.TargetURL)
+	// }
+	// totalReels := len(b.reels)
+	// b.reelsMu.RUnlock()
+	// slog.Debug("dm: materialization done", "entries", len(entries), "reelsInMap", totalReels)
 
 	b.events <- Event{Type: EventDMReelsReady, Count: b.GetDMReelsCount()}
 }
@@ -338,6 +391,18 @@ func (b *ChromeBackend) ExitChatMode() {
 		// park in blank
 		_ = chromedp.Run(dmCtx, chromedp.Navigate("about:blank"))
 	}
+}
+
+// ChatSender returns the sender of the chat entry at 1-based index. ok is
+// false when not in chat mode or the index is out of range.
+func (b *ChromeBackend) ChatSender(index int) (Friend, bool) {
+	b.modeMu.RLock()
+	cc, isChat := b.active.(*ChatCursor)
+	b.modeMu.RUnlock()
+	if !isChat {
+		return Friend{}, false
+	}
+	return cc.SenderAt(index)
 }
 
 // IsChatMode reports whether the active cursor is a ChatCursor.

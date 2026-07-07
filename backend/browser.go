@@ -65,7 +65,6 @@ func (b *ChromeBackend) Start(headless bool) error {
 	b.feedCtx = feedCtx
 	b.feedCancel = feedCancel
 	b.ctx = feedCtx
-
 	b.feed = NewFeedCursor(feedCtx)
 	b.active = b.feed
 

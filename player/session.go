@@ -2,6 +2,7 @@ package player
 
 import (
 	"fmt"
+	"image/color"
 	"math"
 	"runtime"
 	"sync"
@@ -27,6 +28,8 @@ type playSession struct {
 
 	// Cell positions for image placement (1-indexed)
 	videoRow, videoCol int
+
+	border *[3]uint8 // nil = none
 
 	audioPktCh chan *audioPacket
 	videoPktCh chan *astiav.Packet
@@ -61,6 +64,7 @@ type sessionConfig struct {
 	muted    bool
 	volume   float64
 	useShm   bool
+	border   color.Color
 }
 
 func newPlaySession(url string, cfg sessionConfig) (*playSession, error) {
@@ -120,6 +124,7 @@ func newPlaySession(url string, cfg sessionConfig) (*playSession, error) {
 	}
 	session.seekGen.Store(0)
 	session.seekPTS.Store(0)
+	session.setBorder(cfg.border)
 
 	return session, nil
 }
@@ -456,7 +461,8 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 			}
 		}
 
-		// Draw progress bar on the frame
+		// Draw border and progress bar on the frame
+		s.drawBorder(frame)
 		s.drawProgressBar(frame)
 
 		// Render all layers in one synchronized update to avoid flickering
@@ -499,6 +505,46 @@ func (s *playSession) drawProgressBar(frame *Frame) {
 			} else {
 				frame.RGB[px], frame.RGB[px+1], frame.RGB[px+2] = 90, 90, 90
 			}
+		}
+	}
+}
+
+func (s *playSession) setBorder(c color.Color) {
+	if c == nil {
+		s.border = nil
+		return
+	}
+	r, g, b, _ := c.RGBA()
+	s.border = &[3]uint8{uint8(r >> 8), uint8(g >> 8), uint8(b >> 8)}
+}
+
+// drawBorder overlays an outline on the top, left, and right edges of the frame.
+// The bottom edge is left to the progress bar.
+func (s *playSession) drawBorder(frame *Frame) {
+	border := s.border
+	if border == nil {
+		return
+	}
+	const thickness = 4
+	r, g, b := border[0], border[1], border[2]
+	bpp := 3
+	stride := frame.Width * bpp
+
+	for row := 0; row < thickness && row < frame.Height; row++ {
+		offset := row * stride
+		for x := 0; x < frame.Width; x++ {
+			px := offset + x*bpp
+			frame.RGB[px], frame.RGB[px+1], frame.RGB[px+2] = r, g, b
+		}
+	}
+
+	for row := thickness; row < frame.Height; row++ {
+		offset := row * stride
+		for x := 0; x < thickness && x < frame.Width; x++ {
+			left := offset + x*bpp
+			right := offset + (frame.Width-1-x)*bpp
+			frame.RGB[left], frame.RGB[left+1], frame.RGB[left+2] = r, g, b
+			frame.RGB[right], frame.RGB[right+1], frame.RGB[right+2] = r, g, b
 		}
 	}
 }
