@@ -461,9 +461,8 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 			}
 		}
 
-		// Draw border and progress bar on the frame
-		s.drawBorder(frame)
 		s.drawProgressBar(frame)
+		s.drawBorder(frame)
 
 		// Render all layers in one synchronized update to avoid flickering
 		s.renderer.BeginSync()
@@ -493,10 +492,14 @@ func (s *playSession) drawProgressBar(frame *Frame) {
 	if duration <= 0 {
 		return
 	}
+	indent := 0
+	if s.border != nil {
+		indent = 4
+	}
 	barWidthPx := int(frame.PTS / duration * float64(frame.Width))
 	bpp := 3
 	stride := frame.Width * bpp
-	for row := frame.Height - 4; row < frame.Height; row++ {
+	for row := frame.Height - 4 - indent; row < frame.Height-indent; row++ {
 		offset := row * stride
 		for x := 0; x < frame.Width; x++ {
 			px := offset + x*bpp
@@ -518,34 +521,43 @@ func (s *playSession) setBorder(c color.Color) {
 	s.border = &[3]uint8{uint8(r >> 8), uint8(g >> 8), uint8(b >> 8)}
 }
 
-// drawBorder overlays an outline on the top, left, and right edges of the frame.
-// The bottom edge is left to the progress bar.
+// drawBorder overlays an outline on the top, left, right, and bottom edges of the frame.
 func (s *playSession) drawBorder(frame *Frame) {
 	border := s.border
 	if border == nil {
 		return
 	}
 	const thickness = 4
+	const bpp = 3
 	r, g, b := border[0], border[1], border[2]
-	bpp := 3
 	stride := frame.Width * bpp
 
-	for row := 0; row < thickness && row < frame.Height; row++ {
-		offset := row * stride
-		for x := 0; x < frame.Width; x++ {
-			px := offset + x*bpp
-			frame.RGB[px], frame.RGB[px+1], frame.RGB[px+2] = r, g, b
+	// Build one full row of border color, then grow it exponentially with copy.
+	row := make([]byte, stride)
+	if stride >= bpp {
+		row[0], row[1], row[2] = r, g, b
+		for filled := bpp; filled < stride; filled *= 2 {
+			copy(row[filled:], row[:filled])
 		}
 	}
+	edge := row[:min(thickness*bpp, stride)] // left/right column strip
 
-	for row := thickness; row < frame.Height; row++ {
-		offset := row * stride
-		for x := 0; x < thickness && x < frame.Width; x++ {
-			left := offset + x*bpp
-			right := offset + (frame.Width-1-x)*bpp
-			frame.RGB[left], frame.RGB[left+1], frame.RGB[left+2] = r, g, b
-			frame.RGB[right], frame.RGB[right+1], frame.RGB[right+2] = r, g, b
+	// Left and right columns
+	for y := thickness; y < frame.Height-thickness; y++ {
+		off := y * stride
+		copy(frame.RGB[off:], edge)                  // left
+		copy(frame.RGB[off+stride-len(edge):], edge) // right
+	}
+
+	// Top and bottom bars
+	for y := 0; y < thickness && y < frame.Height; y++ {
+		copy(frame.RGB[y*stride:], row)
+	}
+	for y := frame.Height - thickness; y < frame.Height; y++ {
+		if y < thickness {
+			continue
 		}
+		copy(frame.RGB[y*stride:], row)
 	}
 }
 
