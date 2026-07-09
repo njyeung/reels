@@ -73,7 +73,7 @@ func (h *HUD) ShowDMNotify(count int) tea.Cmd {
 }
 
 // ShowChatBanner triggers the ephemeral chat-mode banner
-func (h *HUD) ShowChatBanner(title string, KeysReact []string) tea.Cmd {
+func (h *HUD) ShowChatBanner(title string, keysReactOpen []string) tea.Cmd {
 	if h.active == hudVolume {
 		h.volumeFadeStep = 0
 	}
@@ -83,7 +83,7 @@ func (h *HUD) ShowChatBanner(title string, KeysReact []string) tea.Cmd {
 	h.active = hudChatBanner
 	h.chatBannerFadeStep = 1
 	h.chatBannerTitle = title
-	h.chatBannerKeys = KeysReact
+	h.chatBannerKeys = keysReactOpen
 	h.chatBannerGen++
 	return h.chatBannerHoldTick()
 }

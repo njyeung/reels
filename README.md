@@ -72,6 +72,8 @@ reels
 | `key_share_close` | `S` | Close Share panel & sends to friends' DMs (if any are selected) |
 | `key_friends_open` | `d` | Open DM friends panel to view reels shared by friends |
 | `key_friends_close` | `D` | Close DM friends panel / exit friend mode |
+| `key_react_open` | `x` | Open react panel to react to a friend's reel (chat mode) |
+| `key_react_close` | `X` | Close react panel |
 | `key_copy_link` | `y` | Copy reel link to clipboard |
 | `key_mute` | `m` | Mute current reel |
 | `key_vol_up` | `]` | Volume up |
@@ -182,6 +184,8 @@ key_share_close = S
 key_select = space
 key_friends_open = d
 key_friends_close = D
+key_react_open = x
+key_react_close = X
 key_comments_open = c
 key_comments_close = C
 key_help_open = ?

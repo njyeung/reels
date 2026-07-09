@@ -2,25 +2,23 @@ package tui
 
 import (
 	"strings"
-
-	"github.com/mattn/go-runewidth"
 )
 
-// reaction pairs a sendable emoji with its display label. The emoji string is
-// what ReactToCurrent fires at the mutation; only ❤ is capture-verified, the
-// rest are Instagram's quick-reaction defaults.
+// reaction pairs a sendable emoji with its display label. emoji is what
+// ReactToCurrent fires at the mutation, display is the emoji shown to the user.
 type reaction struct {
-	emoji string
-	label string
+	emoji   string
+	display string
 }
 
 var reactions = []reaction{
-	{"❤", "love"},
-	{"😂", "haha"},
-	{"😮", "wow"},
-	{"😢", "sad"},
-	{"😡", "angry"},
-	{"👍", "like"},
+	// for some reason instagram uses the emoticon instead of emoji for heart
+	{emoji: "❤", display: "❤️"},
+	{emoji: "👍", display: "👍"},
+	{emoji: "😂", display: "😂"},
+	{emoji: "😮", display: "😮"},
+	{emoji: "😢", display: "😢"},
+	{emoji: "😡", display: "😡"},
 }
 
 // ReactPanel picks a reaction to send to the current chat-mode reel.
@@ -97,13 +95,15 @@ func (rp *ReactPanel) View(width, height int, padding string) string {
 
 	for i := rp.scroll; i < len(reactions) && i-rp.scroll < availableLines; i++ {
 		r := reactions[i]
-		// pad to a fixed column: ❤ is width 1, the rest are width 2
-		pad := strings.Repeat(" ", max(3-runewidth.StringWidth(r.emoji), 1))
+		glyph := r.display
+		if glyph == "" {
+			glyph = r.emoji
+		}
 		var line string
 		if i == rp.cursor {
-			line = r.emoji + pad + pink500.Underline(true).Render(r.label)
+			line = pink500.Underline(true).Render(" " + glyph + " ")
 		} else {
-			line = r.emoji + pad + pink300.Render(r.label)
+			line = " " + glyph + " "
 		}
 		b.WriteString(padding + line + "\n")
 	}

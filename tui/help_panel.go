@@ -64,7 +64,8 @@ func (hp *HelpPanel) buildEntries() {
 		{displayKeys(config.KeysReelSizeDec), "shrink video"},
 		{displayKeys(config.KeysChatsOpen), "open DM chats"},
 		{displayKeys(config.KeysChatsClose), "close DMs / exit chat mode"},
-		{displayKeys(config.KeysReact), "react to reel (chat mode)"},
+		{displayKeys(config.KeysReactOpen), "react to reel (chat mode)"},
+		{displayKeys(config.KeysReactClose), "close react panel (chat mode)"},
 		{displayKeys(config.KeysHelpOpen), "help"},
 		{displayKeys(config.KeysQuit), "quit"},
 	}
