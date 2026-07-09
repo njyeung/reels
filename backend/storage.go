@@ -40,7 +40,6 @@ type Settings struct {
 	KeysSave         []string
 	KeysSeekForward  []string
 	KeysSeekBackward []string
-	KeysReact        []string
 	KeysSelect       []string
 
 	KeysShareOpen  []string
@@ -54,6 +53,9 @@ type Settings struct {
 
 	KeysChatsOpen  []string
 	KeysChatsClose []string
+
+	KeysReactOpen  []string
+	KeysReactClose []string
 }
 
 var Config Settings
@@ -228,7 +230,6 @@ func defaultSettings() Settings {
 		KeysSave:         []string{"b"},
 		KeysSeekForward:  []string{"l"},
 		KeysSeekBackward: []string{"h"},
-		KeysReact:        []string{"x"},
 		KeysSelect:       []string{" "},
 
 		KeysShareOpen:  []string{"s"},
@@ -242,6 +243,9 @@ func defaultSettings() Settings {
 
 		KeysChatsOpen:  []string{"d"},
 		KeysChatsClose: []string{"D"},
+
+		KeysReactOpen:  []string{"x"},
+		KeysReactClose: []string{"X"},
 	}
 
 	if goruntime.GOOS == "darwin" {
@@ -336,7 +340,8 @@ func LoadSettings(configDir string) {
 	loadKey(conf, "key_help_close", &s.KeysHelpClose)
 	loadKey(conf, "key_friends_open", &s.KeysChatsOpen)
 	loadKey(conf, "key_friends_close", &s.KeysChatsClose)
-	loadKey(conf, "key_react", &s.KeysReact)
+	loadKey(conf, "key_react_open", &s.KeysReactOpen)
+	loadKey(conf, "key_react_close", &s.KeysReactClose)
 
 	Config = s
 }
@@ -391,7 +396,8 @@ func writeConf(path string, s Settings) error {
 	writeKeys(&b, "key_help_close", s.KeysHelpClose)
 	writeKeys(&b, "key_friends_open", s.KeysChatsOpen)
 	writeKeys(&b, "key_friends_close", s.KeysChatsClose)
-	writeKeys(&b, "key_react", s.KeysReact)
+	writeKeys(&b, "key_react_open", s.KeysReactOpen)
+	writeKeys(&b, "key_react_close", s.KeysReactClose)
 
 	return os.WriteFile(path, []byte(b.String()), 0644)
 }

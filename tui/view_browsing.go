@@ -259,7 +259,7 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.player.SetBorder(colors.Blue300Color)
-		return m, tea.Batch(m.loadCurrentReel, m.hud.ShowChatBanner(title, config.KeysReact))
+		return m, tea.Batch(m.loadCurrentReel, m.hud.ShowChatBanner(title, config.KeysReactOpen))
 
 	// React select sends the highlighted reaction to the current reel
 	case m.react.IsOpen() && slices.Contains(config.KeysSelect, key):
@@ -380,25 +380,27 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.player.RedrawVideo()
 		}
 
-	case m.react.IsOpen() && slices.Contains(config.KeysReact, key):
+	case m.react.IsOpen() && slices.Contains(config.KeysReactClose, key):
 		m.react.Close()
 		m.closePanelLayout()
 
-	case !m.react.IsOpen() && slices.Contains(config.KeysReact, key):
+	case !m.react.IsOpen() && slices.Contains(config.KeysReactOpen, key):
 		if m.backend.IsChatMode() && !m.panelOpen() && !m.backend.IsSyncing() {
 			m.react.Open()
 			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
 			m.player.RedrawVideo()
 		}
-
 	case m.chats.IsOpen() && slices.Contains(config.KeysChatsClose, key):
+		// if selecting a friend's dm to visit (chat panel), close key will close
+		// that panel first. else, fall through to the next case
 		m.chats.Close()
 		m.closePanelLayout()
 
-	case !m.chats.IsOpen() && slices.Contains(config.KeysChatsClose, key) && m.backend.IsChatMode():
-		// In chat mode with no panel open, close-key exits back to the feed.
-		m.player.ClearBorder()
+	case !m.panelOpen() && slices.Contains(config.KeysChatsClose, key) && m.backend.IsChatMode():
+		// in chat mode with no panel open, close key exits back to the feed.
+		// the react panel must be closed with its own close key first.
 		go m.backend.ExitChatMode()
+		m.player.SetBorder(nil)
 		return m, nil
 
 	case !m.chats.IsOpen() && slices.Contains(config.KeysChatsOpen, key):
@@ -584,6 +586,7 @@ func (m *Model) navigateToReel(direction int) tea.Cmd {
 		m.status = statusLoading
 		m.comments.Clear()
 		go m.backend.ExitChatMode()
+		m.player.SetBorder(nil)
 		return nil
 	}
 	if index < 1 || index > m.backend.GetTotal() {

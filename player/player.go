@@ -306,11 +306,6 @@ func (p *AVPlayer) SetBorder(c color.Color) {
 	})
 }
 
-// ClearBorder removes the outline.
-func (p *AVPlayer) ClearBorder() {
-	p.SetBorder(nil)
-}
-
 // Border returns the current outline color, or nil if none.
 func (p *AVPlayer) Border() color.Color {
 	p.configMu.Lock()
