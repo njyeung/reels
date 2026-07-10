@@ -119,7 +119,7 @@ func (cc *ChatCursor) SyncTo(index int) error {
 			// superseding sync ctx) so a quick scroll-away can't abort it.
 			go chromedp.Run(cc.ctx,
 				chromedp.Navigate("https://www.instagram.com/direct/t/"+cc.threadKey+"/"),
-				chromedp.Sleep(1*time.Second),
+				chromedp.Sleep(3*time.Second),
 				chromedp.Navigate(target),
 			)
 			return nil
