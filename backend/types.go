@@ -175,9 +175,7 @@ type Backend interface {
 	// index is out of range.
 	ChatSender(index int) (Friend, bool)
 
-	// ReactToCurrent sends emoji as a DM reaction to the reel the chat
-	// cursor is currently on and marks that entry seen (seen == reacted).
-	// Errors when not in chat mode.
+	// ReactToCurrent sends emoji as a DM reel reaction
 	ReactToCurrent(emoji string) error
 }
 

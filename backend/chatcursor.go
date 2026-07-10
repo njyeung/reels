@@ -4,33 +4,33 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/chromedp/chromedp"
 )
 
-// ChatCursor navigates a fixed list of DM-shared reels in the secondary
-// window. Position is authoritative (we drove the
-// navigation, so we know where we are).
+// ChatCursor navigates a chat's DM-shared reels in the secondary window.
+// Position is authoritative (we drove the navigation, so we know where we
+// are); entries and seen-state are read live from dmState.
 type ChatCursor struct {
 	ctx       context.Context
 	threadKey string
-	entries   []dmReelEntry
+	dm        *dmState
 
-	mu     sync.RWMutex
-	cursor int // 0-based index into entries
+	mu         sync.RWMutex
+	cursor     int  // 0-based index into entries
+	markedRead bool // thread already marked read once all entries were seen
 
 	syncMu     sync.Mutex
 	syncCtx    context.Context
 	syncCancel context.CancelFunc
 }
 
-// NewChatCursor binds the cursor to the DM window's chromedp context and a
-// snapshot of the chat's entries. The entry list is treated as immutable.
-// if it changes, build a new cursor. startIndex (1-based) positions the cursor
-// up front — reels are prefetched, so Current() resolves before SyncTo's
-// background navigation lands.
-func NewChatCursor(ctx context.Context, threadKey string, entries []dmReelEntry, startIndex int) *ChatCursor {
-	return &ChatCursor{ctx: ctx, threadKey: threadKey, entries: entries, cursor: startIndex - 1}
+// NewChatCursor binds the cursor to the DM window's chromedp context and the
+// chat it navigates. Entries are read live from dm, so seen/reacted writes are
+// visible immediately. Starts positioned at the first entry.
+func NewChatCursor(ctx context.Context, threadKey string, dm *dmState) *ChatCursor {
+	return &ChatCursor{ctx: ctx, threadKey: threadKey, dm: dm, cursor: 0}
 }
 
 // ThreadKey returns the chat whose entries this cursor navigates.
@@ -40,43 +40,55 @@ func (cc *ChatCursor) ThreadKey() string {
 
 // Total returns the number of entries this cursor can navigate.
 func (cc *ChatCursor) Total() int {
-	return len(cc.entries)
+	chat := cc.dm.Chat(cc.threadKey)
+	return len(chat.Entries)
 }
 
 // PKAt returns the PK at 1-based index, or "" if out of range.
 func (cc *ChatCursor) PKAt(index int) string {
-	if index < 1 || index > len(cc.entries) {
+	chat := cc.dm.Chat(cc.threadKey)
+	if index < 1 || index > len(chat.Entries) {
 		return ""
 	}
-	return cc.entries[index-1].PK
+	return chat.Entries[index-1].PK
 }
 
 // SenderAt returns the sender of the entry at 1-based index, or false if out
 // of range. ImgPath is set when the pfp was downloaded during inbox
 // materialization.
 func (cc *ChatCursor) SenderAt(index int) (Friend, bool) {
-	if index < 1 || index > len(cc.entries) {
+	chat := cc.dm.Chat(cc.threadKey)
+	if index < 1 || index > len(chat.Entries) {
 		return Friend{}, false
 	}
-	return cc.entries[index-1].Sender, true
+	return chat.Entries[index-1].Sender, true
 }
 
 // Current returns the (1-based index, PK) of the entry we last navigated to.
 // Errors if SyncTo hasn't been called yet.
 func (cc *ChatCursor) Current() (int, string, error) {
+	chat := cc.dm.Chat(cc.threadKey)
+
 	cc.mu.RLock()
 	defer cc.mu.RUnlock()
-	if cc.cursor < 0 || cc.cursor >= len(cc.entries) {
+	if cc.cursor < 0 || cc.cursor >= len(chat.Entries) {
 		return 0, "", fmt.Errorf("chat cursor not yet positioned")
 	}
-	return cc.cursor + 1, cc.entries[cc.cursor].PK, nil
+	return cc.cursor + 1, chat.Entries[cc.cursor].PK, nil
 }
 
-// SyncTo navigates the DM window to entries[index-1].TargetURL.Returns once
-// Navigate completes. The clip-response body arrives
-// asynchronously through the listener and is not awaited here.
+// SyncTo navigates the DM window to entries[index-1].TargetURL. Returns once
+// Navigate completes. The clip-response body arrives asynchronously through the
+// listener and is not awaited here.
+//
+// The entry is marked seen up front (before the navigation lands) so the UI can
+// optimistically show the reel ahead of the DM window catching up. When that
+// write makes every entry seen, the first time it does so we mark the whole
+// thread read on Instagram in the background, then land back on the reel.
 func (cc *ChatCursor) SyncTo(index int) error {
-	if index < 1 || index > len(cc.entries) {
+	chat := cc.dm.Chat(cc.threadKey)
+
+	if index < 1 || index > len(chat.Entries) {
 		return fmt.Errorf("index %d out of range", index)
 	}
 
@@ -92,8 +104,27 @@ func (cc *ChatCursor) SyncTo(index int) error {
 
 	cc.mu.Lock()
 	cc.cursor = index - 1
-	target := cc.entries[index-1].TargetURL
+	target := chat.Entries[index-1].TargetURL
 	cc.mu.Unlock()
+
+	allSeen, _ := cc.dm.MarkSeen(cc.threadKey, index)
+	if allSeen {
+		cc.mu.Lock()
+		firstTime := !cc.markedRead
+		cc.markedRead = true
+		cc.mu.Unlock()
+		if firstTime {
+			// Navigate to the thread to mark it read, then return to the reel
+			// so DOM actions still target it. Runs on cc.ctx (not the
+			// superseding sync ctx) so a quick scroll-away can't abort it.
+			go chromedp.Run(cc.ctx,
+				chromedp.Navigate("https://www.instagram.com/direct/t/"+cc.threadKey+"/"),
+				chromedp.Sleep(1*time.Second),
+				chromedp.Navigate(target),
+			)
+			return nil
+		}
+	}
 
 	return chromedp.Run(ctx, chromedp.Navigate(target))
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"math/rand"
 	"regexp"
 	"strconv"
@@ -87,7 +86,7 @@ func (b *ChromeBackend) ReactToCurrent(emoji string) error {
 		return err
 	}
 
-	messageID, threadFBID, err := b.dm.MarkSeen(cc.ThreadKey(), index)
+	messageID, threadFBID, err := b.dm.MarkReacted(cc.ThreadKey(), index)
 	if err != nil {
 		return err
 	}
@@ -241,7 +240,6 @@ func (b *ChromeBackend) processThreadResponse(body string) {
 // It then materializes every shared reel's CDN video URL up front,
 // and emits EventDMReelsReady when done.
 func (b *ChromeBackend) collectDMInbox(ctx context.Context) {
-	// slog.Debug("COLLECTING DM INBOX ENTRIES")
 
 	if err := chromedp.Run(ctx, chromedp.Navigate("https://www.instagram.com/direct/inbox/")); err != nil {
 		return
@@ -253,9 +251,6 @@ func (b *ChromeBackend) collectDMInbox(ctx context.Context) {
 	}
 
 	entries := b.dm.PendingEntries()
-	// template := b.dm.Template()
-	// slog.Debug("dm: starting materialization", "entries", len(entries), "haveTemplate", template != "")
-
 	// Materialize linearly with jitter.
 	for _, entry := range entries {
 		select {
@@ -264,7 +259,6 @@ func (b *ChromeBackend) collectDMInbox(ctx context.Context) {
 		default:
 		}
 		if err := b.prefetchReel(entry.Code, entry.PK); err != nil {
-			slog.Warn("dm: prefetchReel failed", "pk", entry.PK, "code", entry.Code, "err", err)
 			continue
 		}
 		select {
@@ -277,19 +271,6 @@ func (b *ChromeBackend) collectDMInbox(ctx context.Context) {
 	// Download every sender's pfp while we're still in the "materializing"
 	// phase, so entries carry local paths before the UI is notified.
 	b.downloadDMPfps()
-
-	// Dump the state of every entry right before we notify the UI.
-	// b.reelsMu.RLock()
-	// for i, entry := range entries {
-	// 	r, ok := b.reels[entry.PK]
-	// 	hasVideo := ok && r.VideoURL != ""
-	// 	slog.Debug("dm: reel state",
-	// 		"i", i, "pk", entry.PK, "code", entry.Code,
-	// 		"cached", ok, "hasVideo", hasVideo, "url", entry.TargetURL)
-	// }
-	// totalReels := len(b.reels)
-	// b.reelsMu.RUnlock()
-	// slog.Debug("dm: materialization done", "entries", len(entries), "reelsInMap", totalReels)
 
 	b.events <- Event{Type: EventDMReelsReady, Count: b.GetDMReelsCount()}
 }
@@ -318,44 +299,23 @@ func (b *ChromeBackend) GetDMReelsCount() int {
 }
 
 // EnterChatMode swaps the active cursor to a ChatCursor over the chat's
-// entries and routes user-action ctx to the DM window. Starts at the
-// saved LastIndex bookmark so re-entry resumes where the user left off.
-// Errors if the chat isn't known.
+// entries and routes user-action ctx to the DM window. Always starts at the
+// first reel.
 func (b *ChromeBackend) EnterChatMode(threadKey string) error {
-	chat, ok := b.dm.Chat(threadKey)
-	if !ok || len(chat.Entries) == 0 {
-		return fmt.Errorf("EnterChatMode: unknown chat %q", threadKey)
-	}
-	entries := chat.Entries
-
-	startIdx := chat.LastIndex
-	if startIdx < 1 || startIdx > len(entries) {
-		startIdx = 1
-	}
-
-	// Position the cursor up front so GetCurrent resolves the (prefetched)
-	// reel immediately; SyncTo then navigates the DM window in the background
-	// for seen-state and to enable DOM actions (gated on IsSyncing).
-	cc := NewChatCursor(b.dmCtx, threadKey, entries, startIdx)
-
+	cc := NewChatCursor(b.dmCtx, threadKey, b.dm)
 	b.modeMu.Lock()
 	b.active = cc
 	b.ctx = b.dmCtx
 	b.modeMu.Unlock()
 
-	go cc.SyncTo(startIdx)
+	go cc.SyncTo(1)
 	return nil
 }
 
-// ExitChatMode restores the feed cursor and feed window. Idempotent when
-// already in feed mode.
-//
-// 1. Saves the cursor position as the chat's resume bookmark;
-//
-// 2. If every entry has been reacted to, synchronously navigates the
-// DM window to the chat's thread (to mark it read on Instagram)
-//
-// 3. Parks on about:blank.
+// ExitChatMode restores the feed cursor and feed window, then parks the DM
+// window on about:blank. Marking the thread read is handled live by the cursor
+// as reels are seen, so exit is just teardown. Idempotent when already in feed
+// mode.
 func (b *ChromeBackend) ExitChatMode() {
 	b.modeMu.Lock()
 	if b.active == b.feed {
@@ -372,23 +332,6 @@ func (b *ChromeBackend) ExitChatMode() {
 	b.modeMu.Unlock()
 
 	if cc != nil {
-		threadKey := cc.ThreadKey()
-
-		lastIndex := 0
-		if idx, _, err := cc.Current(); err == nil {
-			lastIndex = idx
-		}
-
-		allSeen := b.dm.SaveExit(threadKey, lastIndex)
-
-		if allSeen && threadKey != "" {
-			// navigate to the chat's thread
-			_ = chromedp.Run(dmCtx,
-				chromedp.Navigate("https://www.instagram.com/direct/t/"+threadKey+"/"),
-				chromedp.Sleep(1*time.Second),
-			)
-		}
-		// park in blank
 		_ = chromedp.Run(dmCtx, chromedp.Navigate("about:blank"))
 	}
 }
