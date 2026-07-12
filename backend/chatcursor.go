@@ -56,12 +56,22 @@ func (cc *ChatCursor) PKAt(index int) string {
 // SenderAt returns the sender of the entry at 1-based index, or false if out
 // of range. ImgPath is set when the pfp was downloaded during inbox
 // materialization.
-func (cc *ChatCursor) SenderAt(index int) (Friend, bool) {
+func (cc *ChatCursor) SenderAt(index int) (User, bool) {
 	chat := cc.dm.Chat(cc.threadKey)
 	if index < 1 || index > len(chat.Entries) {
-		return Friend{}, false
+		return User{}, false
 	}
 	return chat.Entries[index-1].Sender, true
+}
+
+// ReactionsAt returns the reactions on the entry at 1-based index, or false if
+// out of range. Each User carries the reactor's name/pfp and their emoji.
+func (cc *ChatCursor) ReactionsAt(index int) ([]User, bool) {
+	chat := cc.dm.Chat(cc.threadKey)
+	if index < 1 || index > len(chat.Entries) {
+		return nil, false
+	}
+	return chat.Entries[index-1].Reactions, true
 }
 
 // Current returns the (1-based index, PK) of the entry we last navigated to.
@@ -75,6 +85,39 @@ func (cc *ChatCursor) Current() (int, string, error) {
 		return 0, "", fmt.Errorf("chat cursor not yet positioned")
 	}
 	return cc.cursor + 1, chat.Entries[cc.cursor].PK, nil
+}
+
+func (cc *ChatCursor) ReactToCurrent(emoji string) error {
+	index, _, err := cc.Current()
+	if err != nil {
+		return err
+	}
+
+	messageID, threadID, err := cc.dm.MarkReacted(cc.ThreadKey(), index, emoji)
+	if err != nil {
+		return err
+	}
+
+	vars := map[string]interface{}{
+		"input": map[string]interface{}{
+			"emoji":           emoji,
+			"item_id":         "",
+			"message_id":      messageID,
+			"reaction_status": "created",
+			"thread_id":       threadID,
+		},
+	}
+	template := cc.dm.Template()
+	if template == "" {
+		return fmt.Errorf("no DM request template captured")
+	}
+	req, err := newGraphQLRequest(cc.ctx, template, reactionDocID, reactionFriendlyName, mutateEndpoint, vars)
+	if err != nil {
+		return err
+	}
+	execGraphQL(req)
+
+	return nil
 }
 
 // SyncTo navigates the DM window to entries[index-1].TargetURL. Returns once

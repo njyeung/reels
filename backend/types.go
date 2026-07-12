@@ -50,7 +50,7 @@ type ChromeBackend struct {
 	comments *CommentsState
 
 	// share modal state
-	shareFriends []Friend
+	shareFriends []User
 
 	events chan Event
 
@@ -118,7 +118,7 @@ type Backend interface {
 	OpenSharePanel()
 
 	// GetShareFriends returns the friend list scraped from the share modal
-	GetShareFriends() []Friend
+	GetShareFriends() []User
 
 	// ToggleShareFriend clicks the friend at the given index in the share modal
 	ToggleShareFriend(index int)
@@ -158,8 +158,8 @@ type Backend interface {
 
 	// EnterChatMode swaps the active cursor to a ChatCursor over the
 	// chat's reel entries and routes user actions through the DM
-	// window. The cursor is positioned on the first reel to show (resuming
-	// after the last-seen one) so GetCurrent works immediately. Errors if the
+	// window. The cursor is positioned on the first reel to show
+	// so GetCurrent works immediately. Errors if the
 	// chat isn't known.
 	EnterChatMode(threadKey string) error
 
@@ -173,7 +173,12 @@ type Backend interface {
 	// ChatSender returns the sender of the chat entry at 1-based index
 	// (username + local pfp path). ok is false when not in chat mode or the
 	// index is out of range.
-	ChatSender(index int) (Friend, bool)
+	ChatSender(index int) (User, bool)
+
+	// ChatReactions returns the reactions on the chat entry at 1-based index,
+	// each a User carrying the reactor's name/pfp and their emoji (including
+	// the viewer's own). ok is false when not in chat mode or out of range.
+	ChatReactions(index int) ([]User, bool)
 
 	// ReactToCurrent sends emoji as a DM reel reaction
 	ReactToCurrent(emoji string) error
@@ -274,12 +279,13 @@ type Comment struct {
 	GifPath           string // local path to downloaded GIF file
 }
 
-// Friend represents another Instagram user: a share-modal list entry or the
-// sender of a DM reel share.
-type Friend struct {
-	Name    string // display name (share modal) or username (DM sender)
-	ImgSrc  string // profile pic URL
-	ImgPath string // local path to downloaded profile pic
+// User represents an Instagram user: a share-modal list entry, the sender of a
+// DM reel share, or someone who reacted to one
+type User struct {
+	Name     string // display name (share modal) or username (DM sender/reactor)
+	ImgSrc   string // profile pic URL
+	ImgPath  string // local path to downloaded profile pic
+	Reaction string // emoji when this User is a reaction; "" otherwise
 }
 
 // EventType represents different backend events

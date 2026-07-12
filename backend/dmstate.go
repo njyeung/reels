@@ -12,6 +12,11 @@ type dmState struct {
 	mu    sync.RWMutex
 	chats []DMChat
 
+	// self is the viewer's own identity. The thread roster (users[]) excludes
+	// the viewer, so it's captured separately via SetSelf. Empty until resolved.
+	selfMu sync.RWMutex
+	self   User
+
 	// template is a captured get_slide_thread_nullable POST body from the DM
 	// window, reused as the token-bearing template (fb_dtsg/lsd/etc.) for
 	// graphql replays: reel prefetch and reactions. Captured once.
@@ -37,8 +42,8 @@ type dmReelEntry struct {
 	MessageID string // mid.$… message id; keys the reaction mutation
 	TargetURL string // permalink the DM window navigates to for seen-state
 	Seen      bool   // user has seen this entry
-	Reacted   bool   // user has reacted to this entry
-	Sender    Friend // who shared the reel
+	Sender    User   // who shared the reel
+	Reactions []User // reactors (name + pfp + emoji), incl. the viewer's own
 }
 
 // UnseenCount returns how many of the chat's entries haven't been seen yet.
@@ -66,12 +71,32 @@ func (d *dmState) CaptureTemplate(postData string) {
 	d.template = postData
 }
 
-// Template returns the captured request template, or "" if none was captured
-// yet.
+// Template returns the captured request template, or "" if none was captured yet.
 func (d *dmState) Template() string {
 	d.templateMu.RLock()
 	defer d.templateMu.RUnlock()
 	return d.template
+}
+
+// SetSelf records the viewer's own identity the first time it's resolved.
+// Idempotent; later captures don't clobber an already-set self.
+func (d *dmState) SetSelf(self User) {
+	if self.Name == "" {
+		return
+	}
+	d.selfMu.Lock()
+	defer d.selfMu.Unlock()
+	if d.self.Name != "" {
+		return
+	}
+	d.self = self
+}
+
+// Self returns the viewer's own identity, or the zero User if unresolved.
+func (d *dmState) Self() User {
+	d.selfMu.RLock()
+	defer d.selfMu.RUnlock()
+	return d.self
 }
 
 // MergeThread merges one thread's reel-share entries into the chats list,
@@ -130,10 +155,12 @@ func (d *dmState) Chat(threadKey string) DMChat {
 	return DMChat{}
 }
 
-// MarkReacted marks the chat's index-th entry as reacted and returns the ids the
-// reaction mutation needs for the api request.
-// returns an error if the chat cannot be found or index is out of range
-func (d *dmState) MarkReacted(threadKey string, index int) (messageID, threadFBID string, err error) {
+// MarkReacted optimistically records the viewer's emoji reaction on the chat's
+// index-th entry (as a self User, replacing any prior self reaction) and returns
+// the ids the reaction mutation needs. Errors if the chat or index is invalid.
+func (d *dmState) MarkReacted(threadKey string, index int, emoji string) (messageID, threadFBID string, err error) {
+	self := d.Self()
+
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -146,7 +173,20 @@ func (d *dmState) MarkReacted(threadKey string, index int) (messageID, threadFBI
 			return "", "", fmt.Errorf("MarkReacted: index out of range")
 		}
 		e := &c.Entries[index-1]
-		e.Reacted = true
+
+		mine := self
+		mine.Reaction = emoji
+		replaced := false
+		for j := range e.Reactions {
+			if e.Reactions[j].Name == self.Name {
+				e.Reactions[j] = mine
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			e.Reactions = append(e.Reactions, mine)
+		}
 
 		return e.MessageID, c.ThreadFBID, nil
 	}

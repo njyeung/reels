@@ -241,6 +241,14 @@ func (b *ChromeBackend) IsSyncing() bool {
 	return b.activeCursor().IsSyncing()
 }
 
+func (b *ChromeBackend) ReactToCurrent(emoji string) error {
+	cc := b.activeCursor()
+	if dm, ok := cc.(*ChatCursor); ok {
+		return dm.ReactToCurrent(emoji)
+	}
+	return fmt.Errorf("Not in chat mode")
+}
+
 // ToggleLike clicks the like button for the current reel
 func (b *ChromeBackend) ToggleLike() (bool, error) {
 	if b.IsSyncing() {
@@ -668,9 +676,9 @@ func (b *ChromeBackend) OpenSharePanel() {
 
 	data := fetchURLsHTTP(urls)
 
-	friends := make([]Friend, len(raw))
+	friends := make([]User, len(raw))
 	for i, r := range raw {
-		friends[i] = Friend{Name: r.Name, ImgSrc: r.ImgSrc}
+		friends[i] = User{Name: r.Name, ImgSrc: r.ImgSrc}
 		if i < len(data) && data[i] != nil {
 			friends[i].ImgPath = b.cacheSharePfp(fmt.Sprintf("share_pfp_%d.jpg", i), data[i])
 		}
@@ -681,7 +689,7 @@ func (b *ChromeBackend) OpenSharePanel() {
 }
 
 // GetShareFriends returns the friend list scraped from the share modal
-func (b *ChromeBackend) GetShareFriends() []Friend {
+func (b *ChromeBackend) GetShareFriends() []User {
 	return b.shareFriends
 }
 

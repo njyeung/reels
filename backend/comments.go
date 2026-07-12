@@ -197,7 +197,7 @@ func (b *ChromeBackend) FetchMoreComments() {
 		b.setCommentsPagination("", false)
 		return
 	}
-	result, err := b.execGraphQL(req)
+	result, err := execGraphQL(req)
 	if err != nil {
 		b.setCommentsPagination("", false)
 		return

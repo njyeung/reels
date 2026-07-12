@@ -26,6 +26,9 @@ const (
 	reactionDocID        = "24374451552236906"
 	reactionFriendlyName = "IGDirectReactionSendMutation"
 
+	profileDocID        = "26672929172408668"
+	profileFriendlyName = "PolarisProfilePageContentQuery"
+
 	expectedAppID = "936619743392459"
 )
 
@@ -204,7 +207,7 @@ func newGraphQLRequest(ctx context.Context, template string, docID string, frien
 // browser attaches the real cookies/CSRF and the tokens in the template match a
 // genuine client. The x-fb-lsd header is taken from the template's lsd param.
 // Returns the raw response body.
-func (b *ChromeBackend) execGraphQL(req graphQLRequest) (string, error) {
+func execGraphQL(req graphQLRequest) (string, error) {
 	if req.valid == false {
 		return "", fmt.Errorf("invalid graphQLRequest struct")
 	}
@@ -362,6 +365,7 @@ func (b *ChromeBackend) processFeedGraphQLBody(ctx context.Context, e *fetch.Eve
 	bodyStr := string(body)
 	switch {
 	case strings.Contains(bodyStr, "xdt_api__v1__clips__home__connection_v2"):
+		b.dm.CaptureTemplate(decodePostData(e))
 		b.processReelResponse(bodyStr)
 	case strings.Contains(bodyStr, "xdt_api__v1__media__media_id__comments__connection"):
 		postData := decodePostData(e)
@@ -377,55 +381,3 @@ func (b *ChromeBackend) processFeedGraphQLBody(ctx context.Context, e *fetch.Eve
 		}),
 	)
 }
-
-// processGraphQLBody is the shared fetch-interception router. It reads the paused
-// response body in the window that saw the request (ctx), dispatches based on
-// body content, and continues the request.
-//
-// isDM selects the window's role:
-// - false: captures clip responses into the feed
-// - true: captures DM thread bodies and the token-bearing request template used to prefetch reels.
-//
-// Comment responses are automatically handled in whichever window is active.
-// func (b *ChromeBackend) processGraphQLBody(ctx context.Context, e *fetch.EventRequestPaused, isDM bool) {
-// 	var body []byte
-// 	err := chromedp.Run(ctx,
-// 		chromedp.ActionFunc(func(c context.Context) error {
-// 			data, err := fetch.GetResponseBody(e.RequestID).Do(c)
-// 			if err != nil {
-// 				return err
-// 			}
-// 			body = data
-// 			return nil
-// 		}),
-// 	)
-// 	if err != nil {
-// 		return
-// 	}
-// 	bodyStr := string(body)
-// 	switch {
-// 	case strings.Contains(bodyStr, "xdt_api__v1__clips__home__connection_v2"):
-// 		// Skip when in DM mode, prefetchReel handles this directly.
-// 		if !isDM {
-// 			b.processReelResponse(bodyStr)
-// 		}
-// 	case strings.Contains(bodyStr, "xdt_api__v1__media__media_id__comments__connection"):
-// 		// Comments section. Captured for both regular an dm feeds.
-// 		postData := decodePostData(e)
-
-// 		// Skip pagination responses, FetchMoreComments handles those directly.
-// 		if !strings.Contains(postData, paginationFriendlyName) {
-// 			b.processCommentsResponse(bodyStr, postData, e)
-// 		}
-// 	case isDM && strings.Contains(bodyStr, "get_slide_thread_nullable"):
-// 		// DM window initially navigates to inbox to get threads.
-// 		b.dm.CaptureTemplate(decodePostData(e))
-// 		b.processThreadResponse(bodyStr)
-// 	}
-
-// 	chromedp.Run(ctx,
-// 		chromedp.ActionFunc(func(c context.Context) error {
-// 			return fetch.ContinueRequest(e.RequestID).Do(c)
-// 		}),
-// 	)
-// }

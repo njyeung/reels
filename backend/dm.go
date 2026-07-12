@@ -71,54 +71,6 @@ func (b *ChromeBackend) stopDMSession() {
 	}
 }
 
-// ReactToCurrent sends emoji as a reaction to the reel the chat cursor is
-// currently on and marks that entry seen.
-func (b *ChromeBackend) ReactToCurrent(emoji string) error {
-	b.modeMu.RLock()
-	cc, ok := b.active.(*ChatCursor)
-	b.modeMu.RUnlock()
-	if !ok {
-		return fmt.Errorf("ReactToCurrent: not in chat mode")
-	}
-
-	index, _, err := cc.Current()
-	if err != nil {
-		return err
-	}
-
-	messageID, threadFBID, err := b.dm.MarkReacted(cc.ThreadKey(), index)
-	if err != nil {
-		return err
-	}
-	return b.sendReaction(emoji, messageID, threadFBID)
-}
-
-// sendReaction fires IGDirectReactionSendMutation for a single DM message.
-// Fire-and-forget for now
-func (b *ChromeBackend) sendReaction(emoji, messageID, threadID string) error {
-
-	vars := map[string]interface{}{
-		"input": map[string]interface{}{
-			"emoji":           emoji,
-			"item_id":         "",
-			"message_id":      messageID,
-			"reaction_status": "created",
-			"thread_id":       threadID,
-		},
-	}
-	template := b.dm.Template()
-	if template == "" {
-		return fmt.Errorf("no DM request template captured")
-	}
-	req, err := newGraphQLRequest(b.dmCtx, template, reactionDocID, reactionFriendlyName, mutateEndpoint, vars)
-	if err != nil {
-		return err
-	}
-	b.execGraphQL(req)
-
-	return nil
-}
-
 // prefetchReel replays clips_home for a single reel (keyed by its shortcode)
 // using the captured DM request template, and warms b.reels[pk] with the
 // resulting media so chat-mode navigation can show it without a page load.
@@ -152,7 +104,7 @@ func (b *ChromeBackend) prefetchReel(code, pk string) error {
 	if err != nil {
 		return err
 	}
-	result, err := b.execGraphQL(req)
+	result, err := execGraphQL(req)
 	if err != nil {
 		return err
 	}
@@ -180,19 +132,26 @@ func (b *ChromeBackend) prefetchReel(code, pk string) error {
 // and writes the local paths back onto the entries. Synchronous; runs during
 // inbox materialization so paths are set before EventDMReelsReady.
 func (b *ChromeBackend) downloadDMPfps() {
-	// Collect one pfp URL per sender, deduped by username
+	// Collect one pfp URL per sender and reactor, deduped by username.
 	b.dm.mu.RLock()
 	seen := make(map[string]bool)
 	var names, urls []string
+	collect := func(u User) {
+		// skip any user already materialized, e.g. self.
+		if u.Name == "" || u.ImgSrc == "" || u.ImgPath != "" || seen[u.Name] {
+			return
+		}
+
+		seen[u.Name] = true
+		names = append(names, u.Name)
+		urls = append(urls, u.ImgSrc)
+	}
 	for _, c := range b.dm.chats {
 		for _, e := range c.Entries {
-			s := e.Sender
-			if s.Name == "" || s.ImgSrc == "" || seen[s.Name] {
-				continue
+			collect(e.Sender)
+			for _, r := range e.Reactions {
+				collect(r)
 			}
-			seen[s.Name] = true
-			names = append(names, s.Name)
-			urls = append(urls, s.ImgSrc)
 		}
 	}
 	b.dm.mu.RUnlock()
@@ -212,23 +171,90 @@ func (b *ChromeBackend) downloadDMPfps() {
 		}
 	}
 
-	// Write the local paths back onto every matching entry sender.
+	// Write the local paths back onto every matching sender and reactor.
 	b.dm.mu.Lock()
 	for i := range b.dm.chats {
 		for j := range b.dm.chats[i].Entries {
-			s := &b.dm.chats[i].Entries[j].Sender
-			if p, ok := paths[s.Name]; ok {
-				s.ImgPath = p
+			e := &b.dm.chats[i].Entries[j]
+			if p, ok := paths[e.Sender.Name]; ok {
+				e.Sender.ImgPath = p
+			}
+			for k := range e.Reactions {
+				if p, ok := paths[e.Reactions[k].Name]; ok {
+					e.Reactions[k].ImgPath = p
+				}
 			}
 		}
 	}
 	b.dm.mu.Unlock()
 }
 
+// resolveSelf fetches the logged-in user's identity via the ds_user_id cookie
+// and PolarisProfilePageContentQuery, and stores it as dm.self so the viewer's
+// own reactions materialize like anyone else's.
+func (b *ChromeBackend) resolveSelf(ctx context.Context) {
+	template := b.dm.Template()
+	if template == "" {
+		return
+	}
+
+	var id string
+	if err := chromedp.Run(ctx, chromedp.ActionFunc(func(c context.Context) error {
+		cookies, err := network.GetCookies().Do(c)
+		if err != nil {
+			return err
+		}
+		for _, ck := range cookies {
+			if ck.Name == "ds_user_id" {
+				id = ck.Value
+				break
+			}
+		}
+		return nil
+	})); err != nil || id == "" {
+		return
+	}
+
+	vars := map[string]any{
+		"id":                       id,
+		"enable_integrity_filters": true,
+		"__relay_internal__pv__PolarisCannesGuardianExperienceEnabledrelayprovider": true,
+		"__relay_internal__pv__PolarisCASB976ProfileEnabledrelayprovider":           false,
+		"__relay_internal__pv__PolarisWebSchoolsEnabledrelayprovider":               false,
+		"__relay_internal__pv__PolarisRepostsConsumptionEnabledrelayprovider":       true,
+	}
+	req, err := newGraphQLRequest(ctx, template, profileDocID, profileFriendlyName, mutateEndpoint, vars)
+	if err != nil {
+		return
+	}
+	result, err := execGraphQL(req)
+	if err != nil {
+		return
+	}
+
+	var resp struct {
+		Data struct {
+			User struct {
+				Username      string `json:"username"`
+				ProfilePicURL string `json:"profile_pic_url"`
+			} `json:"user"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(result), &resp); err != nil || resp.Data.User.Username == "" {
+		return
+	}
+
+	self := User{Name: resp.Data.User.Username, ImgSrc: resp.Data.User.ProfilePicURL}
+	if data := fetchURLsHTTP([]string{self.ImgSrc}); len(data) == 1 && data[0] != nil {
+		self.ImgPath = b.cacheDMPfp(fmt.Sprintf("dmpfp_%s.jpg", self.Name), data[0])
+	}
+	b.dm.SetSelf(self)
+}
+
 // processThreadResponse merges any reel-shares from a single DM thread body
 // into the DM chats list, keyed by the thread.
 func (b *ChromeBackend) processThreadResponse(body string) {
-	if chat, ok := extractDMThread(body); ok {
+	if chat, ok := b.dm.extractDMThread(body); ok {
 		b.dm.MergeThread(chat)
 	}
 }
@@ -240,6 +266,7 @@ func (b *ChromeBackend) processThreadResponse(body string) {
 // It then materializes every shared reel's CDN video URL up front,
 // and emits EventDMReelsReady when done.
 func (b *ChromeBackend) collectDMInbox(ctx context.Context) {
+	b.resolveSelf(b.feedCtx)
 
 	if err := chromedp.Run(ctx, chromedp.Navigate("https://www.instagram.com/direct/inbox/")); err != nil {
 		return
@@ -338,14 +365,26 @@ func (b *ChromeBackend) ExitChatMode() {
 
 // ChatSender returns the sender of the chat entry at 1-based index. ok is
 // false when not in chat mode or the index is out of range.
-func (b *ChromeBackend) ChatSender(index int) (Friend, bool) {
+func (b *ChromeBackend) ChatSender(index int) (User, bool) {
 	b.modeMu.RLock()
 	cc, isChat := b.active.(*ChatCursor)
 	b.modeMu.RUnlock()
 	if !isChat {
-		return Friend{}, false
+		return User{}, false
 	}
 	return cc.SenderAt(index)
+}
+
+// ChatReactions returns the reactions on the chat entry at 1-based index. ok is
+// false when not in chat mode or the index is out of range.
+func (b *ChromeBackend) ChatReactions(index int) ([]User, bool) {
+	b.modeMu.RLock()
+	cc, isChat := b.active.(*ChatCursor)
+	b.modeMu.RUnlock()
+	if !isChat {
+		return nil, false
+	}
+	return cc.ReactionsAt(index)
 }
 
 // IsChatMode reports whether the active cursor is a ChatCursor.
@@ -373,6 +412,12 @@ type dmThreadResponse struct {
 					ParticipantFBID string `json:"participant_fbid"`
 					Watermark       string `json:"watermark_timestamp_ms"`
 				} `json:"slide_read_receipts"`
+				// Users is the thread's participant roster (everyone EXCEPT the viewer).
+				Users []struct {
+					FBID          string `json:"interop_messaging_user_fbid"`
+					Username      string `json:"username"`
+					ProfilePicURL string `json:"profile_pic_url"`
+				} `json:"users"`
 				Messages struct {
 					Edges []struct {
 						Node struct {
@@ -398,6 +443,10 @@ type dmThreadResponse struct {
 									} `json:"preview_image"`
 								} `json:"xma"`
 							} `json:"content"`
+							Reactions []struct {
+								Reaction   string `json:"reaction"`
+								SenderFBID string `json:"sender_fbid"`
+							} `json:"reactions"`
 						} `json:"node"`
 					} `json:"edges"`
 				} `json:"slide_messages"`
@@ -410,10 +459,10 @@ type dmThreadResponse struct {
 // (…/reel/<code>/ or …/reels/<code>/).
 var reelCodeRegex = regexp.MustCompile(`/reels?/([^/?]+)`)
 
-// extractDMThread parses a single thread response into a DMChat with its
-// unseen reel entries. ok is false when the body isn't
-// a thread response.
-func extractDMThread(body string) (chat DMChat, ok bool) {
+// extractDMThread parses a single thread response into a DMChat with its unseen
+// reel entries, materializing every reaction's reactor (including the viewer,
+// via d.Self). ok is false when the body isn't a thread response.
+func (d *dmState) extractDMThread(body string) (chat DMChat, ok bool) {
 	var resp dmThreadResponse
 	if err := json.Unmarshal([]byte(body), &resp); err != nil {
 		return DMChat{}, false
@@ -430,6 +479,20 @@ func extractDMThread(body string) (chat DMChat, ok bool) {
 		ThreadFBID: thread.ThreadFBID,
 		Title:      thread.ThreadTitle,
 		IsGroup:    thread.ThreadSubtype == "IGD_GROUP",
+	}
+
+	// roster resolves a reactor's fbid to their identity. It excludes the
+	// viewer, so any reactor not in it is us (resolved to self).
+	self := d.Self()
+	roster := make(map[string]User, len(thread.Users))
+	for _, u := range thread.Users {
+		roster[u.FBID] = User{Name: u.Username, ImgSrc: u.ProfilePicURL}
+	}
+	resolve := func(fbid string) User {
+		if u, ok := roster[fbid]; ok {
+			return u
+		}
+		return self
 	}
 
 	var watermark int64
@@ -469,15 +532,23 @@ func extractDMThread(body string) (chat DMChat, ok bool) {
 			continue // no shortcode -> can't prefetch
 		}
 
+		var reactions []User
+		for _, r := range msg.Reactions {
+			u := resolve(r.SenderFBID)
+			u.Reaction = r.Reaction
+			reactions = append(reactions, u)
+		}
+
 		chat.Entries = append(chat.Entries, dmReelEntry{
 			PK:        xma.TargetID,
 			Code:      m[1],
 			MessageID: msg.MessageID,
 			TargetURL: xma.TargetURL,
-			Sender: Friend{
+			Sender: User{
 				Name:   msg.Sender.UserDict.Username,
 				ImgSrc: msg.Sender.UserDict.ProfilePicURL,
 			},
+			Reactions: reactions,
 		})
 	}
 

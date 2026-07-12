@@ -12,7 +12,7 @@ const sharePfpCellHeight = 3
 // SharePanel encapsulates the share modal UI state and rendering
 type SharePanel struct {
 	isOpen   bool
-	friends  []backend.Friend
+	friends  []backend.User
 	cursor   int // which friend is highlighted
 	scroll   int // first visible friend index
 	selected map[int]bool
@@ -56,7 +56,7 @@ func (sp *SharePanel) Close() {
 
 // SetFriends sets the friend list and loads their profile pics.
 // Friends with any empty fields are filtered out.
-func (sp *SharePanel) SetFriends(friends []backend.Friend) {
+func (sp *SharePanel) SetFriends(friends []backend.User) {
 	filtered := friends[:0:0]
 	for _, f := range friends {
 		if f.Name != "" && f.ImgSrc != "" && f.ImgPath != "" {
