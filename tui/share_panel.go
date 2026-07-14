@@ -18,7 +18,7 @@ type SharePanel struct {
 	selected map[int]bool
 
 	// Image state
-	pfps map[int]*player.PFP
+	pfps map[int]*player.Img
 
 	// cached for scroll calculations
 	visibleCount int
@@ -69,7 +69,7 @@ func (sp *SharePanel) SetFriends(friends []backend.User) {
 
 // loadPfps loads profile pic images from disk
 func (sp *SharePanel) loadPfps() {
-	sp.pfps = make(map[int]*player.PFP)
+	sp.pfps = make(map[int]*player.Img)
 
 	for i, f := range sp.friends {
 		if f.ImgPath == "" {

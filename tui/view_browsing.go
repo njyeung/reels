@@ -463,7 +463,7 @@ func (m *Model) startPlayback(index int) tea.Cmd {
 		if err != nil {
 			return videoErrorMsg{err}
 		}
-		var pfp *player.PFP
+		var pfp *player.Img
 		if pfpPath != "" {
 			if loaded, err := player.LoadPFP(pfpPath); err == nil {
 				loaded.ResizeToCells(2)
@@ -757,7 +757,7 @@ func (m *Model) floatingPfpSlots() []player.ImageSlot {
 
 // iconForType resolves a floating-context type to its fixed badge icon. Reactor
 // items don't go through here — their badge is an EmojiBadge (see reactionItems).
-func iconForType(floatingType string) *player.PFP {
+func iconForType(floatingType string) *player.Img {
 	switch floatingType {
 	case backend.FloatingTypeReposted:
 		return player.RepostIcon()

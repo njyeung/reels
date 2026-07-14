@@ -26,12 +26,18 @@ func (cp *ChatsPanel) IsOpen() bool {
 	return cp.isOpen
 }
 
-// Open opens the panel with the given chat list.
+// Open opens the panel with the given chat list. Fully-seen chats are
+// dropped so the cursor can only reach entries that are rendered.
 func (cp *ChatsPanel) Open(chats []backend.DMChat) {
 	cp.isOpen = true
 	cp.cursor = 0
 	cp.scroll = 0
-	cp.chats = chats
+	cp.chats = nil
+	for _, chat := range chats {
+		if chat.UnseenCount() > 0 {
+			cp.chats = append(cp.chats, chat)
+		}
+	}
 }
 
 func (cp *ChatsPanel) Close() {
@@ -94,9 +100,6 @@ func (cp *ChatsPanel) View(width, height int, padding string) string {
 
 	for i := cp.scroll; i < len(cp.chats) && i-cp.scroll < availableLines; i++ {
 		chat := cp.chats[i]
-		if chat.UnseenCount() == 0 {
-			continue
-		}
 		countLabel := fmt.Sprintf("  (%d)", chat.UnseenCount())
 		var line string
 		if i == cp.cursor {

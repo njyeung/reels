@@ -21,13 +21,13 @@ var emojiFS embed.FS
 // Unbounded with no eviction
 var (
 	emojiMu    sync.Mutex
-	emojiCache = map[string]*PFP{}
+	emojiCache = map[string]*Img{}
 )
 
 // EmojiBadge returns the decoded Twemoji badge for a reaction emoji, or nil if
 // the emoji isn't in the embedded set. Result is memoized. Callers must still
 // invoke ResizeToCells before rendering, exactly like the icon singletons.
-func EmojiBadge(reaction string) *PFP {
+func EmojiBadge(reaction string) *Img {
 	if reaction == "" {
 		return nil
 	}
@@ -44,7 +44,7 @@ func EmojiBadge(reaction string) *PFP {
 	return pfp
 }
 
-func decodeEmoji(reaction string) *PFP {
+func decodeEmoji(reaction string) *Img {
 	data, err := emojiFS.ReadFile("emojis/" + emojiFilename(reaction) + ".png")
 	if err != nil {
 		return nil
@@ -53,7 +53,7 @@ func decodeEmoji(reaction string) *PFP {
 	if err != nil {
 		return nil
 	}
-	return &PFP{src: img}
+	return &Img{src: img}
 }
 
 // emojiFilename maps a reaction emoji to its Twemoji codepoint filename (without extension):

@@ -21,22 +21,22 @@ var (
 	sentPFP   = decodeIcon(sentPNG)
 )
 
-// HeartIcon returns the embedded heart badge as a decoded PFP.
-// Callers must still invoke ResizeToCells before rendering.
-func HeartIcon() *PFP { return heartPFP }
+// HeartIcon returns the embedded heart badge. Callers must invoke ResizeToCells
+// before rendering.
+func HeartIcon() *Img { return heartPFP }
 
-// RepostIcon returns the embedded repost badge as a decoded PFP.
-// Callers must still invoke ResizeToCells before rendering.
-func RepostIcon() *PFP { return repostPFP }
+// RepostIcon returns the embedded repost badge. Callers must invoke ResizeToCells
+// before rendering.
+func RepostIcon() *Img { return repostPFP }
 
-// SentIcon returns the embedded sent badge as a decoded PFP.
-// Callers must still invoke ResizeToCells before rendering.
-func SentIcon() *PFP { return sentPFP }
+// SentIcon returns the embedded sent badge. Callers must invoke ResizeToCells
+// before rendering.
+func SentIcon() *Img { return sentPFP }
 
-func decodeIcon(data []byte) *PFP {
+func decodeIcon(data []byte) *Img {
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return nil
 	}
-	return &PFP{src: img}
+	return &Img{src: img, circular: true}
 }

@@ -24,7 +24,7 @@ type (
 	videoErrorMsg    struct{ err error }
 	videoReadyMsg    struct {
 		index    int
-		pfp      *player.PFP
+		pfp      *player.Img
 		floating []floatingItem
 	}
 	selfReactedMsg       struct{ index int }
@@ -46,8 +46,8 @@ type (
 // The sender/repost/like context pfps carry a fixed icon badge
 // Chat-mode reactors carry their reaction emoji.
 type floatingItem struct {
-	pfp   *player.PFP // reactor/sender pfp
-	badge *player.PFP // RepostIcon/HeartIcon/SentIcon, or EmojiBadge(reaction)
+	pfp   *player.Img // reactor/sender pfp
+	badge *player.Img // RepostIcon/HeartIcon/SentIcon, or EmojiBadge(reaction)
 }
 
 // State represents the app state
@@ -124,7 +124,7 @@ type Model struct {
 
 	hud HUD
 
-	reelPFP  *player.PFP
+	reelPFP  *player.Img
 	floating []floatingItem
 
 	version         string
