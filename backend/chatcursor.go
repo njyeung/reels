@@ -3,6 +3,7 @@ package backend
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -147,8 +148,15 @@ func (cc *ChatCursor) SyncTo(index int) error {
 
 	cc.mu.Lock()
 	cc.cursor = index - 1
-	target := chat.Entries[index-1].TargetURL
+	entry := chat.Entries[index-1]
+	target := entry.TargetURL
 	cc.mu.Unlock()
+
+	var reactions []string
+	for _, r := range entry.Reactions {
+		reactions = append(reactions, r.Name+":"+r.Reaction)
+	}
+	slog.Info("chat reel", "index", index, "pk", entry.PK, "reactions", reactions)
 
 	allSeen, _ := cc.dm.MarkSeen(cc.threadKey, index)
 	if allSeen {

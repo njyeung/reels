@@ -267,10 +267,12 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if emoji == "" {
 			return m, nil
 		}
-		go m.backend.ReactToCurrent(emoji)
 		m.react.Close()
 		m.closePanelLayout()
-		return m, nil
+		if m.currentReel == nil {
+			return m, nil
+		}
+		return m, m.reactToCurrent(emoji, m.currentReel.Index)
 
 	// Share select takes priority over other keys when share panel is open
 	case m.share.IsOpen() && slices.Contains(config.KeysSelect, key):
@@ -468,14 +470,9 @@ func (m *Model) startPlayback(index int) tea.Cmd {
 				pfp = loaded
 			}
 		}
-		// In chat mode, the sender's pfp (downloaded during inbox
-		// materialization) joins the floating pfps
-		if sender, ok := m.backend.ChatSender(index); ok && sender.ImgPath != "" {
-			floatingFiles = append(floatingFiles, backend.FloatingPfpFile{Path: sender.ImgPath, Type: backend.FloatingTypeSent})
-		}
 
-		floatingPfps := make([]*player.PFP, 0, len(floatingFiles))
-		floatingTypes := make([]string, 0, len(floatingFiles))
+		// friend heart/like/repost floating pfp
+		floating := make([]floatingItem, 0, len(floatingFiles))
 		for _, f := range floatingFiles {
 			if f.Path == "" {
 				continue
@@ -485,14 +482,17 @@ func (m *Model) startPlayback(index int) tea.Cmd {
 				continue
 			}
 			loaded.ResizeToCells(3)
-			floatingPfps = append(floatingPfps, loaded)
-			floatingTypes = append(floatingTypes, f.Type)
+			floating = append(floating, floatingItem{pfp: loaded, badge: iconForType(f.Type)})
 		}
+
+		// chat mode reactions
+		floating = append(floating, m.chatFloating(index)...)
+
 		if err := m.player.Play(videoPath); err != nil {
 			return videoErrorMsg{err}
 		}
 
-		return videoReadyMsg{index: index, pfp: pfp, floatingPfps: floatingPfps, floatingTypes: floatingTypes}
+		return videoReadyMsg{index: index, pfp: pfp, floating: floating}
 	}
 }
 
@@ -518,6 +518,17 @@ func (m Model) queueShareReset() tea.Cmd {
 	return tea.Tick(1*time.Second, func(t time.Time) tea.Msg {
 		return shareResetMsg{}
 	})
+}
+
+// reactToCurrent sends the reaction off the update loop (the GraphQL mutation is
+// slow), then reports back so the reactor's own pfp can be added/updated live.
+// ReactToCurrent's MarkReacted runs synchronously before the network call, so
+// ChatReactions is already fresh when selfReactedMsg is handled.
+func (m Model) reactToCurrent(emoji string, index int) tea.Cmd {
+	return func() tea.Msg {
+		m.backend.ReactToCurrent(emoji)
+		return selfReactedMsg{index: index}
+	}
 }
 
 func (m Model) sendShare() tea.Cmd {
@@ -690,11 +701,12 @@ func (m *Model) updateImages() {
 	}
 }
 
-// floatingPfpSlots scatters floating-context reaction pfps (friend reposts/likes)
-// across the bottom-right quarter of the reel. Seeded by the reel's PK so the
-// layout is stable across resizes, panel toggles, and re-navigation.
+// floatingPfpSlots scatters floating pfps (friend reposts/likes, the DM sender,
+// and chat-mode reactors) across the bottom-right quarter of the reel, each with
+// its badge overlaid. Seeded by the reel's PK so the layout is stable across
+// resizes, panel toggles, and re-navigation.
 func (m *Model) floatingPfpSlots() []player.ImageSlot {
-	if len(m.floatingPfps) == 0 || m.currentReel == nil {
+	if len(m.floating) == 0 || m.currentReel == nil {
 		return nil
 	}
 
@@ -714,9 +726,9 @@ func (m *Model) floatingPfpSlots() []player.ImageSlot {
 	seed := h.Sum64()
 	rng := rand.New(rand.NewPCG(seed, seed^0x9E3779B97F4A7C15))
 
-	slots := make([]player.ImageSlot, 0, len(m.floatingPfps)*2)
-	for i, p := range m.floatingPfps {
-		if p == nil {
+	slots := make([]player.ImageSlot, 0, len(m.floating)*2)
+	for _, item := range m.floating {
+		if item.pfp == nil {
 			continue
 		}
 		dr := 0
@@ -729,29 +741,68 @@ func (m *Model) floatingPfpSlots() []player.ImageSlot {
 		}
 		row := quadRow + dr
 		col := quadCol + dc
-		slots = append(slots, player.ImageSlot{Img: p, Row: row, Col: col})
+		slots = append(slots, player.ImageSlot{Img: item.pfp, Row: row, Col: col})
 
-		var badge *player.PFP
-		if i < len(m.floatingTypes) {
-			switch m.floatingTypes[i] {
-			case backend.FloatingTypeReposted:
-				badge = player.RepostIcon()
-			case backend.FloatingTypeLiked:
-				badge = player.HeartIcon()
-			case backend.FloatingTypeSent:
-				badge = player.SentIcon()
-			}
-		}
-		if badge != nil {
-			badge.ResizeToCells(2)
+		if item.badge != nil {
+			item.badge.ResizeToCells(2)
 			slots = append(slots, player.ImageSlot{
-				Img: badge,
+				Img: item.badge,
 				Row: row + 2,
 				Col: col + 3,
 			})
 		}
 	}
 	return slots
+}
+
+// iconForType resolves a floating-context type to its fixed badge icon. Reactor
+// items don't go through here — their badge is an EmojiBadge (see reactionItems).
+func iconForType(floatingType string) *player.PFP {
+	switch floatingType {
+	case backend.FloatingTypeReposted:
+		return player.RepostIcon()
+	case backend.FloatingTypeLiked:
+		return player.HeartIcon()
+	case backend.FloatingTypeSent:
+		return player.SentIcon()
+	}
+	return nil
+}
+
+// chatFloating builds a chat-mode reel's whole floating set at 1-based index:
+//  1. the friend who sent the reel, with the Sent badge
+//  2. everyone who reacted, each with their emoji badge
+//
+// Returns nil outside chat mode. Reactors are sorted by name so slot positions stay stable on refresh.
+func (m *Model) chatFloating(index int) []floatingItem {
+	var items []floatingItem
+
+	if sender, ok := m.backend.ChatSender(index); ok && sender.ImgPath != "" {
+		if pfp, err := player.LoadPFP(sender.ImgPath); err == nil {
+			pfp.ResizeToCells(3)
+			items = append(items, floatingItem{pfp: pfp, badge: player.SentIcon()})
+		}
+	}
+
+	// Clone before sorting since ChatReactions returns the backend's own slice
+	reactors, _ := m.backend.ChatReactions(index)
+	reactors = slices.Clone(reactors)
+	slices.SortFunc(reactors, func(a, b backend.User) int {
+		return strings.Compare(a.Name, b.Name)
+	})
+	for _, r := range reactors {
+		if r.ImgPath == "" {
+			continue
+		}
+		pfp, err := player.LoadPFP(r.ImgPath)
+		if err != nil {
+			continue
+		}
+		pfp.ResizeToCells(3)
+		items = append(items, floatingItem{pfp: pfp, badge: player.EmojiBadge(r.Reaction)})
+	}
+
+	return items
 }
 
 func copyToClipboard(text string) {

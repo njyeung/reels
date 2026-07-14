@@ -12,8 +12,7 @@ type dmState struct {
 	mu    sync.RWMutex
 	chats []DMChat
 
-	// self is the viewer's own identity. The thread roster (users[]) excludes
-	// the viewer, so it's captured separately via SetSelf. Empty until resolved.
+	// self is the viewer's own identity. Captured separately via SetSelf. Empty until resolved.
 	selfMu sync.RWMutex
 	self   User
 
@@ -43,7 +42,7 @@ type dmReelEntry struct {
 	TargetURL string // permalink the DM window navigates to for seen-state
 	Seen      bool   // user has seen this entry
 	Sender    User   // who shared the reel
-	Reactions []User // reactors (name + pfp + emoji), incl. the viewer's own
+	Reactions []User // reactors (name + pfp + emoji)
 }
 
 // UnseenCount returns how many of the chat's entries haven't been seen yet.

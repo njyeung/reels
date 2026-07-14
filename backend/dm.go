@@ -198,6 +198,7 @@ func (b *ChromeBackend) resolveSelf(ctx context.Context) {
 		return
 	}
 
+	// Get uuid from cookies
 	var id string
 	if err := chromedp.Run(ctx, chromedp.ActionFunc(func(c context.Context) error {
 		cookies, err := network.GetCookies().Do(c)
@@ -215,6 +216,7 @@ func (b *ChromeBackend) resolveSelf(ctx context.Context) {
 		return
 	}
 
+	// graphql request to get user info using uuid
 	vars := map[string]any{
 		"id":                       id,
 		"enable_integrity_filters": true,
@@ -244,10 +246,12 @@ func (b *ChromeBackend) resolveSelf(ctx context.Context) {
 		return
 	}
 
+	// materialize self User
 	self := User{Name: resp.Data.User.Username, ImgSrc: resp.Data.User.ProfilePicURL}
 	if data := fetchURLsHTTP([]string{self.ImgSrc}); len(data) == 1 && data[0] != nil {
 		self.ImgPath = b.cacheDMPfp(fmt.Sprintf("dmpfp_%s.jpg", self.Name), data[0])
 	}
+
 	b.dm.SetSelf(self)
 }
 

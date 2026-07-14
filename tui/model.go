@@ -23,11 +23,11 @@ type (
 	backendEventMsg  backend.Event
 	videoErrorMsg    struct{ err error }
 	videoReadyMsg    struct {
-		index         int
-		pfp           *player.PFP
-		floatingPfps  []*player.PFP
-		floatingTypes []string
+		index    int
+		pfp      *player.PFP
+		floating []floatingItem
 	}
+	selfReactedMsg       struct{ index int }
 	musicTickMsg         struct{}
 	shareResetMsg        struct{}
 	shareSentMsg         struct{}
@@ -39,6 +39,16 @@ type (
 	loadingScrollTickMsg struct{}
 	loadingFadeTickMsg   struct{}
 )
+
+// floatingItem is a pfp that floats in the reel's bottom-right quadrant with a
+// badge overlaid, similar in theory to instagram's floating items.
+//
+// The sender/repost/like context pfps carry a fixed icon badge
+// Chat-mode reactors carry their reaction emoji.
+type floatingItem struct {
+	pfp   *player.PFP // reactor/sender pfp
+	badge *player.PFP // RepostIcon/HeartIcon/SentIcon, or EmojiBadge(reaction)
+}
 
 // State represents the app state
 type state int
@@ -114,9 +124,8 @@ type Model struct {
 
 	hud HUD
 
-	reelPFP       *player.PFP
-	floatingPfps  []*player.PFP
-	floatingTypes []string
+	reelPFP  *player.PFP
+	floating []floatingItem
 
 	version         string
 	updateAvailable string
@@ -274,8 +283,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.reelPFP != nil {
 			m.reelPFP.ResizeToCells(2)
 		}
-		for _, p := range m.floatingPfps {
-			p.ResizeToCells(3)
+		for _, item := range m.floating {
+			if item.pfp != nil {
+				item.pfp.ResizeToCells(3)
+			}
 		}
 		if m.share.IsOpen() {
 			m.share.ResizePfps()
@@ -446,11 +457,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case videoReadyMsg:
 		m.status = statusNone
 		m.reelPFP = msg.pfp
-		m.floatingPfps = msg.floatingPfps
-		m.floatingTypes = msg.floatingTypes
+		m.floating = msg.floating
 		m.updateVideoPosition()
 		m.updateImages()
 		go m.prefetch(msg.index)
+		return m, nil
+
+	case selfReactedMsg:
+		if m.currentReel != nil && m.currentReel.Index == msg.index {
+			m.floating = m.chatFloating(msg.index)
+			m.updateImages()
+		}
 		return m, nil
 
 	case videoErrorMsg:
