@@ -39,7 +39,7 @@ const (
 These are used in two places:
 
 - **`processReelResponse()`** (`backend/graphql.go`): parses the response. Routed to by matching `xdt_api__v1__clips__home__connection_v2` in `processFeedGraphQLBody()` / `processDMGraphQLBody()`.
-- **`prefetchReel()`** (`backend/dm.go`, ~line 128): builds a replay via `newGraphQLRequest(..., clipsDocID, clipsFriendlyName, readEndpoint, vars)`.
+- **`prefetchReel()`** (`backend/dm.go`): builds a replay via `newGraphQLRequest(..., clipsDocID, clipsFriendlyName, readEndpoint, vars)`.
 
 Note the clips query uses the **read endpoint** (`https://www.instagram.com/graphql/query`), selected by `readEndpoint` in `newGraphQLRequest()`.
 

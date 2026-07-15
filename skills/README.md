@@ -15,4 +15,9 @@ You don't need Claude Code to contribute. These just automate what would otherwi
 
 ## Available skills
 
-- **update-comments**: update the comments load + pagination GraphQL constants in `backend/graphql.go`.
+Each targets a different Instagram GraphQL query. All of them live in `backend/graphql.go` and share the `expectedAppID` (`x-ig-app-id`) constant.
+
+- **update-comments**: the comments load + pagination constants (`initialCommentsDocID`, `paginationDocID`). Comments logic lives in `backend/comments.go`.
+- **update-clips**: the reels/clips feed constants (`clipsDocID`), used by passive feed capture and chat-mode reel prefetch.
+- **update-reactions**: the DM message-reaction mutation constants (`reactionDocID`), used when reacting to a friend's shared reel.
+- **update-profile**: the profile-page constants (`profileDocID`), used to resolve the viewer's own identity so their reactions show an avatar.

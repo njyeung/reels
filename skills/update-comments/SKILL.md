@@ -30,14 +30,14 @@ const (
     initialCommentsFriendlyName = "..."  // fb_api_req_friendly_name for initial load
     paginationDocID             = "..."  // doc_id for pagination requests
     paginationFriendlyName      = "..."  // fb_api_req_friendly_name for pagination
-    expectedAppID               = "..."  // x-ig-app-id header value
+    expectedAppID               = "..."  // x-ig-app-id header value (shared across all queries)
 )
 ```
 
-These are checked in two places:
+The comments logic itself lives in `backend/comments.go` (the constants stay in `backend/graphql.go`). The constants are checked in two places, both in `comments.go`:
 
-- **`validateCommentsRequest()`** (lines ~199-228): Validates intercepted initial comments requests against `initialCommentsDocID`, `initialCommentsFriendlyName`, and `expectedAppID`. Also checks that `lsd` and `fb_dtsg` tokens exist. Returns false if anything is off — pagination is silently disabled.
-- **`FetchMoreComments()`** (lines ~258-373): Builds pagination requests using `paginationDocID`, `paginationFriendlyName`, and `expectedAppID`.
+- **`validateCommentsRequest()`** (`backend/comments.go`): Validates intercepted initial comments requests against `initialCommentsDocID`, `initialCommentsFriendlyName`, and `expectedAppID`. Also checks that `lsd` and `fb_dtsg` tokens exist. Returns false if anything is off — pagination is silently disabled.
+- **`FetchMoreComments()`** (`backend/comments.go`): Builds pagination requests using `paginationDocID`, `paginationFriendlyName`, and `expectedAppID`.
 
 ## How to identify what changed
 
@@ -71,7 +71,7 @@ Triggered by scrolling to the bottom of the comments list on Instagram's web UI.
 
 ### 1. Read current constants
 
-Read `backend/graphql.go` lines 18-24 to get the current values.
+Read the constants block in `backend/graphql.go` (the `initialCommentsDocID` / `initialCommentsFriendlyName` / `paginationDocID` / `paginationFriendlyName` / `expectedAppID` lines).
 
 ### 2. Parse what the user provided
 
@@ -110,15 +110,15 @@ If the user didn't provide headers, ask specifically for the `x-ig-app-id` heade
 
 ### 5. Apply changes
 
-Update only the constants that changed in `backend/graphql.go`. The constants are on lines 18-24. Use the Edit tool to update individual lines — do not rewrite the entire file.
+Update only the constants that changed in `backend/graphql.go`. Use the Edit tool to update individual lines — do not rewrite the entire file.
 
 ### 6. Check for structural changes
 
 Beyond the constants, Instagram could also change:
 
-- **Response JSON structure**: The `commentsResponse` struct (lines ~27-58) maps the GraphQL response. If comments stop appearing entirely (not just pagination), the response shape may have changed. The key field is `xdt_api__v1__media__media_id__comments__connection` — if this string changes, `processResponse()` won't even route to comments processing.
-- **Reels response structure**: Similarly, `xdt_api__v1__clips__home__connection_v2` routes reel responses. If reels stop loading, this may have changed.
-- **Pagination variables**: `FetchMoreComments()` builds a specific variables JSON (lines ~286-294) with fields like `after`, `first`, `media_id`, `sort_order`. If pagination returns empty results despite correct doc_id, these field names may have changed.
+- **Response JSON structure**: The `commentsResponse` struct (`backend/comments.go`) maps the GraphQL response. If comments stop appearing entirely (not just pagination), the response shape may have changed. The key field is `xdt_api__v1__media__media_id__comments__connection` — if this string changes, the fetch-interception routers (`processFeedGraphQLBody()` / `processDMGraphQLBody()` in `backend/graphql.go`) won't even route to comments processing.
+- **Reels response structure**: Similarly, `xdt_api__v1__clips__home__connection_v2` routes reel responses. If reels stop loading, this may have changed (see the `update-clips` skill).
+- **Pagination variables**: `FetchMoreComments()` (`backend/comments.go`) builds a specific variables JSON with fields like `after`, `first`, `media_id`, `sort_order`. If pagination returns empty results despite correct doc_id, these field names may have changed.
 
 If the user reports issues beyond "pagination doesn't work", investigate these structural changes by asking the user to share the full response body.
 
