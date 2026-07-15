@@ -492,12 +492,6 @@ func (d *dmState) extractDMThread(body string) (chat DMChat, ok bool) {
 	for _, u := range thread.Users {
 		roster[u.FBID] = User{Name: u.Username, ImgSrc: u.ProfilePicURL}
 	}
-	resolve := func(fbid string) User {
-		if u, ok := roster[fbid]; ok {
-			return u
-		}
-		return self
-	}
 
 	var watermark int64
 	for _, r := range thread.ReadReceipts {
@@ -537,8 +531,13 @@ func (d *dmState) extractDMThread(body string) (chat DMChat, ok bool) {
 		}
 
 		var reactions []User
+		var reactedEmoji string
 		for _, r := range msg.Reactions {
-			u := resolve(r.SenderFBID)
+			u, inRoster := roster[r.SenderFBID]
+			if !inRoster {
+				u = self
+				reactedEmoji = r.Reaction
+			}
 			u.Reaction = r.Reaction
 			reactions = append(reactions, u)
 		}
@@ -552,7 +551,8 @@ func (d *dmState) extractDMThread(body string) (chat DMChat, ok bool) {
 				Name:   msg.Sender.UserDict.Username,
 				ImgSrc: msg.Sender.UserDict.ProfilePicURL,
 			},
-			Reactions: reactions,
+			Reactions:    reactions,
+			ReactedEmoji: reactedEmoji,
 		})
 	}
 

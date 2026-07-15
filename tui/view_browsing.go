@@ -521,10 +521,11 @@ func (m Model) queueShareReset() tea.Cmd {
 	})
 }
 
-// reactToCurrent sends the reaction off the update loop (the GraphQL mutation is
-// slow), then reports back so the reactor's own pfp can be added/updated live.
-// ReactToCurrent's MarkReacted runs synchronously before the network call, so
-// ChatReactions is already fresh when selfReactedMsg is handled.
+// reactToCurrent sends the reaction toggle off the update loop (the GraphQL
+// mutation is slow), then reports back so the reactor's own pfp can be added,
+// updated, or removed live. ReactToCurrent's ToggleReact runs synchronously
+// before the network call, so ChatReactions is already fresh when
+// selfReactedMsg is handled.
 func (m Model) reactToCurrent(emoji string, index int) tea.Cmd {
 	return func() tea.Msg {
 		m.backend.ReactToCurrent(emoji)

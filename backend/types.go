@@ -180,7 +180,8 @@ type Backend interface {
 	// the viewer's own). ok is false when not in chat mode or out of range.
 	ChatReactions(index int) ([]User, bool)
 
-	// ReactToCurrent sends emoji as a DM reel reaction
+	// ReactToCurrent toggles emoji as the viewer's DM reel reaction: repeating
+	// the current reaction removes it, any other emoji replaces it
 	ReactToCurrent(emoji string) error
 }
 

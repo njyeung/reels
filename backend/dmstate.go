@@ -36,13 +36,14 @@ type DMChat struct {
 // prefetched by Code (the shortcode) into b.reels; the DM window navigates to
 // TargetURL in the background to update seen-state.
 type dmReelEntry struct {
-	PK        string // reel media PK (xma.target_id); keys b.reels + the cursor
-	Code      string // shortcode parsed from TargetURL; keys the prefetch replay
-	MessageID string // mid.$… message id; keys the reaction mutation
-	TargetURL string // permalink the DM window navigates to for seen-state
-	Seen      bool   // user has seen this entry
-	Sender    User   // who shared the reel
-	Reactions []User // reactors (name + pfp + emoji)
+	PK           string // reel media PK (xma.target_id); keys b.reels + the cursor
+	Code         string // shortcode parsed from TargetURL; keys the prefetch replay
+	MessageID    string // mid.$… message id; keys the reaction mutation
+	TargetURL    string // permalink the DM window navigates to for seen-state
+	Seen         bool   // user has seen this entry
+	Sender       User   // who shared the reel
+	Reactions    []User // reactors (name + pfp + emoji)
+	ReactedEmoji string // the viewer's own reaction emoji; "" when not reacted
 }
 
 // UnseenCount returns how many of the chat's entries haven't been seen yet.
@@ -154,10 +155,14 @@ func (d *dmState) Chat(threadKey string) DMChat {
 	return DMChat{}
 }
 
-// MarkReacted optimistically records the viewer's emoji reaction on the chat's
-// index-th entry (as a self User, replacing any prior self reaction) and returns
-// the ids the reaction mutation needs. Errors if the chat or index is invalid.
-func (d *dmState) MarkReacted(threadKey string, index int, emoji string) (messageID, threadFBID string, err error) {
+// ToggleReact optimistically toggles the viewer's emoji reaction on the chat's index-th entry.
+//
+// repeating the current reaction removes it (status "deleted"),
+// any other emoji records it as a self User, replacing any prior self reaction.
+// Returns the ids and reaction_status the mutation needs.
+//
+// Errors if the chat or index is invalid.
+func (d *dmState) ToggleReact(threadKey string, index int, emoji string) (messageID, threadFBID, status string, err error) {
 	self := d.Self()
 
 	d.mu.Lock()
@@ -169,10 +174,23 @@ func (d *dmState) MarkReacted(threadKey string, index int, emoji string) (messag
 			continue
 		}
 		if index < 1 || index > len(c.Entries) {
-			return "", "", fmt.Errorf("MarkReacted: index out of range")
+			return "", "", "", fmt.Errorf("ToggleReact: index out of range")
 		}
 		e := &c.Entries[index-1]
 
+		if e.ReactedEmoji == emoji {
+			// same emoji again -> unreact
+			e.ReactedEmoji = ""
+			for j := range e.Reactions {
+				if e.Reactions[j].Name == self.Name {
+					e.Reactions = append(e.Reactions[:j], e.Reactions[j+1:]...)
+					break
+				}
+			}
+			return e.MessageID, c.ThreadFBID, "deleted", nil
+		}
+
+		e.ReactedEmoji = emoji
 		mine := self
 		mine.Reaction = emoji
 		replaced := false
@@ -187,9 +205,9 @@ func (d *dmState) MarkReacted(threadKey string, index int, emoji string) (messag
 			e.Reactions = append(e.Reactions, mine)
 		}
 
-		return e.MessageID, c.ThreadFBID, nil
+		return e.MessageID, c.ThreadFBID, "created", nil
 	}
-	return "", "", fmt.Errorf("MarkReacted: Unknown chat")
+	return "", "", "", fmt.Errorf("ToggleReact: Unknown chat")
 }
 
 // MarkSeen marks the chat's index-th entry as seen and reports whether every

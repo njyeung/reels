@@ -3,7 +3,6 @@ package backend
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sync"
 	"time"
 
@@ -88,23 +87,29 @@ func (cc *ChatCursor) Current() (int, string, error) {
 	return cc.cursor + 1, chat.Entries[cc.cursor].PK, nil
 }
 
+// ReactToCurrent toggles emoji as the viewer's reaction on the current entry.
+//
+// ToggleReact decides between "created" and "deleted", and the mutation carries
+// the emoji either way.
 func (cc *ChatCursor) ReactToCurrent(emoji string) error {
 	index, _, err := cc.Current()
 	if err != nil {
 		return err
 	}
 
-	messageID, threadID, err := cc.dm.MarkReacted(cc.ThreadKey(), index, emoji)
+	// mutate internal data structure
+	messageID, threadID, status, err := cc.dm.ToggleReact(cc.ThreadKey(), index, emoji)
 	if err != nil {
 		return err
 	}
 
+	// Make graphql request to instagram
 	vars := map[string]interface{}{
 		"input": map[string]interface{}{
 			"emoji":           emoji,
 			"item_id":         "",
 			"message_id":      messageID,
-			"reaction_status": "created",
+			"reaction_status": status,
 			"thread_id":       threadID,
 		},
 	}
@@ -151,12 +156,6 @@ func (cc *ChatCursor) SyncTo(index int) error {
 	entry := chat.Entries[index-1]
 	target := entry.TargetURL
 	cc.mu.Unlock()
-
-	var reactions []string
-	for _, r := range entry.Reactions {
-		reactions = append(reactions, r.Name+":"+r.Reaction)
-	}
-	slog.Info("chat reel", "index", index, "pk", entry.PK, "reactions", reactions)
 
 	allSeen, _ := cc.dm.MarkSeen(cc.threadKey, index)
 	if allSeen {
