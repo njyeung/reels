@@ -84,8 +84,6 @@ func (m Model) viewBrowsing() string {
 	}
 
 	// Build status content without padding first
-	// Calculate width of everything after the heart separately, since ❤️ (U+2764+FE0F)
-	// has a variation selector that runewidth miscounts as width 1 instead of 2
 	shareIcon := ""
 	if m.currentReel != nil && m.currentReel.CanViewerReshare {
 		if !m.shareConfirmed {
@@ -100,9 +98,8 @@ func (m Model) viewBrowsing() string {
 		saveIcon = "⚑"
 	}
 
-	rest := " " + likeCount + "   💬 " + commentCount + "   " + repostIcon + " " + repostCount + "   " + saveIcon + "   " + shareIcon + "   " + playPauseIcon + "   " + muteIcon
-	statusContent := heartIcon + rest
-	contentWidth := 2 + lipgloss.Width(rest)
+	statusContent := heartIcon + " " + likeCount + "   💬 " + commentCount + "   " + repostIcon + " " + repostCount + "   " + saveIcon + "   " + shareIcon + "   " + playPauseIcon + "   " + muteIcon
+	contentWidth := lipgloss.Width(statusContent)
 
 	if contentWidth < videoWidthChars-1 {
 		statusContent = statusContent + strings.Repeat(" ", videoWidthChars-1-contentWidth)
