@@ -23,9 +23,10 @@ type (
 	backendEventMsg  backend.Event
 	videoErrorMsg    struct{ err error }
 	videoReadyMsg    struct {
-		index    int
-		pfp      *player.Img
-		floating []floatingItem
+		index           int
+		pfp             *player.Img
+		contextFloating []floatingItem // reel-context pfps from the download (repost/like/sent)
+		chatFloating    []floatingItem // chat-mode sender + reactor pfps
 	}
 	selfReactedMsg       struct{ index int }
 	musicTickMsg         struct{}
@@ -124,8 +125,12 @@ type Model struct {
 
 	hud HUD
 
-	reelPFP  *player.Img
-	floating []floatingItem
+	reelPFP *player.Img
+	// reelFloating holds the reel-context pfps from the download; floating is
+	// what's rendered: reelFloating plus the chat-mode sender/reactor pfps,
+	// which get rebuilt whenever the user reacts.
+	reelFloating []floatingItem
+	floating     []floatingItem
 
 	version         string
 	updateAvailable string
@@ -355,6 +360,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(
 			m.loadCurrentReel,
 			m.listenForEvents,
+			m.musicTick(),
 		)
 
 	case loginRequiredMsg:
@@ -411,7 +417,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.currentReel = msg.info
 		m.status = statusNone
 		m.musicScrollOffset = 0
-		return m, tea.Batch(m.startPlayback(msg.info.Index), m.musicTick())
+		return m, m.startPlayback(msg.info.Index)
 
 	case musicTickMsg:
 		if m.currentReel != nil && m.currentReel.Music != nil {
@@ -457,7 +463,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case videoReadyMsg:
 		m.status = statusNone
 		m.reelPFP = msg.pfp
-		m.floating = msg.floating
+		m.reelFloating = msg.contextFloating
+		m.floating = append(slices.Clone(msg.contextFloating), msg.chatFloating...)
 		m.updateVideoPosition()
 		m.updateImages()
 		go m.prefetch(msg.index)
@@ -465,7 +472,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case selfReactedMsg:
 		if m.currentReel != nil && m.currentReel.Index == msg.index {
-			m.floating = m.chatFloating(msg.index)
+			m.floating = append(slices.Clone(m.reelFloating), m.chatFloating(msg.index)...)
 			m.updateImages()
 		}
 		return m, nil

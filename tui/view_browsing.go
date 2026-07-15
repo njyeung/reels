@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"hash/fnv"
+	"math"
 	"math/rand/v2"
 	"os/exec"
 	goruntime "runtime"
@@ -485,14 +486,14 @@ func (m *Model) startPlayback(index int) tea.Cmd {
 			floating = append(floating, floatingItem{pfp: loaded, badge: iconForType(f.Type)})
 		}
 
-		// chat mode reactions
-		floating = append(floating, m.chatFloating(index)...)
+		// chat mode sender + reactions
+		chat := m.chatFloating(index)
 
 		if err := m.player.Play(videoPath); err != nil {
 			return videoErrorMsg{err}
 		}
 
-		return videoReadyMsg{index: index, pfp: pfp, floating: floating}
+		return videoReadyMsg{index: index, pfp: pfp, contextFloating: floating, chatFloating: chat}
 	}
 }
 
@@ -703,8 +704,10 @@ func (m *Model) updateImages() {
 
 // floatingPfpSlots scatters floating pfps (friend reposts/likes, the DM sender,
 // and chat-mode reactors) across the bottom-right quarter of the reel, each with
-// its badge overlaid. Seeded by the reel's PK so the layout is stable across
-// resizes, panel toggles, and re-navigation.
+// its badge overlaid. Positions are picked with Mitchell's best-candidate
+// sampling so the scatter looks random but spreads out instead of stacking.
+// Seeded by the reel's PK so the layout is stable across resizes, panel
+// toggles, and re-navigation.
 func (m *Model) floatingPfpSlots() []player.ImageSlot {
 	if len(m.floating) == 0 || m.currentReel == nil {
 		return nil
@@ -726,21 +729,49 @@ func (m *Model) floatingPfpSlots() []player.ImageSlot {
 	seed := h.Sum64()
 	rng := rand.New(rand.NewPCG(seed, seed^0x9E3779B97F4A7C15))
 
+	// For each pfp, draw several random positions and keep the one farthest
+	// from the pfps already placed.
+	const candidates = 10
+	type offset struct{ dr, dc int }
+	placed := make([]offset, 0, len(m.floating))
+
 	slots := make([]player.ImageSlot, 0, len(m.floating)*2)
 	for _, item := range m.floating {
 		if item.pfp == nil {
 			continue
 		}
-		dr := 0
-		if maxRowOff > 0 {
-			dr = rng.IntN(maxRowOff + 1)
+
+		tries := candidates
+		if len(placed) == 0 {
+			tries = 1 // nothing to spread away from yet
 		}
-		dc := 0
-		if maxColOff > 0 {
-			dc = rng.IntN(maxColOff + 1)
+		var best offset
+		bestScore := -1
+		for range tries {
+			var cand offset
+			if maxRowOff > 0 {
+				cand.dr = rng.IntN(maxRowOff + 1)
+			}
+			if maxColOff > 0 {
+				cand.dc = rng.IntN(maxColOff + 1)
+			}
+			// Chebyshev distance to the nearest placed pfp, in footprint
+			// units cross-multiplied to stay integer: pfpCellW*pfpCellH or
+			// more means the footprints don't overlap at all.
+			nearest := math.MaxInt
+			for _, p := range placed {
+				dRow := max(cand.dr-p.dr, p.dr-cand.dr) * pfpCellW
+				dCol := max(cand.dc-p.dc, p.dc-cand.dc) * pfpCellH
+				nearest = min(nearest, max(dRow, dCol))
+			}
+			if nearest > bestScore {
+				best, bestScore = cand, nearest
+			}
 		}
-		row := quadRow + dr
-		col := quadCol + dc
+		placed = append(placed, best)
+
+		row := quadRow + best.dr
+		col := quadCol + best.dc
 		slots = append(slots, player.ImageSlot{Img: item.pfp, Row: row, Col: col})
 
 		if item.badge != nil {
