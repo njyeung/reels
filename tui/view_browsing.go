@@ -12,6 +12,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 	"github.com/njyeung/reels/backend"
 	"github.com/njyeung/reels/player"
@@ -101,11 +102,11 @@ func (m Model) viewBrowsing() string {
 
 	rest := " " + likeCount + "   💬 " + commentCount + "   " + repostIcon + " " + repostCount + "   " + saveIcon + "   " + shareIcon + "   " + playPauseIcon + "   " + muteIcon
 	statusContent := heartIcon + rest
-	contentWidth := 2 + runewidth.StringWidth(rest)
+	contentWidth := 2 + lipgloss.Width(rest)
 
 	if contentWidth < videoWidthChars-1 {
 		statusContent = statusContent + strings.Repeat(" ", videoWidthChars-1-contentWidth)
-		if m.status == statusLoading || m.comments.loading {
+		if m.status == statusLoading || m.comments.loading || m.backend.IsSyncing() {
 			runes := []rune(statusContent)
 			statusContent = string(runes[:len(runes)-1]) + m.spinner.View()
 		}
@@ -521,11 +522,8 @@ func (m Model) queueShareReset() tea.Cmd {
 	})
 }
 
-// reactToCurrent sends the reaction toggle off the update loop (the GraphQL
-// mutation is slow), then reports back so the reactor's own pfp can be added,
-// updated, or removed live. ReactToCurrent's ToggleReact runs synchronously
-// before the network call, so ChatReactions is already fresh when
-// selfReactedMsg is handled.
+// reactToCurrent sends the reaction toggle, then reports back so the
+// reactor's own pfp can be added, updated, or removed live.
 func (m Model) reactToCurrent(emoji string, index int) tea.Cmd {
 	return func() tea.Msg {
 		m.backend.ReactToCurrent(emoji)
