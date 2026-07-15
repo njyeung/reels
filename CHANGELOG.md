@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.4.0]
+- Reacting to reels that your friends have shared in dms (default x to open and X to close panel)
+- Display your and your friends' reactions as floating twemojis on chat reels
+- Shows a blue border and your friend's pfp while viewing their shared reels
+- Fetch DM reel URLs directly from Instagram's API instead of waiting for the page to load, speed improves UX
+- Revisit a friend's DM page when all shared reels have been seen
+- Fix: memory leak on macOS, shared memory metadata map grew unbounded
+- Fix: music ticker speed doubled on every reel load
+- Fix: show loading spinner while syncing
+- Fix: DM panel could open before shared reels were ready
+
 ## [1.3.3]
 - Fix: Instagram frontend change breaks reel navigation (domPK() ancestor traversal off by 1)
 - Update loading animation
