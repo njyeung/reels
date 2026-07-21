@@ -165,6 +165,7 @@ func NewModel(userDataDir, logDir, cacheDir, configDir string, output io.Writer,
 	p.SetSize(playerWidth, playerHeight)
 	p.SetVolume(settings.Volume)
 	p.SetUseShm(shm.ShmSupported())
+	p.SetRetinaScale(settings.RetinaScale)
 
 	b := backend.NewChromeBackend(userDataDir, cacheDir, configDir)
 

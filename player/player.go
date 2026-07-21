@@ -14,11 +14,12 @@ import (
 type AVPlayer struct {
 	renderer *KittyRenderer
 
-	output io.Writer
-	width  int
-	height int
-	useShm bool
-	border color.Color // nil = none
+	output      io.Writer
+	width       int
+	height      int
+	useShm      bool
+	retinaScale int         // HiDPI pixel-density factor (2 on macOS retina, else 1)
+	border      color.Color // nil = none
 
 	playing        atomic.Bool
 	paused         atomic.Bool
@@ -52,15 +53,16 @@ func (p *AVPlayer) sessionConfig() sessionConfig {
 	}
 
 	return sessionConfig{
-		width:    p.width,
-		height:   p.height,
-		renderer: p.renderer,
-		muted:    p.muted.Load(),
-		volume:   p.volume.Load().(float64),
-		useShm:   p.useShm,
-		videoRow: p.videoRow,
-		videoCol: p.videoCol,
-		border:   p.border,
+		width:       p.width,
+		height:      p.height,
+		renderer:    p.renderer,
+		muted:       p.muted.Load(),
+		volume:      p.volume.Load().(float64),
+		useShm:      p.useShm,
+		videoRow:    p.videoRow,
+		videoCol:    p.videoCol,
+		retinaScale: p.retinaScale,
+		border:      p.border,
 	}
 }
 
@@ -93,7 +95,8 @@ func (p *AVPlayer) withSession(fn func(*playSession)) {
 // NewAVPlayer creates a new FFmpeg-based player
 func NewAVPlayer() *AVPlayer {
 	p := &AVPlayer{
-		output: os.Stdout,
+		output:      os.Stdout,
+		retinaScale: 1,
 	}
 	p.volume.Store(float64(1))
 	return p
@@ -278,6 +281,16 @@ func (p *AVPlayer) SetUseShm(useShm bool) {
 	p.configMu.Lock()
 	defer p.configMu.Unlock()
 	p.useShm = useShm
+}
+
+// SetRetinaScale sets the pixel-density factor for the video progress bar and border
+func (p *AVPlayer) SetRetinaScale(scale int) {
+	p.configMu.Lock()
+	defer p.configMu.Unlock()
+	if scale < 1 {
+		scale = 1
+	}
+	p.retinaScale = scale
 }
 
 // SetVolume sets the volume (0.0–1.0)

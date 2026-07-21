@@ -28,8 +28,8 @@ type playSession struct {
 
 	// Cell positions for image placement (1-indexed)
 	videoRow, videoCol int
-
-	border *[3]uint8 // nil = none
+	retinaScale        int
+	border             *[3]uint8 // nil = none
 
 	audioPktCh chan *audioPacket
 	videoPktCh chan *astiav.Packet
@@ -56,15 +56,16 @@ type audioPacket struct {
 }
 
 type sessionConfig struct {
-	width    int
-	height   int
-	videoRow int
-	videoCol int
-	renderer *KittyRenderer
-	muted    bool
-	volume   float64
-	useShm   bool
-	border   color.Color
+	width       int
+	height      int
+	videoRow    int
+	videoCol    int
+	retinaScale int
+	renderer    *KittyRenderer
+	muted       bool
+	volume      float64
+	useShm      bool
+	border      color.Color
 }
 
 func newPlaySession(url string, cfg sessionConfig) (*playSession, error) {
@@ -109,15 +110,16 @@ func newPlaySession(url string, cfg sessionConfig) (*playSession, error) {
 	}
 
 	session := &playSession{
-		demuxer:    demuxer,
-		audio:      audio,
-		video:      video,
-		renderer:   renderer,
-		videoRow:   cfg.videoRow,
-		videoCol:   cfg.videoCol,
-		stopCh:     make(chan struct{}),
-		seekCh:     make(chan float64, 1),
-		videoPktCh: make(chan *astiav.Packet, 60),
+		demuxer:     demuxer,
+		audio:       audio,
+		video:       video,
+		renderer:    renderer,
+		videoRow:    cfg.videoRow,
+		videoCol:    cfg.videoCol,
+		retinaScale: cfg.retinaScale,
+		stopCh:      make(chan struct{}),
+		seekCh:      make(chan float64, 1),
+		videoPktCh:  make(chan *astiav.Packet, 60),
 	}
 	if audio != nil {
 		session.audioPktCh = make(chan *audioPacket, 128)
@@ -486,28 +488,40 @@ func (s *playSession) videoRenderLoop(p *AVPlayer) error {
 	return nil
 }
 
-// drawProgressBar overlays a thin progress bar on the bottom 4 rows of the frame.
+// drawProgressBar overlays a thin, semi-transparent progress bar near the bottom of the frame.
 func (s *playSession) drawProgressBar(frame *Frame) {
+	barHeight := 3 * max(s.retinaScale, 1)
+
 	duration := s.demuxer.Duration()
 	if duration <= 0 {
 		return
 	}
 	indent := 0
 	if s.border != nil {
-		indent = 4
+		indent = 3 * max(s.retinaScale, 1) // sit just above the bottom border
 	}
 	barWidthPx := int(frame.PTS / duration * float64(frame.Width))
 	bpp := 3
 	stride := frame.Width * bpp
-	for row := frame.Height - 4 - indent; row < frame.Height-indent; row++ {
+
+	const alpha = 150 // random opacity number
+	blend := func(bg, fg byte) byte {
+		return byte((int(bg)*(255-alpha) + int(fg)*alpha + 127) / 255)
+	}
+
+	for row := frame.Height - barHeight - indent; row < frame.Height-indent; row++ {
 		offset := row * stride
 		for x := 0; x < frame.Width; x++ {
 			px := offset + x*bpp
+			var fr, fg, fb byte
 			if x < barWidthPx {
-				frame.RGB[px], frame.RGB[px+1], frame.RGB[px+2] = 215, 215, 215
+				fr, fg, fb = 215, 215, 215
 			} else {
-				frame.RGB[px], frame.RGB[px+1], frame.RGB[px+2] = 90, 90, 90
+				fr, fg, fb = 90, 90, 90
 			}
+			frame.RGB[px] = blend(frame.RGB[px], fr)
+			frame.RGB[px+1] = blend(frame.RGB[px+1], fg)
+			frame.RGB[px+2] = blend(frame.RGB[px+2], fb)
 		}
 	}
 }
@@ -527,7 +541,7 @@ func (s *playSession) drawBorder(frame *Frame) {
 	if border == nil {
 		return
 	}
-	const thickness = 4
+	thickness := 3 * max(s.retinaScale, 1)
 	const bpp = 3
 	r, g, b := border[0], border[1], border[2]
 	stride := frame.Width * bpp
