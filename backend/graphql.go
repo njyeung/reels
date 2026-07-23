@@ -20,6 +20,9 @@ const (
 	paginationDocID        = "26864966453197043"
 	paginationFriendlyName = "PolarisPostCommentsPaginationQuery"
 
+	childCommentsDocID        = "27130774429946606"
+	childCommentsFriendlyName = "PolarisPostChildCommentsQuery"
+
 	clipsDocID        = "36825039943776829"
 	clipsFriendlyName = "PolarisClipsTabDesktopPaginationQuery"
 

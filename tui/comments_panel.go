@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/njyeung/reels/backend"
@@ -12,7 +13,8 @@ type CommentsPanel struct {
 	// Display state
 	isOpen   bool
 	comments []backend.Comment
-	scroll   int
+	cursor   int  // which comment is highlighted
+	scroll   int  // first visible comment index
 	loading  bool // true while fetching more comments
 
 	// Which reel these comments belong to
@@ -43,6 +45,7 @@ func (cp *CommentsPanel) IsOpen() bool {
 // Open opens the comments panel for the given reel
 func (cp *CommentsPanel) Open(reelPK string) {
 	cp.isOpen = true
+	cp.cursor = 0
 	cp.scroll = 0
 
 	// If opening a different reel, clear comments
@@ -59,6 +62,7 @@ func (cp *CommentsPanel) Open(reelPK string) {
 // Preserves reelPK and comments for potential reopening
 func (cp *CommentsPanel) Close() {
 	cp.isOpen = false
+	cp.cursor = 0
 	cp.scroll = 0
 	// Note: we intentionally keep reelPK, comments, and gifAnims
 	// so they can be restored if the user reopens for the same reel
@@ -68,22 +72,10 @@ func (cp *CommentsPanel) Close() {
 func (cp *CommentsPanel) Clear() {
 	cp.isOpen = false
 	cp.comments = make([]backend.Comment, 0)
+	cp.cursor = 0
 	cp.scroll = 0
 	cp.reelPK = ""
 	cp.gifAnims = nil
-}
-
-// SetComments sets the comments to display
-// Returns true if the comments were accepted (belong to current reel)
-func (cp *CommentsPanel) SetComments(reelPK string, comments []backend.Comment) bool {
-	// Only accept comments if they belong to the reel we're viewing
-	if !cp.isOpen || cp.reelPK != reelPK {
-		return false
-	}
-
-	cp.comments = comments
-	cp.loadGifs()
-	return true
 }
 
 // loadGifs loads GIF animations from disk for comments that have a GifPath
@@ -123,25 +115,36 @@ func (cp *CommentsPanel) ResizeGifs() {
 	cp.loadGifs()
 }
 
-// maxScroll computes the maximum scroll index: the first comment index such
-// that all comments from that index to the end exactly fill (or overflow) the
-// panel. This prevents scrolling past the point where the panel would have
-// empty space at the bottom.
-func (cp *CommentsPanel) maxScroll() int {
+// commentLines returns how many terminal lines comment i occupies: one line for
+// the username plus either the reserved GIF rows or the wrapped text lines.
+func (cp *CommentsPanel) commentLines(i int) int {
+	comment := cp.comments[i]
+	lines := 1 // username
+	if _, ok := cp.gifAnims[comment.PK]; ok {
+		lines += cp.gifCellHeight
+	} else {
+		_, _, wrapWidth := cp.replyIndent(comment.ParentCommentID != "")
+		lines += len(wrapByWidth(strings.ReplaceAll(comment.Text, "\n", " "), wrapWidth))
+	}
+	if cp.showsReplyHint(i) {
+		lines++ // "↳ N replies" hint
+	}
+	return lines
+}
+
+// firstFullyVisible returns the smallest scroll index such that comment `end` is
+// the last comment fully visible in the panel. Walking up from `end`, we stop
+// before the comment that would overflow, so the panel never leaves empty space
+// below `end`.
+func (cp *CommentsPanel) firstFullyVisible(end int) int {
 	availableLines := cp.height - 2
 	if availableLines < 1 || len(cp.comments) == 0 {
 		return 0
 	}
 
 	lines := 0
-	for i := len(cp.comments) - 1; i >= 0; i-- {
-		comment := cp.comments[i]
-		if _, ok := cp.gifAnims[comment.PK]; ok {
-			lines += 1 + cp.gifCellHeight
-		} else {
-			wrapped := wrapByWidth(strings.ReplaceAll(comment.Text, "\n", " "), cp.width-2)
-			lines += 1 + len(wrapped)
-		}
+	for i := end; i >= 0; i-- {
+		lines += cp.commentLines(i)
 		if lines == availableLines {
 			return i
 		}
@@ -152,18 +155,137 @@ func (cp *CommentsPanel) maxScroll() int {
 	return 0
 }
 
-// Scroll moves the scroll position by the given delta, clamping to prevent
-// scrolling past the point where the panel would have empty space at the bottom.
-func (cp *CommentsPanel) Scroll(delta int) {
-	newScroll := cp.scroll + delta
-	if newScroll < 0 {
-		newScroll = 0
+// MoveCursor moves the cursor by delta, auto-scrolling to keep it fully visible.
+func (cp *CommentsPanel) MoveCursor(delta int) {
+	if len(cp.comments) == 0 {
+		return
+	}
+	cp.cursor += delta
+
+	cp.clampCursor()
+	cp.clampScroll()
+}
+
+// SetComments sets the comments to display
+// Returns true if the comments were accepted (belong to current reel)
+func (cp *CommentsPanel) SetComments(reelPK string, comments []backend.Comment) bool {
+	if !cp.isOpen || cp.reelPK != reelPK {
+		return false
 	}
 
-	if max := cp.maxScroll(); newScroll > max {
-		newScroll = max
+	var cursorPK, scrollPK string
+	if len(cp.comments) > 0 {
+		cursorPK = cp.comments[cp.cursor].PK
+		scrollPK = cp.comments[cp.scroll].PK
 	}
-	cp.scroll = newScroll
+
+	cp.comments = comments
+	cp.loadGifs()
+
+	// Follow each anchor to its new position.
+	if i, ok := indexOfPK(comments, cursorPK); ok {
+		cp.cursor = i
+	}
+	if i, ok := indexOfPK(comments, scrollPK); ok {
+		cp.scroll = i
+	}
+
+	cp.clampCursor()
+	cp.clampScroll()
+
+	return true
+}
+
+// indexOfPK returns the index of the comment with the given PK and whether it
+// was found.
+func indexOfPK(comments []backend.Comment, pk string) (int, bool) {
+	if pk == "" {
+		return 0, false
+	}
+	for i := range comments {
+		if comments[i].PK == pk {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+// clampCursor pulls cursor into [0, len-1], or 0 when there are no comments.
+func (cp *CommentsPanel) clampCursor() {
+	if cp.cursor > len(cp.comments)-1 {
+		cp.cursor = len(cp.comments) - 1
+	}
+	if cp.cursor < 0 {
+		cp.cursor = 0
+	}
+}
+
+// clampScroll pulls scroll into [firstFullyVisible(cursor), cursor] so the
+// cursor's comment is always fully on screen.
+func (cp *CommentsPanel) clampScroll() {
+	if cp.cursor < cp.scroll {
+		cp.scroll = cp.cursor
+	}
+	if minScroll := cp.firstFullyVisible(cp.cursor); cp.scroll < minScroll {
+		cp.scroll = minScroll
+	}
+}
+
+// CursorIndex returns the index of the comment currently under the cursor.
+func (cp *CommentsPanel) CursorIndex() int {
+	return cp.cursor
+}
+
+// CursorComment returns the comment currently under the cursor, or false if the
+// list is empty.
+func (cp *CommentsPanel) CursorComment() (backend.Comment, bool) {
+	if cp.cursor < 0 || cp.cursor >= len(cp.comments) {
+		return backend.Comment{}, false
+	}
+	return cp.comments[cp.cursor], true
+}
+
+// RepliesLoaded reports whether the given parent comment's replies are currently
+// spliced into the list.
+func (cp *CommentsPanel) RepliesLoaded(parentPK string) bool {
+	for i := range cp.comments {
+		if cp.comments[i].ParentCommentID == parentPK {
+			return true
+		}
+	}
+	return false
+}
+
+// showsReplyHint reports whether comment i should render a "↳ N replies" hint:
+// it's a top-level comment with replies that haven't been loaded yet. Loaded
+// replies are always contiguous right after their parent.
+func (cp *CommentsPanel) showsReplyHint(i int) bool {
+	c := cp.comments[i]
+	if c.ParentCommentID != "" || c.ChildCommentCount == 0 {
+		return false
+	}
+	if i+1 < len(cp.comments) && cp.comments[i+1].ParentCommentID == c.PK {
+		return false
+	}
+	return true
+}
+
+// replyIndent returns the leading padding for a comment's username line, its
+// text lines, and the wrap width, distinguishing replies (extra indent) from
+// top-level comments.
+func (cp *CommentsPanel) replyIndent(isReply bool) (userIndent, textIndent string, wrapWidth int) {
+	if isReply {
+		return "  ", "    ", cp.width - 4
+	}
+	return "", "  ", cp.width - 2
+}
+
+// replyHintText renders the "↳ N replies" hint label for a parent comment.
+func replyHintText(n int) string {
+	if n == 1 {
+		return "↳ 1 reply"
+	}
+	return fmt.Sprintf("↳ %d replies", n)
 }
 
 // View renders the comments panel
@@ -194,9 +316,14 @@ func (cp *CommentsPanel) View(width, height int, padding string) string {
 	linesUsed := 0
 	for i := cp.scroll; i < len(cp.comments) && linesUsed < availableLines; i++ {
 		comment := cp.comments[i]
+		userIndent, textIndent, wrapWidth := cp.replyIndent(comment.ParentCommentID != "")
 
-		// Username with verified badge
-		userPart := pink200.Bold(true).Render("@" + comment.Username)
+		// Username with verified badge; underline the author under the cursor
+		usernameStyle := pink200.Bold(true)
+		if i == cp.cursor {
+			usernameStyle = usernameStyle.Underline(true)
+		}
+		userPart := usernameStyle.Render("@" + comment.Username)
 		if comment.IsVerified {
 			userPart += " " + blue500.Render("✓")
 		}
@@ -211,7 +338,7 @@ func (cp *CommentsPanel) View(width, height int, padding string) string {
 		}
 
 		// Write username
-		b.WriteString(padding + userPart + "\n")
+		b.WriteString(padding + userIndent + userPart + "\n")
 		linesUsed++
 
 		// GIF comment: reserve blank lines for the animation
@@ -220,14 +347,20 @@ func (cp *CommentsPanel) View(width, height int, padding string) string {
 			linesUsed += cp.gifCellHeight
 		} else {
 			// Write comment text lines
-			commentLines := wrapByWidth(strings.ReplaceAll(comment.Text, "\n", " "), width-2)
+			commentLines := wrapByWidth(strings.ReplaceAll(comment.Text, "\n", " "), wrapWidth)
 			for _, line := range commentLines {
 				if linesUsed >= availableLines {
 					break
 				}
-				b.WriteString(padding + "  " + renderWithMentions(line, gray100) + "\n")
+				b.WriteString(padding + textIndent + renderWithMentions(line, gray100) + "\n")
 				linesUsed++
 			}
+		}
+
+		// Reply hint under a top-level comment whose replies aren't loaded yet
+		if cp.showsReplyHint(i) && linesUsed < availableLines {
+			b.WriteString(padding + "  " + gray400.Render(replyHintText(comment.ChildCommentCount)) + "\n")
+			linesUsed++
 		}
 	}
 
@@ -254,6 +387,14 @@ func (cp *CommentsPanel) VisibleGifSlots(width, height, baseRow, baseCol int) []
 	for i := cp.scroll; i < len(cp.comments) && linesUsed < availableLines; i++ {
 		comment := cp.comments[i]
 
+		// Replies are indented, matching View's layout.
+		wrapWidth := width - 2
+		gifCol := baseCol + 2
+		if comment.ParentCommentID != "" {
+			wrapWidth = wrapWidth - 2
+			gifCol = gifCol + 2
+		}
+
 		// For GIF comments, require room for username + full cp.gifCellHeight
 		if _, ok := cp.gifAnims[comment.PK]; ok {
 			if linesUsed+1+cp.gifCellHeight > availableLines {
@@ -268,17 +409,17 @@ func (cp *CommentsPanel) VisibleGifSlots(width, height, baseRow, baseCol int) []
 		currentRow++
 
 		if anim, ok := cp.gifAnims[comment.PK]; ok {
-			// GIF starts right under the username, indented 2 cells
+			// GIF starts right under the username, indented under the text
 			slots = append(slots, player.GifSlot{
 				Anim: anim,
 				Row:  currentRow,
-				Col:  baseCol + 2,
+				Col:  gifCol,
 			})
 			linesUsed += cp.gifCellHeight
 			currentRow += cp.gifCellHeight
 		} else {
 			// Advance past text lines
-			commentLines := wrapByWidth(strings.ReplaceAll(comment.Text, "\n", " "), width-2)
+			commentLines := wrapByWidth(strings.ReplaceAll(comment.Text, "\n", " "), wrapWidth)
 			for range commentLines {
 				if linesUsed >= availableLines {
 					break
@@ -286,6 +427,12 @@ func (cp *CommentsPanel) VisibleGifSlots(width, height, baseRow, baseCol int) []
 				linesUsed++
 				currentRow++
 			}
+		}
+
+		// Reply hint occupies one line, matching View.
+		if cp.showsReplyHint(i) && linesUsed < availableLines {
+			linesUsed++
+			currentRow++
 		}
 	}
 
@@ -297,13 +444,9 @@ func (cp *CommentsPanel) SetLoading(loading bool) {
 	cp.loading = loading
 }
 
-// ShouldFetchMore returns true if the scroll position is near the visual bottom
+// ShouldFetchMore returns true if the cursor is near the end of the loaded comments.
 func (cp *CommentsPanel) ShouldFetchMore() bool {
-	threshold := cp.maxScroll() - 5
-	if threshold < 0 {
-		threshold = 0
-	}
-	return cp.scroll >= threshold
+	return len(cp.comments) > 0 && cp.cursor >= len(cp.comments)-5
 }
 
 // CanAccept returns true if the panel can accept comments for the given reel

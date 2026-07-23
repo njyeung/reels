@@ -141,6 +141,13 @@ type Backend interface {
 	// FetchMoreComments fetches the next page of comments using stored pagination state
 	FetchMoreComments()
 
+	// FetchChildComments fetches the replies for the given top-level comment and
+	// splices them into the open reel's comment list right after the parent.
+	FetchChildComments(parentPK string)
+
+	// CollapseChildComments removes the loaded replies of the given parent comment.
+	CollapseChildComments(parentPK string)
+
 	// Download downloads a reel video, creator profile pic, and any floating-
 	// context item pfps (reposts/likes from friends) to the cache directory.
 	Download(index int) (videoPath string, pfpPath string, floatingPfps []FloatingPfpFile, err error)
@@ -270,6 +277,7 @@ type Comment struct {
 	PK                string // this is a pointer to the reel PK
 	CreatedAt         int64
 	ChildCommentCount int
+	ParentCommentID   string
 	ProfilePicUrl     string
 	Username          string
 	IsVerified        bool
