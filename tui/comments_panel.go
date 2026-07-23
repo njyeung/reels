@@ -321,7 +321,7 @@ func (cp *CommentsPanel) View(width, height int, padding string) string {
 		// Username with verified badge; underline the author under the cursor
 		usernameStyle := pink200.Bold(true)
 		if i == cp.cursor {
-			usernameStyle = usernameStyle.Underline(true)
+			usernameStyle = yellow500.Bold(true).Underline(true)
 		}
 		userPart := usernameStyle.Render("@" + comment.Username)
 		if comment.IsVerified {
@@ -352,14 +352,14 @@ func (cp *CommentsPanel) View(width, height int, padding string) string {
 				if linesUsed >= availableLines {
 					break
 				}
-				b.WriteString(padding + textIndent + renderWithMentions(line, gray100) + "\n")
+				b.WriteString(padding + textIndent + renderWithMentions(line, gray50) + "\n")
 				linesUsed++
 			}
 		}
 
 		// Reply hint under a top-level comment whose replies aren't loaded yet
 		if cp.showsReplyHint(i) && linesUsed < availableLines {
-			b.WriteString(padding + "  " + gray400.Render(replyHintText(comment.ChildCommentCount)) + "\n")
+			b.WriteString(padding + "    " + gray400.Render(replyHintText(comment.ChildCommentCount)) + "\n")
 			linesUsed++
 		}
 	}
