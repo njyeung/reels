@@ -41,7 +41,7 @@ The comments logic itself lives in `backend/comments.go` (the constants stay in 
 
 ## How to identify what changed
 
-There are **two requests** to check. The user must provide data for both.
+There are **three requests** that carry rotatable `doc_id`s. The first two (initial load + pagination) are a pair — you need both to fix "load more". The third (child comments / "view replies") is independent and only affects expanding replies.
 
 ### Request 1: Initial comments load
 
@@ -66,6 +66,17 @@ Triggered by scrolling to the bottom of the comments list on Instagram's web UI.
 |---|---|---|
 | `doc_id` | `paginationDocID` | `FetchMoreComments()` |
 | `fb_api_req_friendly_name` | `paginationFriendlyName` | `FetchMoreComments()` |
+
+### Request 3: Child comments (view replies)
+
+Triggered by opening a reel's comments, then clicking **"View all X replies"** under a comment that has replies. That click fires the child-comments query — the easiest way to capture a fresh `doc_id` for this constant. Look for these fields in the POST body:
+
+| Field | Constant | Where used |
+|---|---|---|
+| `doc_id` | `childCommentsDocID` | `FetchChildComments()` (`backend/comments.go`) |
+| `fb_api_req_friendly_name` | `childCommentsFriendlyName` | `FetchChildComments()` (`backend/comments.go`) |
+
+The variables carry `parent_comment_id` and `media_id` (plus null `after`/`before`/`first`/`last`/`is_chronological`). This request is independent of the initial/pagination pair — it only affects expanding replies, so the user may not always provide it.
 
 ## Step-by-step process
 
@@ -128,6 +139,7 @@ If the user reports issues beyond "pagination doesn't work", investigate these s
 |---|---|
 | Comments load but can't load more | `initialCommentsDocID` changed (validation fails, pagination disabled) |
 | Pagination request returns errors | `paginationDocID` or `paginationFriendlyName` changed |
+| "View all X replies" won't expand | `childCommentsDocID` or `childCommentsFriendlyName` changed |
 | No comments load at all | Response structure changed (`xdt_api__v1__media__media_id__comments__connection` renamed) |
 | No reels load at all | Response structure changed (`xdt_api__v1__clips__home__connection_v2` renamed) |
 | Everything fails | `expectedAppID` changed |
