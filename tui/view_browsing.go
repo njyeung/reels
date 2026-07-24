@@ -281,6 +281,20 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.share.ToggleSelected()
 		go m.backend.ToggleShareFriend(m.share.CursorIndex())
 		return m, nil
+
+	// Comments select loads (or collapses) the replies of the comment under the cursor
+	case m.comments.IsOpen() && slices.Contains(config.KeysSelect, key):
+		c, ok := m.comments.CursorComment()
+		if !ok || c.ParentCommentID != "" || c.ChildCommentCount == 0 {
+			return m, nil // not a top-level comment with replies
+		}
+		if m.comments.RepliesLoaded(c.PK) {
+			go m.backend.CollapseChildComments(c.PK)
+		} else if !m.comments.loading {
+			m.comments.SetLoading(true)
+			go m.backend.FetchChildComments(c.PK)
+		}
+		return m, nil
 	case slices.Contains(config.KeysNext, key):
 		if m.scrollPanel(1) {
 			return m, nil
@@ -570,7 +584,7 @@ func (m *Model) scrollPanel(direction int) bool {
 		return true
 	}
 	if m.comments.IsOpen() {
-		m.comments.Scroll(direction)
+		m.comments.MoveCursor(direction)
 		m.updateCommentGifs()
 		if direction > 0 && m.currentReel != nil && m.comments.ShouldFetchMore() &&
 			!m.comments.loading && len(m.currentReel.Comments) < m.currentReel.CommentCount {

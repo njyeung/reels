@@ -1,0 +1,201 @@
+{
+    "data": {
+        "xdt_api__v1__media__media_id__comments__parent_comment_id__child_comments__connection": {
+            "edges": [
+                {
+                    "node": {
+                        "pk": "17898880293519931",
+                        "child_comment_count": null,
+                        "restricted_status": null,
+                        "has_translation": null,
+                        "user": {
+                            "pk": "18326184738",
+                            "is_unpublished": false,
+                            "profile_pic_url": "https://scontent-ord5-3.cdninstagram.com/v/t51.2885-19/140831121_230185285258242_5579850873094344848_n.jpg?stp=dst-jpg_s150x150_tt6&_nc_cat=107&ccb=7-5&_nc_sid=f7ccc5&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLnd3dy4xMDE5LkMzIn0%3D&_nc_ohc=DJn_4ePdAAQQ7kNvwETZw5e&_nc_oc=Adri_RIJlqHFa47X5TWGhazqnjutSE_fHGdX_rtZC_CkcFbX4rn7B_3jDi1mqh0-yYMofeHgmjfnu0juvuBfr0e7&_nc_zt=24&_nc_ht=scontent-ord5-3.cdninstagram.com&_nc_ss=7b6a8&oh=00_AQADP43R0mln6l2jmunTdO6jHZjQc2puyMsNvJyMVAzgWA&oe=6A6607CE",
+                            "username": "dave_every_thursday",
+                            "id": "18326184738",
+                            "is_verified": false,
+                            "fbid_v2": "17841418262150773"
+                        },
+                        "has_liked_comment": false,
+                        "text": "",
+                        "giphy_media_info": {
+                            "first_party_cdn_proxied_images": {
+                                "fixed_height": {
+                                    "url": "https://cdn.fbsbx.com/v/t59.2708-21/577797038_724721539961880_8617534129889390609_n.gif?_nc_cat=1&ccb=1-7&_nc_sid=9dcd69&_nc_ohc=cqE4bHYKM10Q7kNvwExKHrc&_nc_oc=AdozLyxVwfsCd1ANSoxavwKMXKvLqCrcioJ8GFKvl1GoxYw4TJ_p9s4SWWI1goymCoUMCV8cAaEx2hrc-wWMPp9l&_nc_zt=7&_nc_ht=cdn.fbsbx.com&_nc_gid=54KXcovl9xRBpPtLLZrBAw&_nc_ss=7b689&oh=03_Q7cD5wGVs-nqxp0gbbg6uYqQjzZ6Bf_KWoZbcpRa6o_I604boA&oe=6A624038"
+                                }
+                            },
+                            "images": {
+                                "fixed_height": {
+                                    "url": "https://cdn.fbsbx.com/v/t59.2708-21/577797038_724721539961880_8617534129889390609_n.gif?_nc_cat=1&ccb=1-7&_nc_sid=9dcd69&_nc_ohc=cqE4bHYKM10Q7kNvwExKHrc&_nc_oc=AdozLyxVwfsCd1ANSoxavwKMXKvLqCrcioJ8GFKvl1GoxYw4TJ_p9s4SWWI1goymCoUMCV8cAaEx2hrc-wWMPp9l&_nc_zt=7&_nc_ht=cdn.fbsbx.com&_nc_gid=54KXcovl9xRBpPtLLZrBAw&_nc_ss=7b689&oh=03_Q7cD5wGVs-nqxp0gbbg6uYqQjzZ6Bf_KWoZbcpRa6o_I604boA&oe=6A624038"
+                                }
+                            },
+                            "id": "901659145838602"
+                        },
+                        "created_at": 1784692000,
+                        "is_edited": false,
+                        "parent_comment_id": "18105996317038191",
+                        "is_covered": false,
+                        "comment_like_count": 10,
+                        "fallback_user_info": null,
+                        "__typename": "XDTCommentDict"
+                    },
+                    "cursor": ""
+                },
+                {
+                    "node": {
+                        "pk": "18110043493979054",
+                        "child_comment_count": null,
+                        "restricted_status": null,
+                        "has_translation": null,
+                        "user": {
+                            "pk": "6251314945",
+                            "is_unpublished": false,
+                            "profile_pic_url": "https://scontent-ord5-3.cdninstagram.com/v/t51.82787-19/572183692_18327639052210946_8423564480066024993_n.jpg?stp=dst-jpg_s150x150_tt6&_nc_cat=107&ccb=7-5&_nc_sid=f7ccc5&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLnd3dy40ODguQzMifQ%3D%3D&_nc_ohc=ODEXubwchiwQ7kNvwFdZnIc&_nc_oc=AdrThEjJQPpGCQ04t2pz_W8ue2N0Ji0JFhwTz6lDjnCxazJj5rlYrtQKeg43MFkjuZeej2QZq72yXFVoM81OttDT&_nc_zt=24&_nc_ht=scontent-ord5-3.cdninstagram.com&_nc_gid=54KXcovl9xRBpPtLLZrBAw&_nc_ss=7b6a8&oh=00_AQDPaPH9ExhsNN80FveWx8E0moIq9nNeSY-r2P-mgO_U8w&oe=6A661CA3",
+                            "username": "toaster_rtx",
+                            "id": "6251314945",
+                            "is_verified": false,
+                            "fbid_v2": "17841406328351414"
+                        },
+                        "has_liked_comment": false,
+                        "text": "@kauff05 play risk of rain",
+                        "giphy_media_info": null,
+                        "created_at": 1784692285,
+                        "is_edited": false,
+                        "parent_comment_id": "18105996317038191",
+                        "is_covered": false,
+                        "comment_like_count": 2,
+                        "fallback_user_info": null,
+                        "__typename": "XDTCommentDict"
+                    },
+                    "cursor": ""
+                },
+                {
+                    "node": {
+                        "pk": "17886240450656135",
+                        "child_comment_count": null,
+                        "restricted_status": null,
+                        "has_translation": null,
+                        "user": {
+                            "pk": "19388001736",
+                            "is_unpublished": false,
+                            "profile_pic_url": "https://scontent-ord5-2.cdninstagram.com/v/t51.75761-19/497290228_18086471089641737_5785556846797821091_n.jpg?stp=dst-jpg_s150x150_tt6&_nc_cat=102&ccb=7-5&_nc_sid=f7ccc5&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLnd3dy4xMDgwLkMzIn0%3D&_nc_ohc=NL5bdOf5FMQQ7kNvwEc_Dhb&_nc_oc=Ado2MwxiuMYz024uXAFMp08U-dimJqjDAUe5ngEc17irjaTj4nkZzamsIcBiwCH8TsAriU4GmiQEgse7xQhKSYW0&_nc_zt=24&_nc_ht=scontent-ord5-2.cdninstagram.com&_nc_gid=54KXcovl9xRBpPtLLZrBAw&_nc_ss=7b6a8&oh=00_AQCECszT2QSOUIcJeB22ILhGpX_WT3YtliKoRprG2HRTug&oe=6A663D18",
+                            "username": "nate_gatez",
+                            "id": "19388001736",
+                            "is_verified": false,
+                            "fbid_v2": "17841419252103500"
+                        },
+                        "has_liked_comment": false,
+                        "text": "",
+                        "giphy_media_info": null,
+                        "created_at": 1784692411,
+                        "is_edited": false,
+                        "parent_comment_id": "18105996317038191",
+                        "is_covered": false,
+                        "comment_like_count": 2,
+                        "fallback_user_info": null,
+                        "__typename": "XDTCommentDict"
+                    },
+                    "cursor": ""
+                },
+                {
+                    "node": {
+                        "pk": "18006164027940048",
+                        "child_comment_count": null,
+                        "restricted_status": null,
+                        "has_translation": null,
+                        "user": {
+                            "pk": "75779069664",
+                            "is_unpublished": false,
+                            "profile_pic_url": "https://scontent-ord5-3.cdninstagram.com/v/t51.82787-19/605801851_17868809397525665_6799359977235830195_n.jpg?stp=dst-jpg_s150x150_tt6&_nc_cat=100&ccb=7-5&_nc_sid=f7ccc5&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLnd3dy4xMDgwLkMzIn0%3D&_nc_ohc=ERXvNvq2kp8Q7kNvwEuVffV&_nc_oc=AdqFkrXX7W6RNVrFD4THbpbctBVg2dBTUyvjqrOYbHep322k1_x8_23jZNBxS3P6kGzOLYSXJ4xuBOIARMiMU7L2&_nc_zt=24&_nc_ht=scontent-ord5-3.cdninstagram.com&_nc_gid=54KXcovl9xRBpPtLLZrBAw&_nc_ss=7b6a8&oh=00_AQD_DfyY9V2Pe8oXmbLgAS4Z6tZq4bduDxAtnLuaEY4zsQ&oe=6A66285E",
+                            "username": "c0dein3witdab3am",
+                            "id": "75779069664",
+                            "is_verified": false,
+                            "fbid_v2": "17841475769942383"
+                        },
+                        "has_liked_comment": false,
+                        "text": "@toaster_rtx i own the 2nd one",
+                        "giphy_media_info": null,
+                        "created_at": 1784693480,
+                        "is_edited": false,
+                        "parent_comment_id": "18105996317038191",
+                        "is_covered": false,
+                        "comment_like_count": 0,
+                        "fallback_user_info": null,
+                        "__typename": "XDTCommentDict"
+                    },
+                    "cursor": ""
+                },
+                {
+                    "node": {
+                        "pk": "18334262782281618",
+                        "child_comment_count": null,
+                        "restricted_status": null,
+                        "has_translation": null,
+                        "user": {
+                            "pk": "35870331222",
+                            "is_unpublished": false,
+                            "profile_pic_url": "https://scontent-ord5-1.cdninstagram.com/v/t51.82787-19/613230449_18078131711195223_7252381019900807409_n.jpg?stp=dst-jpg_s150x150_tt6&_nc_cat=108&ccb=7-5&_nc_sid=f7ccc5&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLnd3dy4xMDgwLkMzIn0%3D&_nc_ohc=8K-9MciYQykQ7kNvwG72q89&_nc_oc=AdpzB4HakbJ6RtUD4dpvxL3sGONXcsgEltwd0I6VzDTs0NG5FaBrD2FA0ZU8BnzI3gPW_MN7lsOOxvcbxzxJvEKe&_nc_zt=24&_nc_ht=scontent-ord5-1.cdninstagram.com&_nc_gid=54KXcovl9xRBpPtLLZrBAw&_nc_ss=7b6a8&oh=00_AQA6rAtg6wMSSmqj1VzKfko5Y7eIS2xbIYCYDztRMsuNmQ&oe=6A660909",
+                            "username": "dembrownies8300",
+                            "id": "35870331222",
+                            "is_verified": false,
+                            "fbid_v2": "17841435856673791"
+                        },
+                        "has_liked_comment": false,
+                        "text": "I just don’t get how the game can be so fire. Risk of Rain 2 on top 🔥",
+                        "giphy_media_info": null,
+                        "created_at": 1784694171,
+                        "is_edited": false,
+                        "parent_comment_id": "18105996317038191",
+                        "is_covered": false,
+                        "comment_like_count": 0,
+                        "fallback_user_info": null,
+                        "__typename": "XDTCommentDict"
+                    },
+                    "cursor": ""
+                },
+                {
+                    "node": {
+                        "pk": "18123216256689624",
+                        "child_comment_count": null,
+                        "restricted_status": null,
+                        "has_translation": null,
+                        "user": {
+                            "pk": "11425643605",
+                            "is_unpublished": false,
+                            "profile_pic_url": "https://scontent-ord5-1.cdninstagram.com/v/t51.82787-19/683775731_18182025517379606_1650095839190785101_n.jpg?stp=dst-jpg_s150x150_tt6&_nc_cat=111&ccb=7-5&_nc_sid=f7ccc5&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLnd3dy4xMDgwLkMzIn0%3D&_nc_ohc=lF_y3sMqlcgQ7kNvwFr2lWb&_nc_oc=AdqzHz5jk6WoAoYVXfQU_CEOL_lKvcr32mP5osbtIe2Sa1Um6nn-uC--xb9dHcT5tOyMhfaNKlqwm9DzDNdHUByD&_nc_zt=24&_nc_ht=scontent-ord5-1.cdninstagram.com&_nc_gid=54KXcovl9xRBpPtLLZrBAw&_nc_ss=7b6a8&oh=00_AQAX43O0hPetbBa4pEEHLYuunEduDwQo2cI5oF8At2OldA&oe=6A66246E",
+                            "username": "santiagokaliath",
+                            "id": "11425643605",
+                            "is_verified": false,
+                            "fbid_v2": "17841411388168205"
+                        },
+                        "has_liked_comment": false,
+                        "text": "@kauff05",
+                        "giphy_media_info": null,
+                        "created_at": 1784695142,
+                        "is_edited": false,
+                        "parent_comment_id": "18105996317038191",
+                        "is_covered": false,
+                        "comment_like_count": 0,
+                        "fallback_user_info": null,
+                        "__typename": "XDTCommentDict"
+                    },
+                    "cursor": ""
+                }
+            ],
+            "page_info": {
+                "end_cursor": null,
+                "has_next_page": false,
+                "has_previous_page": false,
+                "start_cursor": null
+            }
+        }
+    },
+    "extensions": {
+        "server_metadata": {
+            "request_start_time_ms": 1784696502732,
+            "time_at_flush_ms": 1784696503021
+        },
+        "is_final": true
+    }
+}

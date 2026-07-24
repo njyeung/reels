@@ -8,32 +8,38 @@ import (
 	"github.com/chromedp/cdproto/fetch"
 )
 
+// commentNode is one comment as returned by both the top-level comments
+// connection and the child-comments (replies) connection
+type commentNode struct {
+	PK                string `json:"pk"`
+	CreatedAt         int64  `json:"created_at"`
+	ChildCommentCount int    `json:"child_comment_count"`
+	User              struct {
+		IsVerified    bool   `json:"is_verified"`
+		ProfilePicUrl string `json:"profile_pic_url"`
+		Username      string `json:"username"`
+	} `json:"user"`
+	HasLikedComment  bool   `json:"has_liked_comment"`
+	Text             string `json:"text"`
+	CommentLikeCount int    `json:"comment_like_count"`
+	GiphyMediaInfo   struct {
+		FirstPartyCdnProxiedImages struct {
+			FixedHeight struct {
+				Url string `json:"url"`
+			} `json:"fixed_height"`
+		} `json:"first_party_cdn_proxied_images"`
+	} `json:"giphy_media_info"`
+}
+
+type commentEdge struct {
+	Node commentNode `json:"node"`
+}
+
 // commentsResponse represents the xdt_api__v1__media__media_id__comments__connection GraphQL response structure
 type commentsResponse struct {
 	Data struct {
 		Connection struct {
-			Edges []struct {
-				Node struct {
-					PK                string `json:"pk"`
-					CreatedAt         int64  `json:"created_at"`
-					ChildCommentCount int    `json:"child_comment_count"`
-					User              struct {
-						IsVerified    bool   `json:"is_verified"`
-						ProfilePicUrl string `json:"profile_pic_url"`
-						Username      string `json:"username"`
-					} `json:"user"`
-					HasLikedComment  bool   `json:"has_liked_comment"`
-					Text             string `json:"text"`
-					CommentLikeCount int    `json:"comment_like_count"`
-					GiphyMediaInfo   struct {
-						FirstPartyCdnProxiedImages struct {
-							FixedHeight struct {
-								Url string `json:"url"`
-							} `json:"fixed_height"`
-						} `json:"first_party_cdn_proxied_images"`
-					} `json:"giphy_media_info"`
-				} `json:"node"`
-			} `json:"edges"`
+			Edges    []commentEdge `json:"edges"`
 			PageInfo struct {
 				EndCursor   string `json:"end_cursor"`
 				HasNextPage bool   `json:"has_next_page"`
@@ -42,18 +48,27 @@ type commentsResponse struct {
 	} `json:"data"`
 }
 
-// extractComments parses comment edges from a commentsResponse.
-// GIFs (if any) are fetched in parallel via fetchURLsHTTP — the comment GIF
-// CDN (cdn.fbsbx.com) blocks CORS from the instagram.com page context, so
-// chromedp's in-page fetch() returns empty bytes.
-func (b *ChromeBackend) extractComments(resp *commentsResponse) []Comment {
+// childCommentsResponse represents the child-comments (replies) connection
+// returned by PolarisPostChildCommentsQuery. Replies arrive in a single page.
+type childCommentsResponse struct {
+	Data struct {
+		Connection struct {
+			Edges []commentEdge `json:"edges"`
+		} `json:"xdt_api__v1__media__media_id__comments__parent_comment_id__child_comments__connection"`
+	} `json:"data"`
+}
+
+// extractComments builds Comments from comment edges. parentCommentID is set on
+// each result ("" for top-level comments, the parent's pk for replies).
+func (b *ChromeBackend) extractComments(edges []commentEdge, parentCommentID string) []Comment {
 	var comments []Comment
-	for _, edge := range resp.Data.Connection.Edges {
+	for _, edge := range edges {
 		node := edge.Node
 		comments = append(comments, Comment{
 			PK:                node.PK,
 			CreatedAt:         node.CreatedAt,
 			ChildCommentCount: node.ChildCommentCount,
+			ParentCommentID:   parentCommentID,
 			HasLikedComment:   node.HasLikedComment,
 			CommentLikeCount:  node.CommentLikeCount,
 			Text:              node.Text,
@@ -140,7 +155,7 @@ func (b *ChromeBackend) processCommentsResponse(body string, requestPostData str
 		return
 	}
 
-	comments := b.extractComments(&resp)
+	comments := b.extractComments(resp.Data.Connection.Edges, "")
 
 	reelPK := b.comments.GetReelPK()
 	if reelPK != "" {
@@ -219,7 +234,7 @@ func (b *ChromeBackend) FetchMoreComments() {
 		return
 	}
 
-	newComments := b.extractComments(&paginationResp)
+	newComments := b.extractComments(paginationResp.Data.Connection.Edges, "")
 	if len(newComments) > 0 {
 		b.updateReelComments(reelPK, newComments)
 	}
@@ -229,4 +244,62 @@ func (b *ChromeBackend) FetchMoreComments() {
 		paginationResp.Data.Connection.PageInfo.EndCursor,
 		paginationResp.Data.Connection.PageInfo.HasNextPage,
 	)
+}
+
+// FetchChildComments fetches the replies for a top-level comment and splices
+// them into the open reel's comment list right after the parent.
+func (b *ChromeBackend) FetchChildComments(parentPK string) {
+	defer func() {
+		b.events <- Event{Type: EventCommentsCaptured}
+	}()
+
+	p := b.getCommentsPagination()
+	if p == nil || !p.PaginationEnabled || p.RequestTemplate == "" {
+		return
+	}
+	if !b.comments.StartFetch() {
+		return // already fetching
+	}
+	defer b.comments.FinishFetch()
+
+	template := p.RequestTemplate
+	reelPK := b.comments.GetReelPK()
+	if template == "" || reelPK == "" || parentPK == "" {
+		return
+	}
+
+	// Child-comment variables (see PolarisPostChildCommentsQuery).
+	vars := map[string]interface{}{
+		"after":             nil,
+		"before":            nil,
+		"first":             nil,
+		"last":              nil,
+		"media_id":          reelPK,
+		"parent_comment_id": parentPK,
+		"is_chronological":  nil,
+		"__relay_internal__pv__PolarisIsLoggedInrelayprovider": true,
+	}
+	req, err := newGraphQLRequest(b.ctx, template, childCommentsDocID, childCommentsFriendlyName, readEndpoint, vars)
+	if err != nil {
+		return
+	}
+	result, err := execGraphQL(req)
+	if err != nil {
+		return
+	}
+
+	var resp childCommentsResponse
+	if err := json.Unmarshal([]byte(result), &resp); err != nil {
+		return
+	}
+
+	// Drop stale results if the user switched reels while fetching.
+	if b.comments.GetReelPK() != reelPK {
+		return
+	}
+
+	children := b.extractComments(resp.Data.Connection.Edges, parentPK)
+	if len(children) > 0 {
+		b.insertChildComments(reelPK, parentPK, children)
+	}
 }

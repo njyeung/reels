@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/chromedp/cdproto/fetch"
@@ -222,6 +223,33 @@ func (b *ChromeBackend) updateReelComments(pk string, comments []Comment) {
 			r.Comments = comments
 		}
 	})
+}
+
+// insertChildComments splices a parent comment's replies into the reel's comment
+// list immediately after the parent.
+func (b *ChromeBackend) insertChildComments(reelPK, parentPK string, children []Comment) {
+	b.mutateReelByPK(reelPK, func(r *Reel) {
+		idx := slices.IndexFunc(r.Comments, func(c Comment) bool { return c.PK == parentPK })
+		if idx == -1 {
+			return
+		}
+		r.Comments = slices.Insert(r.Comments, idx+1, children...)
+	})
+}
+
+// CollapseChildComments removes the loaded replies of the given parent comment
+// from the open reel's comment list, then emits EventCommentsCaptured.
+func (b *ChromeBackend) CollapseChildComments(parentPK string) {
+	reelPK := b.comments.GetReelPK()
+	if reelPK == "" || parentPK == "" {
+		return
+	}
+	b.mutateReelByPK(reelPK, func(r *Reel) {
+		r.Comments = slices.DeleteFunc(r.Comments, func(c Comment) bool {
+			return c.ParentCommentID == parentPK
+		})
+	})
+	b.events <- Event{Type: EventCommentsCaptured}
 }
 
 // GetTotal returns total number of captured reels
