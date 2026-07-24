@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.1]
+- Enable viewing comment replies (expand a comment to read its replies)
+- Fix: consistent reel border and progress bar on macOS
+- Fix: comment panel colors
+- Fix: Update Instagram comments doc_ids to match new frontend
+
 ## [1.4.0]
 - Reacting to reels that your friends have shared in dms (default x to open and X to close panel)
 - Display your and your friends' reactions as floating twemojis on chat reels
