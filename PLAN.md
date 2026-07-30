@@ -5,7 +5,7 @@ Working plan for the `refactor/framebuffer` branch. Delete this file before merg
 | Phase | Scope | Status |
 | --- | --- | --- |
 | 1 | `tui/screen` package, standalone | **Done** |
-| 2 | `browsingLayout` + `viewBrowsing` painting through a `Screen` | Not started |
+| 2 | `browsingLayout` + `viewBrowsing` painting through a `Screen` | **Done** |
 | 3 | Panels migrated to `Layout(Rect, *Screen)`, one per commit | Not started |
 | 4 | Mouse routing | Not started |
 
@@ -33,7 +33,7 @@ Mouse hit-testing would be a *fourth* copy of each walk. Instead: paint into a 2
 
 `tui/screen` depends only on `github.com/charmbracelet/x/ansi` — not on `tui` or `player` — so it is unit-testable in isolation.
 
-**Coordinates are 0-based throughout**, matching `tea.MouseMsg` and slice indexing. The player's `ImageSlot`/`GifSlot`/`SetVideoPosition` are 1-based; the `+1` happens once, in the reconcile step in `tui`. `TestExtentToPlayerCoordinates` pins that boundary.
+**Coordinates are 0-based throughout**, matching `tea.MouseMsg` and slice indexing. The player's `ImageSlot`/`GifSlot`/`SetVideoPosition` are 1-based; the `+1` happens once, in the reconcile step in `tui`.
 
 ### Cells
 
@@ -61,7 +61,18 @@ func (s *Screen) Reserve(r Rect, obj *Object)
 func (s *Screen) Extents() []Extent   // visible rect per object, after clipping
 func (s *Screen) Hit(x, y int) *Zone  // direct cell index
 func (s *Screen) Render() string      // flatten to ANSI for View()
-func (s *Screen) Dump() string        // plus DumpObjects, DumpZones
+
+// Geometry. A layout is a sequence of splits; the last remainder is whatever
+// is left, which is what replaces deriving each region's height by hand.
+func (r Rect) SplitTop(n int) (top, rest Rect)
+func (r Rect) Row(i int) Rect
+func (r Rect) Indent(n int) Rect
+
+// Text measurement, so a caller deciding what to paint and SetContent clipping
+// it use one width table. All three are SGR-aware passes through x/ansi.
+func StringWidth(str string) int
+func Truncate(str string, width int, tail string) string
+func Wrap(str string, width int) string
 ```
 
 `SetContent` returns its end cursor so consecutive runs chain without the caller measuring anything:
@@ -79,7 +90,8 @@ That is the point of the whole design: a like count going from 3 to 4 digits mov
 
 ## Phase 1 — done
 
-New package `tui/screen`: `screen.go` `cell.go` `write.go` `object.go` `zone.go` `render.go` `dump.go`, with `screen_test.go`, `unicode_test.go` and `testdata/dump.golden`. 38 tests. No existing file was touched. `go.mod` promotes `x/ansi` and `termenv` to direct.
+New package `tui/screen`: `screen.go` `cell.go` `write.go` `object.go` `zone.go`
+and `render.go`. `go.mod` promotes `x/ansi` to direct.
 
 Three things worth carrying forward:
 
@@ -87,19 +99,85 @@ Three things worth carrying forward:
 
 **Combining marks are handled differently from cellbuf.** `write.go` is adapted from `printString` in `charmbracelet/x/cellbuf` (MIT), but `ansi.DecodeSequence` short-circuits ASCII printables *before* grapheme clustering (`parser_decode.go:168`), so a combining mark after an ASCII base — decomposed `é`, or the keycap `1️⃣` — arrives as its own zero-width sequence. cellbuf appends it to a cell it has already flushed, dropping it. We fold it back into the previous cell instead.
 
-**Tests pin the color profile.** lipgloss sees no TTY under `go test` and degrades to Ascii, emitting no escapes at all; the style tests would pass vacuously and the golden would differ between a terminal and CI. `TestMain` sets `termenv.TrueColor`.
+## Phase 2 — geometry + partial paint — done
 
-Also note: `assertStable` (in `unicode_test.go`) is the assertion to reach for whenever lipgloss output can't be compared byte-for-byte — for some attribute combinations lipgloss re-emits the full SGR run per character while `Render` coalesces it. It paints a screen's own `Render` output back into a fresh screen and compares cells, proving `Render` and `SetContent` are inverses.
+`tui/layout.go` carves the frame with `SplitTop`. After each message, `Update`
+calls `syncFrame`: the HUD, status row, username, music, caption and
+navbar paint into a `Screen`, the reel is `Reserve`d, and `syncFrame` reads its
+position back out of `Extents()` before the frame is stored on the model.
+`viewBrowsing` only renders that stored frame, so `View` has no player side
+effects. `maxPanelLines`, `maxCaptionLines` and `fixedLines` are gone from the
+paint path.
 
-## Phase 2 — geometry + partial paint
+`tui/text.go` is down to `renderWithMentions`; `truncateByWidth` is deleted and
+`view_loading.go`'s marquee ported, so `runewidth` and `lipgloss.Width` are gone
+from everything except `wrapByWidth`, which the comments panel still uses until
+phase 3.
 
-Add `browsingLayout` in `tui/layout.go` holding the status/video/username/music/panel/navbar rects, computed once, replacing the three duplicated formulas. Rewrite `viewBrowsing` to build a `Screen`, paint the status line, username, music and caption into it, `Reserve` the video rect, then reconcile: `Extents()` → `player.SetVideoPosition(row+rowOff+1, col+colOff+1)`, keeping the existing `VideoCenterOffset()` fudge from `view_browsing.go:687`.
+Four behaviour notes, all knowingly accepted:
 
-**Panels render nothing in this phase.** `comments`/`share`/`help`/`chats`/`react` stay unwired and their `View`/`Visible*Slots` untouched. Dump the screen so it can be eyeballed against a live reel.
+- **The status row now clips at the reel's width.** The icons run 35 columns at
+  the smallest counts and 42 when populated, against a ~26–33 column text column
+  at the default 270px reel — so that row always used to spill past the reel's
+  right edge, and a cell matrix can't represent overflow. Consequence: the
+  spinner in that row only ever appeared on a reel widened well past the default,
+  and still does.
+- **The text column is a column wider.** Every text region used to be laid out to
+  `player.VideoWidthChars - 1`, one narrower than the reel sitting above it, which
+  on inspection was a typo rather than a design. The layout gives text the reel's
+  full width, so the spinner, the HUD centering and the volume bar all shift a
+  column, and captions wrap one character later.
+- **Below `videoRow == 3` there is no room for a status row above the reel**, so
+  the reel is painted directly under it. It used to be drawn over the status text.
+  The reconcile keeps the player and the frame agreeing either way.
 
-Paint and reconcile both run inside `View()`. That means `View` mutates the player, which is deliberate: the player's image positions *must* match the painted frame, and deriving them from it is correct by construction — that is the exact bug class being removed. If it causes duplicate work or flicker, move painting into `Update` and have `View` return a stored string.
+Three things the text helpers changed about how this was written:
 
-The screen dumps go to a sidecar file `~/.local/state/reels/screen.dump` (same dir as `reels.log`, from `tui/model.go:153`), because multi-line ASCII art through slog's `TextHandler` becomes one escaped unreadable line. The object and zone tables *are* well suited to slog and get logged as `slog.Debug` attrs.
+- **`Truncate` counts its tail inside the width** and appends it only when
+  something was dropped, so `truncateByWidth(text, w-3) + "..."` and the
+  `if StringWidth(text) > w` guard above it both collapse to one call. Below the
+  tail's own width it yields `""` rather than overflowing.
+- **`Wrap` keeps newlines already in the text and carries styles across the
+  breaks it inserts.** So the caption's `strings.Split(caption, "\n")` pre-pass
+  goes, and `renderWithMentions` runs once over the whole caption instead of once
+  per line: the whole block is `SetContent(r, Wrap(styled, r.W), zone)`.
+- **`tui/text.go` loses `wrapByWidth`, `splitWords`, `isBreakable` and
+  `truncateByWidth`**, keeping only `renderWithMentions`. That reaches
+  `view_loading.go`'s marquee too — it is outside phases 2–4, but leaving it on
+  `runewidth` keeps a second width table in the binary, which is the thing being
+  deleted. Port it in the same commit.
+
+**Panels render nothing in this phase, as planned.** `comments`/`share`/`help`/`chats`/`react` are unwired and their `View`/`Visible*Slots` untouched, so while one is open the area under the reel is blank. `updateCommentGifs` and `updateImages` now feed those `Visible*Slots` calls from `l.panel` instead of recomputing a base row and a line budget, but the panels are still being *asked* for slots rather than laying themselves out; that inversion is phase 3.
+
+### The reel's position moved into the layout
+
+`browsingLayout` used to read `m.videoRow`/`m.videoCol`, which `updateVideoPosition` had computed independently — so the frame was downstream of an Update side effect having already run, and the reel's cell existed in two places.
+
+Now the layout places the reel first and everything else follows from it:
+
+```go
+videoY := max((m.height-videoH)/2, 0)
+if m.panelOpen() {
+    videoY = panelVideoRow
+}
+```
+
+`player.ComputeVideoCenterPosition` is **deleted**. It re-derived the reel's cell size from pixels using the same rounding `ComputeVideoCharacterDimensions` had already applied, then centered it against a fresh `ioctl` — a second opinion on the terminal size the text was being laid out against. Centering is now cell arithmetic on the frame's own `m.width`/`m.height`, so the reel cannot be centered against a different terminal than the text.
+
+Consequences:
+
+- **`m.videoRow`/`m.videoCol` are gone from `Model`.** `updateCommentGifs`, `updateImages` and `floatingPfpSlots` read `l.panel`, `l.username` and `l.video` instead. `floatingPfpSlots` takes the reel's rect as a parameter, so it scatters inside what is actually on screen when a short terminal clips the reel.
+- **The `row = 5` pin for open panels is layout, and now lives there** as `panelVideoRow` (0-based `4`). It used to be frozen at the moment `resizeReel` ran, which made `Open()`-before-`resize` ordering load-bearing at five call sites; it is read at paint time now.
+- **`browsingLayout` calls `m.panelOpen()`**, so it is no longer a pure function
+  of geometry.
+- **`updateVideoPosition` is gone.** `syncFrame` is the sole path
+  that positions the reel, and it always does so from the reserved extent.
+  Player geometry setters invalidate the paused video only when their values
+  actually change; ordinary text-only frame updates do not race Bubble Tea's
+  repaint with an asynchronous Kitty image redraw.
+`paintBrowsing` remains paint-only and returns a `*Screen` so the same frame can
+be reconciled and stored. `syncFrame` owns those update-path
+side effects; `viewBrowsing` only calls `Render`.
 
 ## Phase 3 — panels, one per commit
 
@@ -121,14 +199,11 @@ Note `tea.MouseMsg` delivers both press and release for a click — act on `Mous
 ```
 go build ./...
 go vet ./...
-go test ./tui/screen/                                  # 38 tests
-go test ./tui/screen/ -run TestDumpGolden -print -v    # eyeball a frame
-go test ./tui/screen/ -update                          # rewrite the golden
 ```
 
-`-v` is required for `-print`: `go test` buffers stdout and discards it for passing packages.
-
-From phase 2 on: run the app against a real session, then compare `~/.local/state/reels/screen.dump` against what is on screen and check `~/.local/state/reels/reels.log` for the object/zone tables. `InitLogger` truncates the log on every start (`backend/log.go:17`). Confirm the video lands in the same cell as before the refactor by comparing `SetVideoPosition` args at an identical terminal size, and exercise re-layout by resizing the terminal and changing reel size (`KeysReelSizeInc`/`Dec`).
+Confirm the video lands in the same cell as before the refactor by comparing
+`SetVideoPosition` args at an identical terminal size, and exercise re-layout by
+resizing the terminal and changing reel size (`KeysReelSizeInc`/`Dec`).
 
 ## Known limits
 

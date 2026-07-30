@@ -10,6 +10,7 @@ import (
 	"github.com/njyeung/reels/backend"
 	"github.com/njyeung/reels/player"
 	"github.com/njyeung/reels/player/shm"
+	"github.com/njyeung/reels/tui/screen"
 )
 
 // Messages
@@ -84,16 +85,8 @@ type Model struct {
 	spinner spinner.Model
 	status  status
 
-	// Video pixel dimensions
-	videoWidthPx  int
-	videoHeightPx int
-
-	// Video position in terminal cells (1-indexed). TUI is source of truth;
-	// updated via updateVideoPosition and forwarded to the player.
-	videoRow int
-	videoCol int
-
-	showNavbar bool
+	showNavbar    bool
+	browsingFrame *screen.Screen
 
 	// Comments panel encapsulates all comments UI state
 	comments *CommentsPanel
@@ -170,21 +163,19 @@ func NewModel(userDataDir, logDir, cacheDir, configDir string, output io.Writer,
 	b := backend.NewChromeBackend(userDataDir, cacheDir, configDir)
 
 	return Model{
-		state:         stateLoading,
-		backend:       b,
-		player:        p,
-		spinner:       s,
-		status:        statusLoading,
-		videoWidthPx:  playerWidth,
-		videoHeightPx: playerHeight,
-		comments:      NewCommentsPanel(),
-		share:         NewSharePanel(),
-		help:          NewHelpPanel(),
-		chats:         NewChatsPanel(),
-		react:         NewReactPanel(),
-		flags:         flags,
-		showNavbar:    settings.ShowNavbar,
-		version:       version,
+		state:      stateLoading,
+		backend:    b,
+		player:     p,
+		spinner:    s,
+		status:     statusLoading,
+		comments:   NewCommentsPanel(),
+		share:      NewSharePanel(),
+		help:       NewHelpPanel(),
+		chats:      NewChatsPanel(),
+		react:      NewReactPanel(),
+		flags:      flags,
+		showNavbar: settings.ShowNavbar,
+		version:    version,
 	}
 }
 
@@ -254,8 +245,27 @@ func (m Model) checkLoginStatus() tea.Msg {
 	return loginRequiredMsg{}
 }
 
-// Update handles messages
+// Update handles a message, then refreshes the stored browsing frame from the
+// resulting model. View only renders that frame; painting and player
+// reconciliation stay on the update path.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	quitting := false
+	if key, ok := msg.(tea.KeyMsg); ok {
+		quitting = slices.Contains(backend.GetSettings().KeysQuit, key.String())
+	}
+
+	updated, cmd := m.update(msg)
+	next, ok := updated.(Model)
+	if !ok {
+		return updated, cmd
+	}
+	if next.state == stateBrowsing && !quitting {
+		next.syncFrame()
+	}
+	return next, cmd
+}
+
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		key := msg.String()
@@ -283,9 +293,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 
 		// recompute video character dimensions and re-center
-		player.ComputeVideoCharacterDimensions(m.videoWidthPx, m.videoHeightPx)
-		m.player.SetSize(m.videoWidthPx, m.videoHeightPx)
-		m.updateVideoPosition()
+		settings := backend.GetSettings()
+		videoWidthPx := settings.ReelWidth * settings.RetinaScale
+		videoHeightPx := settings.ReelHeight * settings.RetinaScale
+		player.ComputeVideoCharacterDimensions(videoWidthPx, videoHeightPx)
+		m.player.SetSize(videoWidthPx, videoHeightPx)
 		if m.reelPFP != nil {
 			m.reelPFP.ResizeToCells(2)
 		}
@@ -298,10 +310,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.share.ResizePfps()
 		} else if m.comments.IsOpen() {
 			m.comments.ResizeGifs()
-			m.updateCommentGifs()
 		}
 		m.updateImages()
-		m.player.RedrawVideo()
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -391,8 +401,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.currentReel != nil {
 				if info, err := m.backend.GetReel(m.currentReel.Index); err == nil {
 					m.currentReel = info
-					m.comments.SetComments(info.PK, info.Comments)
-					m.updateCommentGifs()
+					m.comments.SetComments(info.PK, info.Comments, m.browsingLayout().panel)
 				}
 			}
 		case backend.EventShareFriendsLoaded:
@@ -466,7 +475,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.reelPFP = msg.pfp
 		m.reelFloating = msg.contextFloating
 		m.floating = append(slices.Clone(msg.contextFloating), msg.chatFloating...)
-		m.updateVideoPosition()
 		m.updateImages()
 		go m.prefetch(msg.index)
 		return m, nil

@@ -10,43 +10,6 @@
 // inside this package.
 package screen
 
-import "fmt"
-
-// Rect is a rectangular region in 0-based cell coordinates. X, Y is the
-// top-left cell; W, H are extents in cells.
-type Rect struct {
-	X, Y, W, H int
-}
-
-// Right returns the first column past the rect.
-func (r Rect) Right() int { return r.X + r.W }
-
-// Bottom returns the first row past the rect.
-func (r Rect) Bottom() int { return r.Y + r.H }
-
-// Empty reports whether the rect covers no cells.
-func (r Rect) Empty() bool { return r.W <= 0 || r.H <= 0 }
-
-// Contains reports whether (x, y) falls inside r.
-func (r Rect) Contains(x, y int) bool {
-	return x >= r.X && x < r.Right() && y >= r.Y && y < r.Bottom()
-}
-
-// Intersect returns the overlap of r and o, or the zero Rect if they don't
-// overlap at all.
-func (r Rect) Intersect(o Rect) Rect {
-	x, y := max(r.X, o.X), max(r.Y, o.Y)
-	right, bottom := min(r.Right(), o.Right()), min(r.Bottom(), o.Bottom())
-	if right <= x || bottom <= y {
-		return Rect{}
-	}
-	return Rect{X: x, Y: y, W: right - x, H: bottom - y}
-}
-
-func (r Rect) String() string {
-	return fmt.Sprintf("(%d,%d %dx%d)", r.X, r.Y, r.W, r.H)
-}
-
 // Screen holds the cell matrix for one frame.
 type Screen struct {
 	w, h  int

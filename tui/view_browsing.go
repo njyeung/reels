@@ -12,61 +12,83 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/mattn/go-runewidth"
 	"github.com/njyeung/reels/backend"
 	"github.com/njyeung/reels/player"
 	"github.com/njyeung/reels/tui/colors"
+	"github.com/njyeung/reels/tui/screen"
 )
 
 func (m Model) viewBrowsing() string {
-	if m.width == 0 || m.height == 0 {
+	if m.browsingFrame == nil {
 		return "Loading..."
 	}
+	return m.browsingFrame.Render()
+}
 
-	// Video dimensions from player package (computed at startup)
-	videoWidthChars := player.VideoWidthChars - 1
-	videoHeightChars := player.VideoHeightChars
+// paintBrowsing paints the browsing frame and returns the matrix it painted
+// into. It has no reconciliation side effect; syncFrame owns that
+// update-path work and stores the result for View.
+func (m Model) paintBrowsing() *screen.Screen {
+	l := m.browsingLayout()
+	s := screen.New(m.width, m.height)
 
-	var b strings.Builder
+	video := &screen.Object{Kind: screen.ObjVideo}
+	s.Reserve(l.video, video)
 
-	// Layout: (videoRow-2) blank lines + status(1) + video(videoHeightChars+1) + username(1) + music(1) + caption
-	startCol := m.videoCol - 1
-	if startCol < 0 {
-		startCol = 0
+	m.paintHUD(s, l.hud)
+	m.paintStatus(s, l.status)
+
+	if m.currentReel == nil {
+		s.SetContent(l.username, m.spinner.View(), nil)
+	} else {
+		user := l.username.Indent(pfpIndent)
+		x, _ := s.SetContent(user, pink400.Bold(true).Render("@"+m.currentReel.Username), nil)
+		if m.currentReel.IsVerified {
+			s.SetContent(screen.Rect{X: x, Y: user.Y, W: user.Right() - x, H: 1}, " "+blue500.Render("✓"), nil)
+		}
+
+		m.paintMusic(s, l.music.Indent(pfpIndent))
+
+		switch {
+		case m.comments.IsOpen():
+			m.comments.Paint(s, l.panel)
+		case !m.panelOpen():
+			m.paintCaption(s, l.caption)
+			m.paintNavbar(s, l.navbar)
+		}
 	}
 
-	padding := strings.Repeat(" ", startCol)
-	pfpPadding := strings.Repeat(" ", 5)
-	topPad := m.videoRow - 2
+	return s
+}
 
-	// total height of screen subtracting the following:
-	//
-	// the top padding (volume status if avaialble),
-	//
-	// likes, comments, share, loading line
-	//
-	// reel video
-	//
-	// username
-	// music
-	maxPanelLines := max(m.height-(topPad+1+(videoHeightChars+1)+2), 1)
-
-	b.WriteString(m.viewHUD(videoWidthChars, topPad, padding))
-
-	// Status line - heart, like count, comment count, play/pause, mute icons
-	// positioned on the right side of video
+// paintStatus paints the row above the reel: like, comment and repost counts,
+// then the save, share, play/pause and mute indicators.
+func (m Model) paintStatus(s *screen.Screen, r screen.Rect) {
 	heartIcon := "🤍"
+	commentIcon := "💬"
 	likeCount := ""
 	commentCount := ""
 	repostIcon := white.Render("⇄")
 	repostCount := ""
+	shareIcon := ""
+	saveIcon := "⚐"
+
 	if m.currentReel != nil {
 		if m.currentReel.Liked {
 			heartIcon = "❤️"
 		}
 		if m.currentReel.Reposted {
 			repostIcon = purple400.Render("⇄")
+		}
+		if m.currentReel.Saved {
+			saveIcon = "⚑"
+		}
+		if m.currentReel.CanViewerReshare {
+			if m.shareConfirmed {
+				shareIcon = yellow300.Render("✔")
+			} else {
+				shareIcon = "↗"
+			}
 		}
 		likeCount = formatLikeCount(m.currentReel.LikeCount)
 		commentCount = formatLikeCount(m.currentReel.CommentCount)
@@ -78,134 +100,95 @@ func (m Model) viewBrowsing() string {
 		playPauseIcon = "❚❚"
 	}
 
-	muteIcon := "  "
+	muteIcon := " "
 	if m.player.IsMuted() {
 		muteIcon = "M"
 	}
 
-	// Build status content without padding first
-	shareIcon := ""
-	if m.currentReel != nil && m.currentReel.CanViewerReshare {
-		if !m.shareConfirmed {
-			shareIcon = "↗"
-		} else {
-			shareIcon = yellow300.Render("✔")
+	content := heartIcon + " " + likeCount + "  " + commentIcon + " " + commentCount + "  " + repostIcon + " " + repostCount + "  " + saveIcon + "  " + shareIcon + "  " + playPauseIcon + "  " + muteIcon
+	row := gray300.Render(content)
+	if m.status == statusLoading || m.comments.loading || m.backend.IsSyncing() {
+		row += strings.Repeat(" ", max(r.W-screen.StringWidth(content)-1, 0)) + m.spinner.View()
+	}
+	s.SetContent(r, row, nil)
+}
+
+// paintMusic paints the track line, scrolling it as a marquee when the title and
+// artist are wider than the rect.
+func (m Model) paintMusic(s *screen.Screen, r screen.Rect) {
+	if m.currentReel.Music == nil {
+		return
+	}
+
+	explicit := ""
+	if m.currentReel.Music.IsExplicit {
+		explicit = " [E]"
+	}
+	text := m.currentReel.Music.Title + " - " + m.currentReel.Music.Artist + explicit
+
+	if screen.StringWidth(text) > r.W {
+		const gap = "       "
+		runes := []rune(text + gap + text)
+		text = string(runes[m.musicScrollOffset%(len([]rune(text))+len(gap)):])
+	}
+
+	s.SetContent(r, purple200.Italic(true).Render(text), nil)
+}
+
+// paintCaption paints the reel caption, wrapped to the rect and clipped by it.
+func (m Model) paintCaption(s *screen.Screen, r screen.Rect) {
+	caption := m.currentReel.Caption
+	if m.showNavbar {
+		caption = screen.Truncate(strings.ReplaceAll(caption, "\n", " "), r.W, "...")
+	}
+
+	s.SetContent(r, screen.Wrap(renderWithMentions(caption, gray300), r.W), nil)
+}
+
+// paintNavbar paints the key hints under the caption.
+func (m Model) paintNavbar(s *screen.Screen, r screen.Rect) {
+	config := backend.GetSettings()
+	hints := []string{
+		displayKeys(config.KeysNext) + ": next  " + displayKeys(config.KeysPrevious) + ": prev",
+		displayKeys(config.KeysQuit) + ": quit  " + displayKeys(config.KeysNavbar) + ": hide navbar",
+		"?: help",
+	}
+	for i, hint := range hints {
+		s.SetContent(r.Row(i), gray600.Render(hint), nil)
+	}
+}
+
+// syncFrame paints, handles player updates, and stores the next frame.
+func (m *Model) syncFrame() {
+	if m.width <= 0 || m.height <= 0 {
+		m.browsingFrame = nil
+		return
+	}
+	frame := m.paintBrowsing()
+
+	var gifs []player.GifSlot
+	for _, e := range frame.Extents() {
+		switch e.Obj.Kind {
+		case screen.ObjVideo:
+			rowOff, colOff := m.player.VideoCenterOffset()
+			m.player.SetVideoPosition(e.Visible.Y+rowOff+1, e.Visible.X+colOff+1)
+
+		case screen.ObjGif:
+			anim, ok := e.Obj.Ref.(*player.GifAnimation)
+			if !ok {
+				continue
+			}
+			gifs = append(gifs, player.GifSlot{Anim: anim, Row: e.Visible.Y + 1, Col: e.Visible.X + 1})
 		}
 	}
 
-	saveIcon := "⚐"
-	if m.currentReel != nil && m.currentReel.Saved {
-		saveIcon = "⚑"
-	}
-
-	statusContent := heartIcon + " " + likeCount + "   💬 " + commentCount + "   " + repostIcon + " " + repostCount + "   " + saveIcon + "   " + shareIcon + "   " + playPauseIcon + "   " + muteIcon
-	contentWidth := lipgloss.Width(statusContent)
-
-	if contentWidth < videoWidthChars-1 {
-		statusContent = statusContent + strings.Repeat(" ", videoWidthChars-1-contentWidth)
-		if m.status == statusLoading || m.comments.loading || m.backend.IsSyncing() {
-			runes := []rune(statusContent)
-			statusContent = string(runes[:len(runes)-1]) + m.spinner.View()
-		}
-	}
-	b.WriteString(padding + gray300.Render(statusContent) + "\n")
-
-	b.WriteString(strings.Repeat("\n", videoHeightChars+1))
-
-	// UI area
-	if m.currentReel != nil {
-		// Verified badge + username
-		var userLine string
-		if m.currentReel.IsVerified {
-			userLine = pfpPadding + pink400.Bold(true).Render("@"+m.currentReel.Username) + " " + blue500.Render("✓")
-		} else {
-			userLine = pfpPadding + pink400.Bold(true).Render("@"+m.currentReel.Username)
-		}
-		b.WriteString(padding + userLine + "\n")
-
-		// Music info (if available)
-		if m.currentReel.Music != nil {
-			explicit := ""
-			if m.currentReel.Music.IsExplicit {
-				explicit = " [E]"
-			}
-			musicText := m.currentReel.Music.Title + " - " + m.currentReel.Music.Artist + explicit
-			maxMusicWidth := videoWidthChars - runewidth.StringWidth(pfpPadding)
-
-			// Marquee scroll if text is too long
-			if runewidth.StringWidth(musicText) > maxMusicWidth {
-				scrollText := musicText + "       " + musicText
-				scrollRunes := []rune(scrollText)
-				textLen := len([]rune(musicText)) + 7
-
-				// Calculate scroll position (loop back)
-				offset := m.musicScrollOffset % textLen
-
-				// Extract visible portion
-				musicText = truncateByWidth(string(scrollRunes[offset:]), maxMusicWidth)
-			}
-
-			musicLine := pfpPadding + purple200.Italic(true).Render(musicText)
-			b.WriteString(padding + musicLine + "\n")
-		} else {
-			b.WriteString("\n")
-		}
-
-		// Panel views (replace caption and navbar when open)
-		if m.share.IsOpen() {
-			b.WriteString(m.share.View(videoWidthChars, maxPanelLines, padding))
-		} else if m.comments.IsOpen() {
-			b.WriteString(m.comments.View(videoWidthChars, maxPanelLines, padding))
-		} else if m.help.IsOpen() {
-			b.WriteString(m.help.View(videoWidthChars, maxPanelLines, padding))
-		} else if m.chats.IsOpen() {
-			b.WriteString(m.chats.View(videoWidthChars, maxPanelLines, padding))
-		} else if m.react.IsOpen() {
-			b.WriteString(m.react.View(videoWidthChars, maxPanelLines, padding))
-		} else {
-			// Normal caption view
-			var captionLines []string
-			maxCaptionLen := videoWidthChars
-
-			if !m.showNavbar {
-				for _, line := range strings.Split(m.currentReel.Caption, "\n") {
-					captionLines = append(captionLines, wrapByWidth(line, maxCaptionLen)...)
-				}
-			} else {
-				caption := strings.ReplaceAll(m.currentReel.Caption, "\n", " ")
-				if runewidth.StringWidth(caption) > maxCaptionLen {
-					captionLines = []string{truncateByWidth(caption, maxCaptionLen-3) + "..."}
-				} else {
-					captionLines = []string{caption}
-				}
-			}
-
-			// Truncate caption to available space
-			if len(captionLines) > maxPanelLines {
-				captionLines = captionLines[:maxPanelLines]
-			}
-			for _, line := range captionLines {
-				b.WriteString(padding + renderWithMentions(line, gray300) + "\n")
-			}
-
-			// navbar (only when comments not open)
-			if m.showNavbar {
-				b.WriteString("\n")
-
-				config := backend.GetSettings()
-				nav1 := gray600.Render(displayKeys(config.KeysNext) + ": next  " + displayKeys(config.KeysPrevious) + ": prev")
-				nav2 := gray600.Render(displayKeys(config.KeysQuit) + ": quit  " + displayKeys(config.KeysNavbar) + ": hide navbar")
-				nav3 := gray600.Render("?: help")
-				b.WriteString(padding + nav1 + "\n")
-				b.WriteString(padding + nav2 + "\n")
-				b.WriteString(padding + nav3 + "\n")
-			}
-		}
+	if len(gifs) > 0 {
+		m.player.SetVisibleGifs(gifs)
 	} else {
-		b.WriteString(padding + m.spinner.View() + "\n\n")
+		m.player.ClearGifs()
 	}
 
-	return strings.TrimSuffix(b.String(), "\n")
+	m.browsingFrame = frame
 }
 
 // displayKeys formats a keybind slice for the navbar
@@ -362,12 +345,10 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
 
 			if m.currentReel.Comments != nil {
-				m.comments.SetComments(m.currentReel.PK, m.currentReel.Comments)
-				m.updateCommentGifs()
+				m.comments.SetComments(m.currentReel.PK, m.currentReel.Comments, m.browsingLayout().panel)
 			}
 
 			go m.backend.OpenComments()
-			m.player.RedrawVideo()
 		}
 
 	case m.share.IsOpen() && slices.Contains(config.KeysShareClose, key):
@@ -381,7 +362,6 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.share.Open()
 			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
 			go m.backend.OpenSharePanel()
-			m.player.RedrawVideo()
 		}
 
 	case m.help.IsOpen() && slices.Contains(config.KeysHelpClose, key):
@@ -392,7 +372,6 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if !m.panelOpen() {
 			m.help.Open()
 			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
-			m.player.RedrawVideo()
 		}
 
 	case m.react.IsOpen() && slices.Contains(config.KeysReactClose, key):
@@ -403,7 +382,6 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.backend.IsChatMode() && !m.panelOpen() && !m.backend.IsSyncing() {
 			m.react.Open()
 			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
-			m.player.RedrawVideo()
 		}
 	case m.chats.IsOpen() && slices.Contains(config.KeysChatsClose, key):
 		// if selecting a friend's dm to visit (chat panel), close key will close
@@ -424,7 +402,6 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			chats := m.backend.GetDMChats()
 			m.chats.Open(chats)
 			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
-			m.player.RedrawVideo()
 		}
 
 	case slices.Contains(config.KeysNavbar, key):
@@ -433,13 +410,9 @@ func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case slices.Contains(config.KeysReelSizeInc, key):
 		m.resizeReel(config.ReelSizeStep)
-		m.player.RedrawVideo()
-		m.updateCommentGifs()
 
 	case slices.Contains(config.KeysReelSizeDec, key):
 		m.resizeReel(-config.ReelSizeStep)
-		m.player.RedrawVideo()
-		m.updateCommentGifs()
 
 	case slices.Contains(config.KeysVolUp, key):
 		vol := min(m.player.Volume()+0.1, 1.0)
@@ -584,8 +557,7 @@ func (m *Model) scrollPanel(direction int) bool {
 		return true
 	}
 	if m.comments.IsOpen() {
-		m.comments.MoveCursor(direction)
-		m.updateCommentGifs()
+		m.comments.MoveCursor(direction, m.browsingLayout().panel)
 		if direction > 0 && m.currentReel != nil && m.comments.ShouldFetchMore() &&
 			!m.comments.loading && len(m.currentReel.Comments) < m.currentReel.CommentCount {
 			m.comments.SetLoading(true)
@@ -624,12 +596,10 @@ func (m *Model) navigateToReel(direction int) tea.Cmd {
 	return m.startPlayback(index)
 }
 
-// closePanelLayout restores the reel size and video position after a panel (comments/share) is closed.
+// closePanelLayout restores the reel size after a panel is closed.
 func (m *Model) closePanelLayout() {
 	s := backend.GetSettings()
 	m.resizeReel(s.ReelSizeStep * s.PanelShrinkSteps)
-	m.player.ClearGifs()
-	m.player.RedrawVideo()
 }
 
 // resizeReel adjusts the reel bounding box by delta pixels (width), deriving height from 9:16 ratio.
@@ -645,64 +615,28 @@ func (m *Model) resizeReel(delta int) {
 		return
 	}
 
-	m.videoWidthPx = newW * settings.RetinaScale
-	m.videoHeightPx = newH * settings.RetinaScale
-	player.ComputeVideoCharacterDimensions(m.videoWidthPx, m.videoHeightPx)
-	m.player.SetSize(m.videoWidthPx, m.videoHeightPx)
-	m.updateVideoPosition()
+	videoWidthPx := newW * settings.RetinaScale
+	videoHeightPx := newH * settings.RetinaScale
+	player.ComputeVideoCharacterDimensions(videoWidthPx, videoHeightPx)
+	m.player.SetSize(videoWidthPx, videoHeightPx)
 	m.updateImages()
-}
-
-// updateCommentGifs recomputes visible GIF slots and passes them to the player.
-func (m Model) updateCommentGifs() {
-	if !m.comments.IsOpen() {
-		m.player.ClearGifs()
-		return
-	}
-
-	videoHeightChars := player.VideoHeightChars
-	videoWidthChars := player.VideoWidthChars - 1
-	commentsBaseRow := m.videoRow + (videoHeightChars + 1) + 1
-	maxCaptionLines := max(m.height-(m.videoRow+(videoHeightChars+1)+1), 1)
-
-	slots := m.comments.VisibleGifSlots(videoWidthChars, maxCaptionLines, commentsBaseRow, m.videoCol)
-	if len(slots) > 0 {
-		m.player.SetVisibleGifs(slots)
-	} else {
-		m.player.ClearGifs()
-	}
-}
-
-// updateVideoPosition computes the centered video position and stores it on the model,
-// then forwards it to the player.
-func (m *Model) updateVideoPosition() {
-	row, col := player.ComputeVideoCenterPosition(m.videoWidthPx, m.videoHeightPx)
-	if m.panelOpen() {
-		row = 5
-	}
-
-	m.videoRow = row
-	m.videoCol = col
-	// Adjust for non-9:16 videos that don't fill the bounding box.
-	rowOff, colOff := m.player.VideoCenterOffset()
-	m.player.SetVideoPosition(row+rowOff, col+colOff)
 }
 
 func (m *Model) updateImages() {
 	var slots []player.ImageSlot
+	l := m.browsingLayout()
 
 	if m.reelPFP != nil {
-		row := max(m.videoRow+player.VideoHeightChars, 1)
-		slots = append(slots, player.ImageSlot{Img: m.reelPFP, Row: row, Col: m.videoCol})
-		slots = append(slots, m.floatingPfpSlots()...)
+		// The pfp sits in the gutter pfpIndent holds open on the username line.
+		slots = append(slots, player.ImageSlot{Img: m.reelPFP, Row: l.username.Y + 1, Col: l.username.X + 1})
+		slots = append(slots, m.floatingPfpSlots(l.video)...)
 	}
 
 	if m.share.IsOpen() {
-		videoHeightChars := player.VideoHeightChars
-		videoWidthChars := player.VideoWidthChars - 1
-		fixedLines := max(m.height-(m.videoRow+(videoHeightChars+1)+1), 1)
-		shareBaseRow := m.videoRow + (videoHeightChars + 1) + 1
-		slots = append(slots, m.share.VisiblePfpSlots(videoWidthChars, fixedLines, shareBaseRow, m.videoCol)...)
+		// TODO(phase 3): the share panel paints itself and its pfps come back out
+		// of Extents, the way the comments panel's GIFs already do.
+		p := l.panel
+		slots = append(slots, m.share.VisiblePfpSlots(p.W, max(p.H, 1), p.Y+1, p.X+1)...)
 	}
 
 	if len(slots) > 0 {
@@ -718,7 +652,7 @@ func (m *Model) updateImages() {
 // sampling so the scatter looks random but spreads out instead of stacking.
 // Seeded by the reel's PK so the layout is stable across resizes, panel
 // toggles, and re-navigation.
-func (m *Model) floatingPfpSlots() []player.ImageSlot {
+func (m *Model) floatingPfpSlots(video screen.Rect) []player.ImageSlot {
 	if len(m.floating) == 0 || m.currentReel == nil {
 		return nil
 	}
@@ -726,10 +660,10 @@ func (m *Model) floatingPfpSlots() []player.ImageSlot {
 	const pfpCellH = 2
 	const pfpCellW = 4
 
-	quadW := player.VideoWidthChars / 4
-	quadH := player.VideoHeightChars / 4
-	quadRow := m.videoRow + player.VideoHeightChars - quadH
-	quadCol := m.videoCol + player.VideoWidthChars - quadW
+	quadW := video.W / 4
+	quadH := video.H / 4
+	quadRow := video.Bottom() - quadH + 1
+	quadCol := video.Right() - quadW + 1
 
 	maxRowOff := max(quadH-pfpCellH, 0)
 	maxColOff := max(quadW-pfpCellW, 0)
@@ -796,8 +730,7 @@ func (m *Model) floatingPfpSlots() []player.ImageSlot {
 	return slots
 }
 
-// iconForType resolves a floating-context type to its fixed badge icon. Reactor
-// items don't go through here — their badge is an EmojiBadge (see reactionItems).
+// iconForType resolves a floating-context type to its fixed badge icon.
 func iconForType(floatingType string) *player.Img {
 	switch floatingType {
 	case backend.FloatingTypeReposted:

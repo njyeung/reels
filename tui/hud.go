@@ -7,7 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mattn/go-runewidth"
+	"github.com/njyeung/reels/tui/screen"
 )
 
 // HUD message types
@@ -98,54 +98,43 @@ func (h *HUD) HideChatBanner() {
 	}
 }
 
-// viewHUD renders the heads-up display overlay area above the video.
-// topPad is the total number of lines available above the status line.
-func (m Model) viewHUD(videoWidthChars, topPad int, padding string) string {
-	if topPad < 3 || m.hud.active == hudNone {
-		return strings.Repeat("\n", max(topPad-1, 0))
+// paintHUD paints the active overlay — volume bar, DM notification or chat
+// banner — into the single row the layout set aside for it. That rect is empty
+// when the frame is too short to hold the overlay, so there is no room to check
+// for here.
+func (m Model) paintHUD(s *screen.Screen, r screen.Rect) {
+	if r.Empty() || m.hud.active == hudNone {
+		return
 	}
-
-	var b strings.Builder
-	b.WriteString(strings.Repeat("\n", max(topPad-3, 0)))
 
 	switch m.hud.active {
 	case hudDMNotify:
-		fadeColor := lipgloss.Color(hudFadeColor(m.hud.dmNotifyFadeStep))
-		style := lipgloss.NewStyle().Foreground(fadeColor)
+		style := lipgloss.NewStyle().Foreground(lipgloss.Color(hudFadeColor(m.hud.dmNotifyFadeStep)))
 		text := fmt.Sprintf("%d new reels from friends", m.hud.dmNotifyCount)
-		maxWidth := videoWidthChars - 1
-		if runewidth.StringWidth(text) > maxWidth {
-			text = truncateByWidth(text, maxWidth-3) + "..."
-		}
-		textWidth := runewidth.StringWidth(text)
-		leftPad := (maxWidth - textWidth) / 2
-		b.WriteString(padding + strings.Repeat(" ", leftPad) + style.Render(text) + "\n\n")
+		paintCentered(s, r, style, text)
 
 	case hudVolume:
-		vol := m.player.Volume()
-		barWidth := videoWidthChars - 1
-		filled := int(vol*float64(barWidth) + 0.5)
+		filled := int(m.player.Volume()*float64(r.W) + 0.5)
 		fadeColor := lipgloss.Color(hudFadeColor(m.hud.volumeFadeStep))
 		filledStyle := lipgloss.NewStyle().Foreground(fadeColor)
 		emptyStyle := lipgloss.NewStyle().Foreground(fadeColor).Faint(true)
-		volBar := filledStyle.Render(strings.Repeat("█", filled)) + emptyStyle.Render(strings.Repeat("░", barWidth-filled))
-		b.WriteString(padding + volBar + "\n\n")
+		bar := filledStyle.Render(strings.Repeat("█", filled)) +
+			emptyStyle.Render(strings.Repeat("░", max(r.W-filled, 0)))
+		s.SetContent(r, bar, nil)
 
 	case hudChatBanner:
-		fadeColor := lipgloss.Color(hudFadeColor(m.hud.chatBannerFadeStep))
-		style := lipgloss.NewStyle().Foreground(fadeColor)
-		reactKeys := displayKeys(m.hud.chatBannerKeys)
-		text := fmt.Sprintf("From: %s | press %s to react", m.hud.chatBannerTitle, reactKeys)
-		maxWidth := videoWidthChars - 1
-		if runewidth.StringWidth(text) > maxWidth {
-			text = truncateByWidth(text, maxWidth-3) + "..."
-		}
-		textWidth := runewidth.StringWidth(text)
-		leftPad := (maxWidth - textWidth) / 2
-		b.WriteString(padding + strings.Repeat(" ", leftPad) + style.Render(text) + "\n\n")
+		style := lipgloss.NewStyle().Foreground(lipgloss.Color(hudFadeColor(m.hud.chatBannerFadeStep)))
+		text := fmt.Sprintf("From: %s | press %s to react", m.hud.chatBannerTitle, displayKeys(m.hud.chatBannerKeys))
+		paintCentered(s, r, style, text)
 	}
+}
 
-	return b.String()
+// paintCentered paints one line of unstyled text centered in r, eliding it if it
+// doesn't fit. Truncate counts its own tail inside the width, so there is no
+// too-long test to get wrong here.
+func paintCentered(s *screen.Screen, r screen.Rect, style lipgloss.Style, text string) {
+	text = screen.Truncate(text, r.W, "...")
+	s.SetContent(r.Indent((r.W-screen.StringWidth(text))/2), style.Render(text), nil)
 }
 
 // updateHUD processes HUD-related messages. Returns (handled, model, cmd).
