@@ -1,13 +1,21 @@
 package tui
 
 import (
-	"strings"
-
+	"github.com/charmbracelet/lipgloss"
 	"github.com/njyeung/reels/backend"
 	"github.com/njyeung/reels/player"
+	"github.com/njyeung/reels/tui/screen"
 )
 
-const sharePfpCellHeight = 3
+const (
+	// sharePfpCellHeight is how many rows one friend takes: the profile picture
+	// is that tall, and the name sits on its middle row.
+	sharePfpCellHeight = 3
+
+	// sharePfpIndent is the gutter held open on the left of each row for the
+	// profile picture the player draws there.
+	sharePfpIndent = 8
+)
 
 // SharePanel encapsulates the share modal UI state and rendering
 type SharePanel struct {
@@ -19,9 +27,6 @@ type SharePanel struct {
 
 	// Image state
 	pfps map[int]*player.Img
-
-	// cached for scroll calculations
-	visibleCount int
 }
 
 // NewSharePanel creates a new SharePanel instance
@@ -91,25 +96,20 @@ func (sp *SharePanel) ResizePfps() {
 	}
 }
 
-// MoveCursor moves the cursor by delta, auto-scrolling to keep cursor visible
-func (sp *SharePanel) MoveCursor(delta int) {
+// MoveCursor moves the cursor by delta, scrolling to keep the highlighted
+// friend fully inside r.
+func (sp *SharePanel) MoveCursor(delta int, r screen.Rect) {
 	if len(sp.friends) == 0 {
 		return
 	}
-	sp.cursor += delta
-	if sp.cursor < 0 {
-		sp.cursor = 0
-	}
-	if sp.cursor >= len(sp.friends) {
-		sp.cursor = len(sp.friends) - 1
-	}
+	sp.cursor = min(max(sp.cursor+delta, 0), len(sp.friends)-1)
 
-	// Auto-scroll to keep cursor visible
 	if sp.cursor < sp.scroll {
 		sp.scroll = sp.cursor
 	}
-	if sp.visibleCount > 0 && sp.cursor >= sp.scroll+sp.visibleCount {
-		sp.scroll = sp.cursor - sp.visibleCount + 1
+	_, body := r.SplitTop(1)
+	if visible := body.H / sharePfpCellHeight; visible > 0 {
+		sp.scroll = max(sp.scroll, sp.cursor-visible+1)
 	}
 }
 
@@ -130,91 +130,44 @@ func (sp *SharePanel) ToggleSelected() {
 	}
 }
 
-// View renders the share panel
-// Each friend takes sharePfpCellHeight lines: pfp on left, name centered vertically on right
-func (sp *SharePanel) View(width, height int, padding string) string {
-	if !sp.isOpen || len(sp.friends) == 0 {
-		return ""
+// Paint paints the panel into r: a header, then one sharePfpCellHeight-tall row
+// per friend, the profile picture reserved in the left gutter and the name on
+// the row's middle line beside it.
+func (sp *SharePanel) Paint(s *screen.Screen, r screen.Rect) {
+	if !sp.isOpen || len(sp.friends) == 0 || r.Empty() {
+		return
 	}
 
-	var b strings.Builder
+	header, body := r.SplitTop(1)
+	s.SetContent(header, purple400.Bold(true).Underline(true).Render("Share To"), nil)
 
-	header := purple400.Bold(true).Underline(true).Render("Share To")
-	b.WriteString(padding + header + "\n")
-	availableLines := height - 2
-	if availableLines < 1 {
-		return ""
-	}
-
-	pfpPadding := "        " // space for the pfp image (rendered separately)
-	linesUsed := 0
-
-	// Cache how many friends fit on screen
-	sp.visibleCount = availableLines / sharePfpCellHeight
-
-	for i := sp.scroll; i < len(sp.friends); i++ {
-		if linesUsed+sharePfpCellHeight > availableLines {
-			break
-		}
-
-		friend := sp.friends[i]
-
-		// Render sharePfpCellHeight lines per friend
-		// Name goes on the middle line (line 1 of 0,1,2), centered vertically
-		for line := 0; line < sharePfpCellHeight; line++ {
-			if line == sharePfpCellHeight/2 {
-				var nameText string
-				if i == sp.cursor && sp.selected[i] {
-					nameText = yellow500.Underline(true).Render(friend.Name)
-				} else if i == sp.cursor {
-					nameText = pink500.Underline(true).Render(friend.Name)
-				} else if sp.selected[i] {
-					nameText = yellow300.Render(friend.Name)
-				} else {
-					nameText = pink300.Render(friend.Name)
-				}
-				b.WriteString(padding + pfpPadding + nameText + "\n")
-			} else {
-				b.WriteString(padding + pfpPadding + "\n")
-			}
-			linesUsed++
-		}
-	}
-
-	return b.String()
-}
-
-// VisiblePfpSlots computes image slots with absolute terminal cell positions
-func (sp *SharePanel) VisiblePfpSlots(width, height, baseRow, baseCol int) []player.ImageSlot {
-	if !sp.isOpen || len(sp.friends) == 0 || len(sp.pfps) == 0 {
-		return nil
-	}
-
-	availableLines := height - 2
-	if availableLines < 1 {
-		return nil
-	}
-
-	var slots []player.ImageSlot
-	linesUsed := 0
-	currentRow := baseRow + 1 // +1 for header
-
-	for i := sp.scroll; i < len(sp.friends); i++ {
-		if linesUsed+sharePfpCellHeight > availableLines {
-			break
-		}
+	y := body.Y
+	for i := sp.scroll; i < len(sp.friends) && y+sharePfpCellHeight <= body.Bottom(); i++ {
+		zone := &screen.Zone{Owner: screen.OwnerShare, Target: i}
 
 		if pfp, ok := sp.pfps[i]; ok {
-			slots = append(slots, player.ImageSlot{
-				Img: pfp,
-				Row: currentRow,
-				Col: baseCol,
-			})
+			s.Reserve(
+				screen.Rect{X: body.X, Y: y, W: sharePfpIndent, H: sharePfpCellHeight},
+				&screen.Object{Kind: screen.ObjImage, Ref: pfp},
+			)
 		}
+		name := body.RowAt(y + sharePfpCellHeight/2).Indent(sharePfpIndent)
+		s.SetContent(name, sp.nameStyle(i).Render(sp.friends[i].Name), zone)
 
-		linesUsed += sharePfpCellHeight
-		currentRow += sharePfpCellHeight
+		y += sharePfpCellHeight
 	}
+}
 
-	return slots
+// nameStyle picks the style for friend i: highlighted under the cursor,
+// yellow once picked as a share target.
+func (sp *SharePanel) nameStyle(i int) lipgloss.Style {
+	switch {
+	case i == sp.cursor && sp.selected[i]:
+		return yellow500.Underline(true)
+	case i == sp.cursor:
+		return pink500.Underline(true)
+	case sp.selected[i]:
+		return yellow300
+	}
+	return pink300
 }

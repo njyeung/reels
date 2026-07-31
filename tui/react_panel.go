@@ -1,7 +1,7 @@
 package tui
 
 import (
-	"strings"
+	"github.com/njyeung/reels/tui/screen"
 )
 
 // reaction pairs a sendable emoji with its display label. emoji is what
@@ -24,10 +24,9 @@ var reactions = []reaction{
 // ReactPanel picks a reaction to send to the current chat-mode reel.
 // Mirrors ChatsPanel's cursor/scroll/render conventions.
 type ReactPanel struct {
-	isOpen       bool
-	cursor       int
-	scroll       int
-	visibleCount int
+	isOpen bool
+	cursor int
+	scroll int
 }
 
 func NewReactPanel() *ReactPanel {
@@ -50,21 +49,15 @@ func (rp *ReactPanel) Close() {
 	rp.scroll = 0
 }
 
-// MoveCursor moves the cursor by delta, auto-scrolling to keep it visible.
-func (rp *ReactPanel) MoveCursor(delta int) {
-	rp.cursor += delta
-	if rp.cursor < 0 {
-		rp.cursor = 0
-	}
-	if rp.cursor >= len(reactions) {
-		rp.cursor = len(reactions) - 1
-	}
+// MoveCursor moves the cursor by delta, scrolling to keep it inside r.
+func (rp *ReactPanel) MoveCursor(delta int, r screen.Rect) {
+	rp.cursor = min(max(rp.cursor+delta, 0), len(reactions)-1)
 
 	if rp.cursor < rp.scroll {
 		rp.scroll = rp.cursor
 	}
-	if rp.visibleCount > 0 && rp.cursor >= rp.scroll+rp.visibleCount {
-		rp.scroll = rp.cursor - rp.visibleCount + 1
+	if _, body := r.SplitTop(1); body.H > 0 {
+		rp.scroll = max(rp.scroll, rp.cursor-body.H+1)
 	}
 }
 
@@ -76,37 +69,24 @@ func (rp *ReactPanel) CursorEmoji() string {
 	return reactions[rp.cursor].emoji
 }
 
-// View renders the panel.
-func (rp *ReactPanel) View(width, height int, padding string) string {
-	if !rp.isOpen {
-		return ""
+// Paint paints the panel into r: a header, then one line per reaction.
+func (rp *ReactPanel) Paint(s *screen.Screen, r screen.Rect) {
+	if !rp.isOpen || r.Empty() {
+		return
 	}
 
-	var b strings.Builder
-	header := purple400.Bold(true).Underline(true).Render("React")
-	b.WriteString(padding + header + "\n")
+	header, body := r.SplitTop(1)
+	s.SetContent(header, purple400.Bold(true).Underline(true).Render("React"), nil)
 
-	availableLines := height - 2
-	if availableLines < 1 {
-		return b.String()
-	}
-
-	rp.visibleCount = availableLines
-
-	for i := rp.scroll; i < len(reactions) && i-rp.scroll < availableLines; i++ {
-		r := reactions[i]
-		glyph := r.display
+	for i := rp.scroll; i < len(reactions) && i-rp.scroll < body.H; i++ {
+		glyph := reactions[i].display
 		if glyph == "" {
-			glyph = r.emoji
+			glyph = reactions[i].emoji
 		}
-		var line string
+		line := " " + glyph + " "
 		if i == rp.cursor {
-			line = pink500.Underline(true).Render(" " + glyph + " ")
-		} else {
-			line = " " + glyph + " "
+			line = pink500.Underline(true).Render(line)
 		}
-		b.WriteString(padding + line + "\n")
+		s.SetContent(body.Row(i-rp.scroll), line, &screen.Zone{Owner: screen.OwnerReact, Target: i})
 	}
-
-	return b.String()
 }

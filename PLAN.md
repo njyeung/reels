@@ -185,8 +185,62 @@ Replace `View(width, height int, padding string)` with `Layout(r Rect, s *Screen
 
 - **Comments first** — highest value and highest risk. One walk replaces `View` + `VisibleGifSlots`; gifs become `s.Reserve(...)` at the same indent the text is written at, deleting the duplicated constants. `commentLines`/`firstFullyVisible` take the rect instead of reading `cp.width`.
 - Then **share** (pfp reservation, same shape).
-- Then **help**, **chats**, **react** — text only, mechanical.
+- Then **help**, **chats**, **react** — text only, mechanical. All three are a
+  header plus one line per entry, so all three open with `header, body :=
+  r.SplitTop(1)` and paint with `body.Row(i - scroll)`.
 - In each, `MoveCursor`/`Scroll` take the rect and derive `visibleCount` themselves, deleting the paint-time side effect.
+
+Every panel's `View(width, height int, padding string)` is now gone, and with it
+the `padding` string, the `height - 2` line budget each one recomputed, and the
+`visibleCount` field each one wrote during paint and read during Update.
+
+The page size each one scrolls by is `body.H` — the same split that placed the
+header, rather than an `r.H - 1` repeated per panel. `Rect.Row` already returns
+an empty rect for rows outside itself, so a paint loop that walks past the bottom
+writes nothing; `Rect.RowAt(y)` is the same thing for the two panels (comments,
+share) that track a running absolute `y` instead of counting from the top.
+
+### `updateImages` is gone (share step)
+
+`SharePanel.Paint` reserves each friend's pfp as an `ObjImage` in the
+`sharePfpIndent` gutter, so the panel no longer knows a base row: `View` and
+`VisiblePfpSlots` are both deleted, and the cached `visibleCount` with them.
+Every friend is a fixed `sharePfpCellHeight` tall, so `MoveCursor(delta, r)`
+gets its page size from `body.H / sharePfpCellHeight` arithmetically — no trial
+paint, unlike the comments panel's `clampScroll`.
+
+That put share pfps in `Extents()` while `updateImages` was still calling
+`SetVisibleImages` itself, and the two would have fought over one slot list, so
+image reconciliation moved into `syncFrame` alongside video and gifs and
+`updateImages` is deleted along with its six call sites. `setVisibleImages`
+assigns image IDs by slice index (`session.go:692`), so order has to be stable
+frame to frame: the reel pfp and floating pfps are appended first, then the
+`ObjImage` extents in first-seen row-major order.
+
+The reel pfp and floating pfps are still *placed* from the layout rather than
+reserved. Floating pfps sit inside the reel's own rect, and `Reserve` overwrites
+`cell.Obj`, so reserving them would take those cells away from the video and
+shrink its reported extent. That needs its own step.
+
+A friend row that doesn't fit whole is dropped, not clipped — the loop stops at
+`y+sharePfpCellHeight <= body.Bottom()`, the same rule as the gif fit check in
+`CommentsPanel.Paint`. Text can be clipped by the terminal; images cannot.
+`KittyRenderer.RenderImage` places with `a=T` and no `C=1` (`render.go:169`), so
+the terminal moves the cursor down past the image after placing it, and an image
+whose bottom lands below the last row scrolls the screen — dragging the frame out
+from under the player, which the `\x1b7`/`\x1b8` save/restore cannot undo. The
+row held back from Bubble Tea is what absorbs this for an image ending *on* the
+last row; two rows past it is not absorbed.
+
+Adding `C=1` to the placement would make images clip like text and is what
+halfway gifs and pfps would need.
+
+Writing text past the bottom is a separate hazard with the same symptom, and it
+is handled by the rects rather than by a check: `SetContent` clips to the rect it
+is handed, and the screen is one row taller than `l.panel`, so a single-row write
+built from a bare `Rect{Y: y, H: 1}` would land on the held-back row and overflow
+the frame. `Rect.RowAt`/`Rect.Row` return empty for rows outside the panel, so it
+can't.
 
 ## Phase 4 — mouse
 

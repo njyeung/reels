@@ -61,6 +61,11 @@ func (r Rect) Row(i int) Rect {
 	return Rect{X: r.X, Y: r.Y + i, W: r.W, H: 1}
 }
 
+// RowAt returns the row of r containing absolute row y, for callers that walk a
+// running y down the screen rather than counting rows from the top. Rows outside
+// r come back empty, so a walk that runs past the bottom writes nothing.
+func (r Rect) RowAt(y int) Rect { return r.Row(y - r.Y) }
+
 // Indent moves r's left edge n columns right, keeping its right edge where it
 // is. This is the reply indent and the space held open for a profile picture:
 // the indented text wraps to the narrower width automatically, because the width

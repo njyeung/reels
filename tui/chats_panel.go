@@ -2,20 +2,19 @@ package tui
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/njyeung/reels/backend"
+	"github.com/njyeung/reels/tui/screen"
 )
 
 // ChatsPanel picks a DM chat whose shared reels to browse.
-// Mirrors SharePanel's cursor/scroll/render conventions; entries are one line
+// Mirrors SharePanel's cursor/scroll/paint conventions; entries are one line
 // each (no pfp images are available for DM chats).
 type ChatsPanel struct {
-	isOpen       bool
-	chats        []backend.DMChat
-	cursor       int
-	scroll       int
-	visibleCount int
+	isOpen bool
+	chats  []backend.DMChat
+	cursor int
+	scroll int
 }
 
 func NewChatsPanel() *ChatsPanel {
@@ -47,24 +46,18 @@ func (cp *ChatsPanel) Close() {
 	cp.chats = nil
 }
 
-// MoveCursor moves the cursor by delta, auto-scrolling to keep it visible.
-func (cp *ChatsPanel) MoveCursor(delta int) {
+// MoveCursor moves the cursor by delta, scrolling to keep it inside r.
+func (cp *ChatsPanel) MoveCursor(delta int, r screen.Rect) {
 	if len(cp.chats) == 0 {
 		return
 	}
-	cp.cursor += delta
-	if cp.cursor < 0 {
-		cp.cursor = 0
-	}
-	if cp.cursor >= len(cp.chats) {
-		cp.cursor = len(cp.chats) - 1
-	}
+	cp.cursor = min(max(cp.cursor+delta, 0), len(cp.chats)-1)
 
 	if cp.cursor < cp.scroll {
 		cp.scroll = cp.cursor
 	}
-	if cp.visibleCount > 0 && cp.cursor >= cp.scroll+cp.visibleCount {
-		cp.scroll = cp.cursor - cp.visibleCount + 1
+	if _, body := r.SplitTop(1); body.H > 0 {
+		cp.scroll = max(cp.scroll, cp.cursor-body.H+1)
 	}
 }
 
@@ -76,39 +69,27 @@ func (cp *ChatsPanel) CursorChat() *backend.DMChat {
 	return &cp.chats[cp.cursor]
 }
 
-// View renders the panel.
-func (cp *ChatsPanel) View(width, height int, padding string) string {
-	if !cp.isOpen {
-		return ""
+// Paint paints the panel into r: a header, then one line per chat.
+func (cp *ChatsPanel) Paint(s *screen.Screen, r screen.Rect) {
+	if !cp.isOpen || r.Empty() {
+		return
 	}
 
-	var b strings.Builder
-	header := purple400.Bold(true).Underline(true).Render("Chats")
-	b.WriteString(padding + header + "\n")
-
-	availableLines := height - 2
-	if availableLines < 1 {
-		return b.String()
-	}
+	header, body := r.SplitTop(1)
+	s.SetContent(header, purple400.Bold(true).Underline(true).Render("Chats"), nil)
 
 	if len(cp.chats) == 0 {
-		b.WriteString(padding + gray500.Render("no new reels from friends") + "\n")
-		return b.String()
+		s.SetContent(body.Row(0), gray500.Render("no new reels from friends"), nil)
+		return
 	}
 
-	cp.visibleCount = availableLines
-
-	for i := cp.scroll; i < len(cp.chats) && i-cp.scroll < availableLines; i++ {
+	for i := cp.scroll; i < len(cp.chats) && i-cp.scroll < body.H; i++ {
 		chat := cp.chats[i]
 		countLabel := fmt.Sprintf("  (%d)", chat.UnseenCount())
-		var line string
+		line := pink300.Render(chat.Title) + gray600.Render(countLabel)
 		if i == cp.cursor {
 			line = pink500.Underline(true).Render(chat.Title) + gray500.Render(countLabel)
-		} else {
-			line = pink300.Render(chat.Title) + gray600.Render(countLabel)
 		}
-		b.WriteString(padding + line + "\n")
+		s.SetContent(body.Row(i-cp.scroll), line, &screen.Zone{Owner: screen.OwnerChats, Target: i})
 	}
-
-	return b.String()
 }

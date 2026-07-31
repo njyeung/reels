@@ -112,8 +112,7 @@ func (cp *CommentsPanel) ResizeGifs() {
 	cp.loadGifs()
 }
 
-// MoveCursor moves the cursor by delta, auto-scrolling to keep it fully visible
-// in r — the rect the panel will next be painted into.
+// MoveCursor moves the cursor by delta, auto-scrolling to keep it fully visible in r
 func (cp *CommentsPanel) MoveCursor(delta int, r screen.Rect) {
 	if len(cp.comments) == 0 {
 		return
@@ -180,12 +179,6 @@ func (cp *CommentsPanel) clampCursor() {
 
 // clampScroll raises scroll until the cursor's comment is painted in full, so
 // the panel never leaves the highlighted comment half off the bottom.
-//
-// Whether it fits is answered by painting into a scratch matrix and reading what
-// Paint placed, not by a second height calculation. How tall a comment is depends
-// on where its text wraps, and that only happens inside Paint — a copy of it here
-// is exactly what this refactor deletes. The cost is a few thousand cell writes
-// on a keypress, and it cannot disagree with the frame the user sees.
 func (cp *CommentsPanel) clampScroll(r screen.Rect) {
 	if cp.cursor < cp.scroll {
 		cp.scroll = cp.cursor
@@ -226,9 +219,7 @@ func (cp *CommentsPanel) RepliesLoaded(parentPK string) bool {
 	return false
 }
 
-// showsReplyHint reports whether comment i should render a "↳ N replies" hint:
-// it's a top-level comment with replies that haven't been loaded yet. Loaded
-// replies are always contiguous right after their parent.
+// showsReplyHint reports whether comment i should render a "↳ N replies" hint
 func (cp *CommentsPanel) showsReplyHint(i int) bool {
 	c := cp.comments[i]
 	if c.ParentCommentID != "" || c.ChildCommentCount == 0 {
@@ -256,11 +247,12 @@ func (cp *CommentsPanel) Paint(s *screen.Screen, r screen.Rect) (lastPlaced int)
 		return lastPlaced
 	}
 
-	s.SetContent(r, purple400.Bold(true).Underline(true).Render("Comments"), nil)
+	header, body := r.SplitTop(1)
+	s.SetContent(header, purple400.Bold(true).Underline(true).Render("Comments"), nil)
 
-	y := r.Y + 1
+	y := body.Y
 
-	for i := cp.scroll; i < len(cp.comments) && y < r.Bottom(); i++ {
+	for i := cp.scroll; i < len(cp.comments) && y < body.Bottom(); i++ {
 		comment := cp.comments[i]
 
 		zone := &screen.Zone{Owner: screen.OwnerComments, Target: i}
@@ -271,7 +263,7 @@ func (cp *CommentsPanel) Paint(s *screen.Screen, r screen.Rect) (lastPlaced int)
 		}
 
 		anim, isGif := cp.gifAnims[comment.PK]
-		if isGif && y+1+cp.gifCellHeight > r.Bottom() {
+		if isGif && y+1+cp.gifCellHeight > body.Bottom() {
 			break
 		}
 
@@ -283,31 +275,31 @@ func (cp *CommentsPanel) Paint(s *screen.Screen, r screen.Rect) (lastPlaced int)
 		if comment.IsVerified {
 			username += " " + blue500.Render("✓")
 		}
-		s.SetContent(row(r, y, userIndent), username, zone)
+		s.SetContent(body.RowAt(y).Indent(userIndent), username, zone)
 		y++
 
 		placed := true
 		if isGif {
 			s.Reserve(
-				screen.Rect{X: r.X + textIndent, Y: y, W: max(r.W-textIndent, 0), H: cp.gifCellHeight},
+				screen.Rect{X: body.X + textIndent, Y: y, W: max(body.W-textIndent, 0), H: cp.gifCellHeight},
 				&screen.Object{Kind: screen.ObjGif, Ref: anim},
 			)
 			y += cp.gifCellHeight
 		} else {
-			text := screen.Rect{X: r.X + textIndent, Y: y, W: max(r.W-textIndent, 0), H: r.Bottom() - y}
-			body := screen.Wrap(renderWithMentions(strings.ReplaceAll(comment.Text, "\n", " "), gray50), text.W)
-			if body != "" {
-				_, endY := s.SetContent(text, body, zone)
-				placed = endY < r.Bottom()
-				y = min(endY+1, r.Bottom())
+			text := screen.Rect{X: body.X + textIndent, Y: y, W: max(body.W-textIndent, 0), H: body.Bottom() - y}
+			wrapped := screen.Wrap(renderWithMentions(strings.ReplaceAll(comment.Text, "\n", " "), gray50), text.W)
+			if wrapped != "" {
+				_, endY := s.SetContent(text, wrapped, zone)
+				placed = endY < body.Bottom()
+				y = min(endY+1, body.Bottom())
 			}
 		}
 
 		if cp.showsReplyHint(i) {
-			if y >= r.Bottom() {
+			if y >= body.Bottom() {
 				placed = false
 			} else {
-				s.SetContent(row(r, y, 4), gray400.Render(replyHintText(comment.ChildCommentCount)), zone)
+				s.SetContent(body.RowAt(y).Indent(4), gray400.Render(replyHintText(comment.ChildCommentCount)), zone)
 				y++
 			}
 		}
@@ -320,22 +312,17 @@ func (cp *CommentsPanel) Paint(s *screen.Screen, r screen.Rect) (lastPlaced int)
 	return lastPlaced
 }
 
-// row is one row of r, indented, for the single-line runs above.
-func row(r screen.Rect, y, indent int) screen.Rect {
-	return screen.Rect{X: r.X + indent, Y: y, W: max(r.W-indent, 0), H: 1}
-}
-
 // SetLoading sets the loading state for the comments panel
 func (cp *CommentsPanel) SetLoading(loading bool) {
 	cp.loading = loading
 }
 
-// ShouldFetchMore returns true if the cursor is near the end of the loaded comments.
+// // ShouldFetchMore returns true if the cursor is near the end of the loaded comments.
 func (cp *CommentsPanel) ShouldFetchMore() bool {
 	return len(cp.comments) > 0 && cp.cursor >= len(cp.comments)-5
 }
 
-// CanAccept returns true if the panel can accept comments for the given reel
+// // CanAccept returns true if the panel can accept comments for the given reel
 func (cp *CommentsPanel) CanAccept(reelPK string) bool {
 	return cp.isOpen && cp.reelPK == reelPK
 }

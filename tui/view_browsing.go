@@ -19,15 +19,64 @@ import (
 )
 
 func (m Model) viewBrowsing() string {
-	if m.browsingFrame == nil {
-		return "Loading..."
-	}
 	return m.browsingFrame.Render()
 }
 
-// paintBrowsing paints the browsing frame and returns the matrix it painted
-// into. It has no reconciliation side effect; syncFrame owns that
-// update-path work and stores the result for View.
+// syncFrame paints, handles player updates, and stores the next frame.
+func (m *Model) syncFrame() {
+	if m.width <= 0 || m.height <= 0 {
+		m.browsingFrame = nil
+		return
+	}
+	frame := m.paintBrowsing()
+
+	// The reel's own pfp and floating pfps are still placed from the layout rather than reserved.
+	var images []player.ImageSlot
+	if m.reelPFP != nil {
+		l := m.browsingLayout()
+		images = append(images, player.ImageSlot{Img: m.reelPFP, Row: l.username.Y + 1, Col: l.username.X + 1})
+		images = append(images, m.floatingPfpSlots(l.video)...)
+	}
+
+	var gifs []player.GifSlot
+	for _, e := range frame.Extents() {
+		switch e.Obj.Kind {
+		case screen.ObjVideo:
+			rowOff, colOff := m.player.VideoCenterOffset()
+			m.player.SetVideoPosition(e.Visible.Y+rowOff+1, e.Visible.X+colOff+1)
+
+		case screen.ObjGif:
+			anim, ok := e.Obj.Ref.(*player.GifAnimation)
+			if !ok {
+				continue
+			}
+			gifs = append(gifs, player.GifSlot{Anim: anim, Row: e.Visible.Y + 1, Col: e.Visible.X + 1})
+
+		case screen.ObjImage:
+			img, ok := e.Obj.Ref.(*player.Img)
+			if !ok {
+				continue
+			}
+			images = append(images, player.ImageSlot{Img: img, Row: e.Visible.Y + 1, Col: e.Visible.X + 1})
+		}
+	}
+
+	if len(gifs) > 0 {
+		m.player.SetVisibleGifs(gifs)
+	} else {
+		m.player.ClearGifs()
+	}
+
+	if len(images) > 0 {
+		m.player.SetVisibleImages(images)
+	} else {
+		m.player.ClearImages()
+	}
+
+	m.browsingFrame = frame
+}
+
+// paintBrowsing paints the browsing frame and returns the matrix it painted into.
 func (m Model) paintBrowsing() *screen.Screen {
 	l := m.browsingLayout()
 	s := screen.New(m.width, m.height)
@@ -52,6 +101,14 @@ func (m Model) paintBrowsing() *screen.Screen {
 		switch {
 		case m.comments.IsOpen():
 			m.comments.Paint(s, l.panel)
+		case m.share.IsOpen():
+			m.share.Paint(s, l.panel)
+		case m.help.IsOpen():
+			m.help.Paint(s, l.panel)
+		case m.chats.IsOpen():
+			m.chats.Paint(s, l.panel)
+		case m.react.IsOpen():
+			m.react.Paint(s, l.panel)
 		case !m.panelOpen():
 			m.paintCaption(s, l.caption)
 			m.paintNavbar(s, l.navbar)
@@ -156,39 +213,6 @@ func (m Model) paintNavbar(s *screen.Screen, r screen.Rect) {
 	for i, hint := range hints {
 		s.SetContent(r.Row(i), gray600.Render(hint), nil)
 	}
-}
-
-// syncFrame paints, handles player updates, and stores the next frame.
-func (m *Model) syncFrame() {
-	if m.width <= 0 || m.height <= 0 {
-		m.browsingFrame = nil
-		return
-	}
-	frame := m.paintBrowsing()
-
-	var gifs []player.GifSlot
-	for _, e := range frame.Extents() {
-		switch e.Obj.Kind {
-		case screen.ObjVideo:
-			rowOff, colOff := m.player.VideoCenterOffset()
-			m.player.SetVideoPosition(e.Visible.Y+rowOff+1, e.Visible.X+colOff+1)
-
-		case screen.ObjGif:
-			anim, ok := e.Obj.Ref.(*player.GifAnimation)
-			if !ok {
-				continue
-			}
-			gifs = append(gifs, player.GifSlot{Anim: anim, Row: e.Visible.Y + 1, Col: e.Visible.X + 1})
-		}
-	}
-
-	if len(gifs) > 0 {
-		m.player.SetVisibleGifs(gifs)
-	} else {
-		m.player.ClearGifs()
-	}
-
-	m.browsingFrame = frame
 }
 
 // displayKeys formats a keybind slice for the navbar
@@ -536,28 +560,29 @@ func (m Model) panelOpen() bool {
 // scrollPanel dispatches scroll/cursor movement to the active panel.
 // Returns true if a panel consumed the input.
 func (m *Model) scrollPanel(direction int) bool {
+	panel := m.browsingLayout().panel
+
 	if m.help.IsOpen() {
-		m.help.Scroll(direction)
+		m.help.Scroll(direction, panel)
 		return true
 	}
 	if m.share.IsOpen() {
 		if m.shareSending {
 			return true
 		}
-		m.share.MoveCursor(direction)
-		m.updateImages()
+		m.share.MoveCursor(direction, panel)
 		return true
 	}
 	if m.chats.IsOpen() {
-		m.chats.MoveCursor(direction)
+		m.chats.MoveCursor(direction, panel)
 		return true
 	}
 	if m.react.IsOpen() {
-		m.react.MoveCursor(direction)
+		m.react.MoveCursor(direction, panel)
 		return true
 	}
 	if m.comments.IsOpen() {
-		m.comments.MoveCursor(direction, m.browsingLayout().panel)
+		m.comments.MoveCursor(direction, panel)
 		if direction > 0 && m.currentReel != nil && m.comments.ShouldFetchMore() &&
 			!m.comments.loading && len(m.currentReel.Comments) < m.currentReel.CommentCount {
 			m.comments.SetLoading(true)
@@ -619,31 +644,6 @@ func (m *Model) resizeReel(delta int) {
 	videoHeightPx := newH * settings.RetinaScale
 	player.ComputeVideoCharacterDimensions(videoWidthPx, videoHeightPx)
 	m.player.SetSize(videoWidthPx, videoHeightPx)
-	m.updateImages()
-}
-
-func (m *Model) updateImages() {
-	var slots []player.ImageSlot
-	l := m.browsingLayout()
-
-	if m.reelPFP != nil {
-		// The pfp sits in the gutter pfpIndent holds open on the username line.
-		slots = append(slots, player.ImageSlot{Img: m.reelPFP, Row: l.username.Y + 1, Col: l.username.X + 1})
-		slots = append(slots, m.floatingPfpSlots(l.video)...)
-	}
-
-	if m.share.IsOpen() {
-		// TODO(phase 3): the share panel paints itself and its pfps come back out
-		// of Extents, the way the comments panel's GIFs already do.
-		p := l.panel
-		slots = append(slots, m.share.VisiblePfpSlots(p.W, max(p.H, 1), p.Y+1, p.X+1)...)
-	}
-
-	if len(slots) > 0 {
-		m.player.SetVisibleImages(slots)
-	} else {
-		m.player.ClearImages()
-	}
 }
 
 // floatingPfpSlots scatters floating pfps (friend reposts/likes, the DM sender,

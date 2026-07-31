@@ -1,9 +1,8 @@
 package tui
 
 import (
-	"strings"
-
 	"github.com/njyeung/reels/backend"
+	"github.com/njyeung/reels/tui/screen"
 )
 
 type helpEntry struct {
@@ -13,10 +12,9 @@ type helpEntry struct {
 
 // HelpPanel displays all keybinds in a scrollable list
 type HelpPanel struct {
-	isOpen       bool
-	scroll       int
-	entries      []helpEntry
-	visibleCount int
+	isOpen  bool
+	scroll  int
+	entries []helpEntry
 }
 
 func NewHelpPanel() *HelpPanel {
@@ -71,42 +69,25 @@ func (hp *HelpPanel) buildEntries() {
 	}
 }
 
-func (hp *HelpPanel) Scroll(delta int) {
-	newScroll := hp.scroll + delta
-	if newScroll < 0 {
-		newScroll = 0
-	}
-	maxScroll := len(hp.entries) - hp.visibleCount
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
-	if newScroll > maxScroll {
-		newScroll = maxScroll
-	}
-	hp.scroll = newScroll
+// Scroll scrolls the list by delta, stopping once the last entry is on the last
+// line r has room for.
+func (hp *HelpPanel) Scroll(delta int, r screen.Rect) {
+	_, body := r.SplitTop(1)
+	maxScroll := max(len(hp.entries)-body.H, 0)
+	hp.scroll = min(max(hp.scroll+delta, 0), maxScroll)
 }
 
-func (hp *HelpPanel) View(width, height int, padding string) string {
-	if !hp.isOpen || len(hp.entries) == 0 {
-		return ""
+// Paint paints the panel into r: a header, then one line per keybind.
+func (hp *HelpPanel) Paint(s *screen.Screen, r screen.Rect) {
+	if !hp.isOpen || len(hp.entries) == 0 || r.Empty() {
+		return
 	}
 
-	var b strings.Builder
+	header, body := r.SplitTop(1)
+	s.SetContent(header, purple400.Bold(true).Underline(true).Render("Help"), nil)
 
-	header := purple400.Bold(true).Underline(true).Render("Help")
-	b.WriteString(padding + header + "\n")
-	availableLines := height - 2
-	if availableLines < 1 {
-		return ""
-	}
-
-	hp.visibleCount = availableLines
-
-	for i := hp.scroll; i < len(hp.entries) && i-hp.scroll < availableLines; i++ {
+	for i := hp.scroll; i < len(hp.entries) && i-hp.scroll < body.H; i++ {
 		entry := hp.entries[i]
-		line := gray500.Render(entry.keys + ": " + entry.action)
-		b.WriteString(padding + line + "\n")
+		s.SetContent(body.Row(i-hp.scroll), gray500.Render(entry.keys+": "+entry.action), &screen.Zone{Owner: screen.OwnerHelp, Target: i})
 	}
-
-	return b.String()
 }
