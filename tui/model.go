@@ -223,12 +223,22 @@ func (m Model) listenForEvents() tea.Msg {
 	return backendEventMsg(event)
 }
 
+// loadCurrentReel resolves the reel the feed is parked on.
+//
+// GetCurrent reads the pk out of the live DOM, so it fails whenever the page
+// has not rendered a visible reel yet.
 func (m Model) loadCurrentReel() tea.Msg {
-	info, err := m.backend.GetCurrent()
-	if err != nil {
-		return reelErrorMsg{err}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		info, err := m.backend.GetCurrent()
+		if err == nil {
+			return reelLoadedMsg{info}
+		}
+		if time.Now().After(deadline) {
+			return reelErrorMsg{err}
+		}
+		time.Sleep(250 * time.Millisecond)
 	}
-	return reelLoadedMsg{info}
 }
 
 func (m Model) checkLoginStatus() tea.Msg {
@@ -369,6 +379,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(
 			m.loadCurrentReel,
 			m.listenForEvents,
+			m.musicTick(),
 		)
 
 	case loginRequiredMsg:
@@ -424,10 +435,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = stateBrowsing
 		m.status = statusLoading
 		m.musicScrollOffset = 0
-		return m, tea.Batch(
-			m.startPlayback(msg.info.Index),
-			m.musicTick(),
-		)
+		return m, m.startPlayback(msg.info.Index)
 
 	case musicTickMsg:
 		if m.currentReel != nil && m.currentReel.Music != nil {
@@ -468,7 +476,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case reelErrorMsg:
 		m.status = statusReelError
-		return m, tea.Quit
+		m.lastErr = msg.err
+		m.state = stateError
+		return m, nil
 
 	case videoReadyMsg:
 		m.status = statusNone
