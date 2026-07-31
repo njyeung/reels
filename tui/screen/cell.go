@@ -8,18 +8,13 @@ package screen
 // Obj and Zone, so reading any cell of a glyph answers the same question —
 // clicking the right half of an emoji hits the same zone as the left half.
 type Cell struct {
-	// Rune is the first rune of the grapheme cluster, or 0 on a continuation
-	// cell.
+	// Rune is the first rune of the grapheme cluster, or 0 on a continuation cell.
 	Rune rune
 
-	// Comb holds the remaining runes of the cluster: combining marks, variation
-	// selectors, ZWJ sequences.
+	// Comb holds the remaining runes of the cluster: combining marks, variation selectors, ZWJ sequences.
 	Comb []rune
 
 	// Style is the raw SGR sequence active for this cell, or "" for default.
-	// It is stored verbatim rather than parsed into attributes, so anything
-	// lipgloss emits — truecolor, underline styles, whatever Charm adds next —
-	// round-trips without this package knowing what it means.
 	Style string
 
 	// Width is the column count of the grapheme starting here, or 0 on a

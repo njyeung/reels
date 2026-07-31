@@ -45,8 +45,6 @@ func (cp *CommentsPanel) Open(reelPK string) {
 	cp.cursor = 0
 	cp.scroll = 0
 
-	// If opening a different reel, clear comments
-	// If reopening same reel, preserve cached comments
 	if cp.reelPK != reelPK {
 		cp.comments = make([]backend.Comment, 0)
 		cp.gifAnims = nil
@@ -275,7 +273,7 @@ func (cp *CommentsPanel) Paint(s *screen.Screen, r screen.Rect) (lastPlaced int)
 		if comment.IsVerified {
 			username += " " + blue500.Render("✓")
 		}
-		s.SetContent(body.RowAt(y).Indent(userIndent), username, zone)
+		s.SetContent(body.Row(y-body.Y).Indent(userIndent), username, zone)
 		y++
 
 		placed := true
@@ -299,7 +297,7 @@ func (cp *CommentsPanel) Paint(s *screen.Screen, r screen.Rect) (lastPlaced int)
 			if y >= body.Bottom() {
 				placed = false
 			} else {
-				s.SetContent(body.RowAt(y).Indent(4), gray400.Render(replyHintText(comment.ChildCommentCount)), zone)
+				s.SetContent(body.Row(y-body.Y).Indent(4), gray400.Render(replyHintText(comment.ChildCommentCount)), zone)
 				y++
 			}
 		}

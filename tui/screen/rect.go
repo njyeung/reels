@@ -35,9 +35,7 @@ func (r Rect) Intersect(o Rect) Rect {
 
 // SplitTop cuts n rows off the top of r, returning those rows and what is left
 // below them. n is clamped to r's height, so splitting past the bottom yields an
-// empty remainder rather than a negative one — a layout carved out of a terminal
-// too short to hold it degrades to empty rects instead of panicking, and every
-// rect stays paintable.
+// empty remainder rather than a negative one.
 //
 // Carving a layout as a sequence of splits is what replaces deriving each
 // region's height from the screen height by hand:
@@ -52,8 +50,7 @@ func (r Rect) SplitTop(n int) (top, rest Rect) {
 	return top, rest
 }
 
-// Row returns row i of r as a single-row rect, i counted from r's top. Rows
-// outside r come back empty, so writing to one is a no-op.
+// Row returns row i of r as a single-row rect, i counted from r's top.
 func (r Rect) Row(i int) Rect {
 	if i < 0 || i >= r.H {
 		return Rect{}
@@ -62,14 +59,10 @@ func (r Rect) Row(i int) Rect {
 }
 
 // RowAt returns the row of r containing absolute row y, for callers that walk a
-// running y down the screen rather than counting rows from the top. Rows outside
-// r come back empty, so a walk that runs past the bottom writes nothing.
-func (r Rect) RowAt(y int) Rect { return r.Row(y - r.Y) }
+// running y down the screen rather than counting rows from the top.
+// func (r Rect) RowAt(y int) Rect { return r.Row(y - r.Y) }
 
-// Indent moves r's left edge n columns right, keeping its right edge where it
-// is. This is the reply indent and the space held open for a profile picture:
-// the indented text wraps to the narrower width automatically, because the width
-// comes from the rect rather than from a constant repeated at each call site.
+// Indent moves r's left edge n columns right, keeping its right edge where it is.
 func (r Rect) Indent(n int) Rect {
 	n = min(max(n, 0), max(r.W, 0))
 	return Rect{X: r.X + n, Y: r.Y, W: max(r.W, 0) - n, H: r.H}

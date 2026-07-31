@@ -151,7 +151,7 @@ func (sp *SharePanel) Paint(s *screen.Screen, r screen.Rect) {
 				&screen.Object{Kind: screen.ObjImage, Ref: pfp},
 			)
 		}
-		name := body.RowAt(y + sharePfpCellHeight/2).Indent(sharePfpIndent)
+		name := body.Row(y + sharePfpCellHeight/2 - body.Y).Indent(sharePfpIndent)
 		s.SetContent(name, sp.nameStyle(i).Render(sp.friends[i].Name), zone)
 
 		y += sharePfpCellHeight

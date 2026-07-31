@@ -24,7 +24,7 @@ func (k ObjKind) String() string {
 
 // Object is a region reserved for something the player draws itself: the reel
 // video, a comment GIF, a profile picture. The screen only records where it
-// goes — Ref is carried through untouched for the reconcile step to hand back
+// goes. Ref is carried through untouched for the reconcile step to hand back
 // to the player, and is never dereferenced here.
 type Object struct {
 	Kind ObjKind
@@ -73,8 +73,6 @@ func (s *Screen) Extents() []Extent {
 			if obj == nil {
 				continue
 			}
-			// Few objects are ever on screen at once, so a linear probe beats
-			// carrying a map around.
 			found := false
 			for i := range out {
 				if out[i].Obj == obj {

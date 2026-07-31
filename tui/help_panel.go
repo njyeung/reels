@@ -65,6 +65,7 @@ func (hp *HelpPanel) buildEntries() {
 		{displayKeys(config.KeysReactOpen), "react to reel (chat mode)"},
 		{displayKeys(config.KeysReactClose), "close react panel (chat mode)"},
 		{displayKeys(config.KeysHelpOpen), "help"},
+		{displayKeys(config.KeysHelpClose), "close help"},
 		{displayKeys(config.KeysQuit), "quit"},
 	}
 }
