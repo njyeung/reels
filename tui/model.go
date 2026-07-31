@@ -311,7 +311,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if m.comments.IsOpen() {
 			m.comments.ResizeGifs()
 		}
-		m.updateImages()
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -366,12 +365,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.loadingScrollTick()
 
 	case backendReadyMsg:
-		m.state = stateBrowsing
 		m.status = statusLoading
 		return m, tea.Batch(
 			m.loadCurrentReel,
 			m.listenForEvents,
-			m.musicTick(),
 		)
 
 	case loginRequiredMsg:
@@ -407,7 +404,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case backend.EventShareFriendsLoaded:
 			if m.share.IsOpen() {
 				m.share.SetFriends(m.backend.GetShareFriends())
-				m.updateImages()
 			}
 		case backend.EventDMReelsReady:
 			m.dmReelsReady = true
@@ -425,9 +421,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case reelLoadedMsg:
 		m.currentReel = msg.info
-		m.status = statusNone
+		m.state = stateBrowsing
+		m.status = statusLoading
 		m.musicScrollOffset = 0
-		return m, m.startPlayback(msg.info.Index)
+		return m, tea.Batch(
+			m.startPlayback(msg.info.Index),
+			m.musicTick(),
+		)
 
 	case musicTickMsg:
 		if m.currentReel != nil && m.currentReel.Music != nil {
@@ -468,21 +468,19 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case reelErrorMsg:
 		m.status = statusReelError
-		return m, nil
+		return m, tea.Quit
 
 	case videoReadyMsg:
 		m.status = statusNone
 		m.reelPFP = msg.pfp
 		m.reelFloating = msg.contextFloating
 		m.floating = append(slices.Clone(msg.contextFloating), msg.chatFloating...)
-		m.updateImages()
 		go m.prefetch(msg.index)
 		return m, nil
 
 	case selfReactedMsg:
 		if m.currentReel != nil && m.currentReel.Index == msg.index {
 			m.floating = append(slices.Clone(m.reelFloating), m.chatFloating(msg.index)...)
-			m.updateImages()
 		}
 		return m, nil
 
