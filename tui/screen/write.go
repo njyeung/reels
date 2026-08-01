@@ -22,19 +22,17 @@ import (
 // Any object already reserved on a cell survives being written over, so text
 // can be labelled on top of a reservation. Only Clear removes objects.
 //
+// Zones layer the same way: a nil zone leaves whatever is already on the cell
+// in place, so a decoration drawn over a target doesn't punch a hole in it.
+// Pass NoZone to actually clear one.
+//
 // It returns the cursor position just past the last glyph, so consecutive runs
 // can be chained without the caller measuring anything:
 //
 //	x, _ = s.SetContent(Rect{X: x, Y: row, W: w, H: 1}, "❤️ "+likes, likeZone)
 //	x, _ = s.SetContent(Rect{X: x, Y: row, W: w, H: 1}, "  💬 "+comments, commentZone)
 //
-// That is the whole point of the design: a like count going from 3 to 4 digits
-// moves everything after it, and no call site has to know.
-//
-// Adapted from printString in github.com/charmbracelet/x/cellbuf (MIT), the
-// reference implementation of decoding styled text into cells. Two differences:
-// styles are kept as their raw SGR sequences instead of being parsed into
-// attributes, and every written cell is tagged with the zone that owns it.
+// Adapted from printString in github.com/charmbracelet/x/cellbuf (MIT)
 func (s *Screen) SetContent(r Rect, str string, zone *Zone) (endX, endY int) {
 	clip := r.Intersect(s.Bounds())
 	if clip.Empty() {
@@ -67,7 +65,7 @@ func (s *Screen) SetContent(r Rect, str string, zone *Zone) (endX, endY int) {
 					Rune:  runes[0],
 					Style: style,
 					Width: int8(width),
-					Zone:  zone,
+					Zone:  resolveZone(s.cells[base].Zone, zone),
 					Obj:   s.cells[base].Obj,
 				}
 				if len(runes) > 1 {
@@ -77,7 +75,7 @@ func (s *Screen) SetContent(r Rect, str string, zone *Zone) (endX, endY int) {
 				for i := 1; i < width; i++ {
 					s.cells[base+i] = Cell{
 						Style: style,
-						Zone:  zone,
+						Zone:  resolveZone(s.cells[base+i].Zone, zone),
 						Obj:   s.cells[base+i].Obj,
 					}
 				}

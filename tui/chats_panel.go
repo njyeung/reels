@@ -75,6 +75,8 @@ func (cp *ChatsPanel) Paint(s *screen.Screen, r screen.Rect) {
 		return
 	}
 
+	s.SetZone(r, &screen.Zone{Value: chatsPanelTargetOffset})
+
 	header, body := r.SplitTop(1)
 	s.SetContent(header, purple400.Bold(true).Underline(true).Render("Chats"), nil)
 
@@ -90,6 +92,6 @@ func (cp *ChatsPanel) Paint(s *screen.Screen, r screen.Rect) {
 		if i == cp.cursor {
 			line = pink500.Underline(true).Render(chat.Title) + gray500.Render(countLabel)
 		}
-		s.SetContent(body.Row(i-cp.scroll), line, &screen.Zone{Owner: screen.OwnerChats, Target: i})
+		s.SetContent(body.Row(i-cp.scroll), line, &screen.Zone{Value: chatsPanelTargetOffset + 1 + i})
 	}
 }

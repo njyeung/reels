@@ -75,6 +75,8 @@ func (rp *ReactPanel) Paint(s *screen.Screen, r screen.Rect) {
 		return
 	}
 
+	s.SetZone(r, &screen.Zone{Value: reactPanelTargetOffset})
+
 	header, body := r.SplitTop(1)
 	s.SetContent(header, purple400.Bold(true).Underline(true).Render("React"), nil)
 
@@ -87,6 +89,6 @@ func (rp *ReactPanel) Paint(s *screen.Screen, r screen.Rect) {
 		if i == rp.cursor {
 			line = pink500.Underline(true).Render(line)
 		}
-		s.SetContent(body.Row(i-rp.scroll), line, &screen.Zone{Owner: screen.OwnerReact, Target: i})
+		s.SetContent(body.Row(i-rp.scroll), line, &screen.Zone{Value: reactPanelTargetOffset + 1 + i})
 	}
 }

@@ -39,7 +39,7 @@ func (m *Model) syncFrame() {
 	}
 
 	var gifs []player.GifSlot
-	for _, e := range frame.Extents() {
+	for _, e := range frame.GetObjs() {
 		switch e.Obj.Kind {
 		case screen.ObjVideo:
 			rowOff, colOff := m.player.VideoCenterOffset()
@@ -82,7 +82,8 @@ func (m Model) paintBrowsing() *screen.Screen {
 	s := screen.New(m.width, m.height)
 
 	video := &screen.Object{Kind: screen.ObjVideo}
-	s.Reserve(l.video, video)
+	s.SetObj(l.video, video)
+	s.SetZone(l.video, &screen.Zone{Value: videoTargetOffset})
 
 	m.paintHUD(s, l.hud)
 	m.paintStatus(s, l.status)
@@ -121,11 +122,20 @@ func (m Model) paintBrowsing() *screen.Screen {
 // paintStatus paints the row above the reel: like, comment and repost counts,
 // then the save, share, play/pause and mute indicators.
 func (m Model) paintStatus(s *screen.Screen, r screen.Rect) {
+	x := r.X
+	put := func(str string, t target) {
+		x, _ = s.SetContent(screen.Rect{X: x, Y: r.Y, W: r.Right() - x, H: 1}, str, &screen.Zone{Value: int(t)})
+	}
+	plain := func(str string) {
+		x, _ = s.SetContent(screen.Rect{X: x, Y: r.Y, W: r.Right() - x, H: 1}, str, nil)
+	}
+	gap := func() { plain(gray300.Render("  ")) }
+
 	heartIcon := "🤍"
 	commentIcon := "💬"
 	likeCount := ""
 	commentCount := ""
-	repostIcon := white.Render("⇄")
+	repostStyle := white
 	repostCount := ""
 	shareIcon := ""
 	saveIcon := "⚐"
@@ -135,7 +145,7 @@ func (m Model) paintStatus(s *screen.Screen, r screen.Rect) {
 			heartIcon = "❤️"
 		}
 		if m.currentReel.Reposted {
-			repostIcon = purple400.Render("⇄")
+			repostStyle = purple400
 		}
 		if m.currentReel.Saved {
 			saveIcon = "⚑"
@@ -144,7 +154,7 @@ func (m Model) paintStatus(s *screen.Screen, r screen.Rect) {
 			if m.shareConfirmed {
 				shareIcon = yellow300.Render("✔")
 			} else {
-				shareIcon = "↗"
+				shareIcon = gray300.Render("↗")
 			}
 		}
 		likeCount = formatLikeCount(m.currentReel.LikeCount)
@@ -162,12 +172,25 @@ func (m Model) paintStatus(s *screen.Screen, r screen.Rect) {
 		muteIcon = "M"
 	}
 
-	content := heartIcon + " " + likeCount + "  " + commentIcon + " " + commentCount + "  " + repostIcon + " " + repostCount + "  " + saveIcon + "  " + shareIcon + "  " + playPauseIcon + "  " + muteIcon
-	row := gray300.Render(content)
+	// A count belongs to its icon's target: clicking either the heart or the
+	// number beside it means the same thing.
+	put(gray300.Render(heartIcon+" "+likeCount), likeTarget)
+	gap()
+	put(gray300.Render(commentIcon+" "+commentCount), commentTarget)
+	gap()
+	put(repostStyle.Render("⇄")+gray300.Render(" "+repostCount), repostTarget)
+	gap()
+	put(gray300.Render(saveIcon), saveTarget)
+	gap()
+	put(shareIcon, yankTarget)
+	gap()
+	plain(gray300.Render(playPauseIcon))
+	gap()
+	plain(gray300.Render(muteIcon))
+
 	if m.status == statusLoading || m.comments.loading || m.backend.IsSyncing() {
-		row += strings.Repeat(" ", max(r.W-screen.StringWidth(content)-1, 0)) + m.spinner.View()
+		s.SetContent(screen.Rect{X: r.Right() - 1, Y: r.Y, W: 1, H: 1}, m.spinner.View(), nil)
 	}
-	s.SetContent(r, row, nil)
 }
 
 // paintMusic paints the track line, scrolling it as a marquee when the title and
@@ -242,10 +265,12 @@ func formatLikeCount(count int) string {
 
 // Browsing state update & helpers
 
-func (m Model) updateBrowsing(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+// updateBrowsing dispatches a resolved key string. Mouse clicks land here too,
+// with mouse.go mapping the clicked zone to the key its target stands for, so
+// every guard below is written once and both paths obey it.
+func (m Model) updateBrowsing(key string) (tea.Model, tea.Cmd) {
 
 	config := backend.GetSettings()
-	key := msg.String()
 
 	switch {
 	// Chats panel select takes priority over other keys

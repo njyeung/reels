@@ -255,9 +255,6 @@ func (m Model) checkLoginStatus() tea.Msg {
 	return loginRequiredMsg{}
 }
 
-// Update handles a message, then refreshes the stored browsing frame from the
-// resulting model. View only renders that frame; painting and player
-// reconciliation stay on the update path.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	quitting := false
 	if key, ok := msg.(tea.KeyMsg); ok {
@@ -292,10 +289,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if m.state == stateBrowsing {
-			return m.updateBrowsing(msg)
+			return m.updateBrowsing(key)
 		}
 
-	case tea.MouseMsg: // intercept scrolling and do nothing
+	case tea.MouseMsg:
+		if m.state == stateBrowsing {
+			return m.updateMouse(msg)
+		}
 		return m, nil
 
 	case tea.WindowSizeMsg:

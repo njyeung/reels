@@ -1,13 +1,6 @@
 // Package screen is a 2D matrix of terminal cells that acts as the single
 // source of truth for a painted frame.
-//
-// Text output comes from Render, out-of-band graphics placement comes from
-// Extents, and mouse hit testing comes from Hit — all read back from the same
-// cells, so they cannot disagree with each other or with what was drawn.
-//
-// Coordinates are 0-based throughout, matching tea.MouseMsg and slice indexing.
-// The player's row/col arguments are 1-based; convert at that boundary, never
-// inside this package.
+
 package screen
 
 // Screen holds the cell matrix for one frame.

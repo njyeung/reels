@@ -22,10 +22,7 @@ func (k ObjKind) String() string {
 	return "objkind(?)"
 }
 
-// Object is a region reserved for something the player draws itself: the reel
-// video, a comment GIF, a profile picture. The screen only records where it
-// goes. Ref is carried through untouched for the reconcile step to hand back
-// to the player, and is never dereferenced here.
+// Object is a region reserved for something the player draws itself.
 type Object struct {
 	Kind ObjKind
 	Ref  any
@@ -41,13 +38,11 @@ type Extent struct {
 // Clipped reports whether the object lost cells to the edge of the screen.
 func (e Extent) Clipped() bool { return e.Visible != e.Obj.Want }
 
-// Reserve marks r as occupied by obj. Cells outside the screen are dropped, so
+// SetObj marks r as occupied by obj. Cells outside the screen are dropped, so
 // what survives is whatever Extents reports later.
 //
-// Reserving writes no text: the cells keep the character they already had,
-// which on a freshly cleared screen is a blank. That is what leaves a hole in
-// the rendered output for the player to draw into.
-func (s *Screen) Reserve(r Rect, obj *Object) {
+// Reserving writes no text.
+func (s *Screen) SetObj(r Rect, obj *Object) {
 	if obj == nil {
 		return
 	}
@@ -60,12 +55,12 @@ func (s *Screen) Reserve(r Rect, obj *Object) {
 	}
 }
 
-// Extents walks the matrix once and reports the region each reserved object
+// GetObjs walks the matrix once and reports the region each set object
 // actually covers, in the order the objects are first encountered.
 //
 // Comparing Visible against Obj.Want tells you whether an object is fully
 // visible, partly clipped, or scrolled away entirely.
-func (s *Screen) Extents() []Extent {
+func (s *Screen) GetObjs() []Extent {
 	var out []Extent
 	for y := range s.h {
 		for x := range s.w {

@@ -53,7 +53,7 @@ func (hp *HelpPanel) buildEntries() {
 		{displayKeys(config.KeysShareOpen), "share via DM"},
 		{displayKeys(config.KeysShareClose), "send & close share"},
 		{displayKeys(config.KeysSelect), "select (share/friends/react/replies)"},
-		{displayKeys(config.KeysCopyLink), "copy link"},
+		{displayKeys(config.KeysCopyLink), "copyh link"},
 		{displayKeys(config.KeysSave), "bookmark"},
 		{displayKeys(config.KeysNavbar), "toggle navbar"},
 		{displayKeys(config.KeysVolUp), "volume up"},
@@ -84,11 +84,13 @@ func (hp *HelpPanel) Paint(s *screen.Screen, r screen.Rect) {
 		return
 	}
 
+	s.SetZone(r, &screen.Zone{Value: helpPanelTargetOffset})
+
 	header, body := r.SplitTop(1)
 	s.SetContent(header, purple400.Bold(true).Underline(true).Render("Help"), nil)
 
 	for i := hp.scroll; i < len(hp.entries) && i-hp.scroll < body.H; i++ {
 		entry := hp.entries[i]
-		s.SetContent(body.Row(i-hp.scroll), gray500.Render(entry.keys+": "+entry.action), &screen.Zone{Owner: screen.OwnerHelp, Target: i})
+		s.SetContent(body.Row(i-hp.scroll), gray500.Render(entry.keys+": "+entry.action), &screen.Zone{Value: helpPanelTargetOffset + 1 + i})
 	}
 }

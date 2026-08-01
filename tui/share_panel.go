@@ -138,15 +138,17 @@ func (sp *SharePanel) Paint(s *screen.Screen, r screen.Rect) {
 		return
 	}
 
+	s.SetZone(r, &screen.Zone{Value: sharePanelTargetOffset})
+
 	header, body := r.SplitTop(1)
 	s.SetContent(header, purple400.Bold(true).Underline(true).Render("Share To"), nil)
 
 	y := body.Y
 	for i := sp.scroll; i < len(sp.friends) && y+sharePfpCellHeight <= body.Bottom(); i++ {
-		zone := &screen.Zone{Owner: screen.OwnerShare, Target: i}
+		zone := &screen.Zone{Value: sharePanelTargetOffset + 1 + i}
 
 		if pfp, ok := sp.pfps[i]; ok {
-			s.Reserve(
+			s.SetObj(
 				screen.Rect{X: body.X, Y: y, W: sharePfpIndent, H: sharePfpCellHeight},
 				&screen.Object{Kind: screen.ObjImage, Ref: pfp},
 			)

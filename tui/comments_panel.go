@@ -245,6 +245,8 @@ func (cp *CommentsPanel) Paint(s *screen.Screen, r screen.Rect) (lastPlaced int)
 		return lastPlaced
 	}
 
+	s.SetZone(r, &screen.Zone{Value: commentsPanelTargetOffset})
+
 	header, body := r.SplitTop(1)
 	s.SetContent(header, purple400.Bold(true).Underline(true).Render("Comments"), nil)
 
@@ -253,7 +255,7 @@ func (cp *CommentsPanel) Paint(s *screen.Screen, r screen.Rect) (lastPlaced int)
 	for i := cp.scroll; i < len(cp.comments) && y < body.Bottom(); i++ {
 		comment := cp.comments[i]
 
-		zone := &screen.Zone{Owner: screen.OwnerComments, Target: i}
+		zone := &screen.Zone{Value: commentsPanelTargetOffset + 1 + i}
 
 		userIndent, textIndent := 0, 2
 		if comment.ParentCommentID != "" {
@@ -278,7 +280,7 @@ func (cp *CommentsPanel) Paint(s *screen.Screen, r screen.Rect) (lastPlaced int)
 
 		placed := true
 		if isGif {
-			s.Reserve(
+			s.SetObj(
 				screen.Rect{X: body.X + textIndent, Y: y, W: max(body.W-textIndent, 0), H: cp.gifCellHeight},
 				&screen.Object{Kind: screen.ObjGif, Ref: anim},
 			)
