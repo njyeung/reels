@@ -9,12 +9,12 @@ import (
 )
 
 // InitLogger configures the default slog logger to write to logDir/reels.log.
-func InitLogger(logDir string) error {
-	if err := os.MkdirAll(logDir, 0755); err != nil {
+func InitLogger(dir string) error {
+	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
 
-	f, err := os.OpenFile(filepath.Join(logDir, "reels.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	f, err := os.OpenFile(filepath.Join(dir, "reels.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return err
 	}

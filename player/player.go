@@ -117,10 +117,10 @@ func (p *AVPlayer) SetOutput(w io.Writer) {
 // The video will be scaled to fit within these bounds while maintaining aspect ratio.
 func (p *AVPlayer) SetSize(width, height int) {
 	p.configMu.Lock()
-	defer p.configMu.Unlock()
-
+	changed := p.width != width || p.height != height
 	p.width = width
 	p.height = height
+	p.configMu.Unlock()
 
 	p.withSession(func(s *playSession) {
 		if s.video == nil {
@@ -139,6 +139,9 @@ func (p *AVPlayer) SetSize(width, height int) {
 			}
 		}
 	})
+	if changed && p.paused.Load() {
+		p.needsRedrawVid.Store(true)
+	}
 }
 
 // SetVideoPosition sets the 1-indexed terminal (row, col) where the video is rendered.
@@ -146,6 +149,7 @@ func (p *AVPlayer) SetSize(width, height int) {
 // The caller is responsible for including any centering offsets (see VideoCenterOffset).
 func (p *AVPlayer) SetVideoPosition(row, col int) {
 	p.configMu.Lock()
+	changed := p.videoRow != row || p.videoCol != col
 	p.videoRow = row
 	p.videoCol = col
 	p.configMu.Unlock()
@@ -154,6 +158,9 @@ func (p *AVPlayer) SetVideoPosition(row, col int) {
 		s.videoRow = row
 		s.videoCol = col
 	})
+	if changed && p.paused.Load() {
+		p.needsRedrawVid.Store(true)
+	}
 }
 
 // VideoCenterOffset returns the (row, col) offset needed to center the actual video

@@ -10,8 +10,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mattn/go-runewidth"
 	"github.com/njyeung/reels/tui/colors"
+	"github.com/njyeung/reels/tui/screen"
 )
 
 const loadingBarWidth = 34
@@ -100,7 +100,7 @@ func renderLoadingScreen(width, height int, barText string, barStyle lipgloss.St
 }
 
 func renderLoadingBar(text string, style lipgloss.Style, scrollOffset int) string {
-	textWidth := runewidth.StringWidth(text)
+	textWidth := screen.StringWidth(text)
 
 	if textWidth <= loadingBarWidth {
 		// Center the text within the bar
@@ -116,7 +116,7 @@ func renderLoadingBar(text string, style lipgloss.Style, scrollOffset int) strin
 	gap := "   "
 	scrollText := text + gap + text
 	scrollRunes := []rune(scrollText)
-	loopLen := runewidth.StringWidth(text) + runewidth.StringWidth(gap)
+	loopLen := screen.StringWidth(text) + screen.StringWidth(gap)
 	offset := scrollOffset % loopLen
 
 	// Walk runes to find the starting rune index for the scroll offset (in display columns)
@@ -127,13 +127,13 @@ func renderLoadingBar(text string, style lipgloss.Style, scrollOffset int) strin
 			startRune = i
 			break
 		}
-		cols += runewidth.RuneWidth(r)
+		cols += screen.StringWidth(string(r))
 	}
 
-	visible := truncateByWidth(string(scrollRunes[startRune:]), loadingBarWidth)
+	visible := screen.Truncate(string(scrollRunes[startRune:]), loadingBarWidth, "")
 
 	// Pad if visible is shorter than bar (near loop boundary)
-	visibleWidth := runewidth.StringWidth(visible)
+	visibleWidth := screen.StringWidth(visible)
 	if visibleWidth < loadingBarWidth {
 		visible += strings.Repeat(" ", loadingBarWidth-visibleWidth)
 	}
