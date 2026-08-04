@@ -79,9 +79,8 @@ func (m *Model) syncFrame() {
 
 // paintBrowsing paints the browsing frame and returns the matrix it painted into.
 func (m Model) paintBrowsing() *screen.Screen {
-	l := m.browsingLayout()
 	s := screen.New(m.width, m.height)
-	s.SetZone(s.Bounds(), &screen.Zone{Value: int(noneTarget)})
+	l := m.browsingLayout()
 
 	video := &screen.Object{Kind: screen.ObjVideo}
 	s.SetObj(l.video, video)

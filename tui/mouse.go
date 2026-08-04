@@ -22,8 +22,7 @@ const (
 type target int
 
 const (
-	noneTarget target = iota
-	likeTarget
+	likeTarget target = iota
 	commentTarget
 	repostTarget
 	saveTarget
@@ -32,8 +31,17 @@ const (
 )
 
 func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	config := backend.GetSettings()
+
 	if msg.Action != tea.MouseActionPress || m.browsingFrame == nil {
 		return m, nil
+	}
+
+	switch msg.Button {
+	case tea.MouseButtonWheelDown:
+		return m.wheel(config.KeysNext)
+	case tea.MouseButtonWheelUp:
+		return m.wheel(config.KeysPrevious)
 	}
 
 	zone := m.browsingFrame.Hit(msg.X, msg.Y)
@@ -94,13 +102,6 @@ func (m Model) wheel(keys []string) (tea.Model, tea.Cmd) {
 func (m Model) handleBase(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	config := backend.GetSettings()
 
-	switch msg.Button {
-	case tea.MouseButtonWheelDown:
-		return m.wheel(config.KeysNext)
-	case tea.MouseButtonWheelUp:
-		return m.wheel(config.KeysPrevious)
-	}
-
 	zone := m.browsingFrame.Hit(msg.X, msg.Y)
 	if zone == nil {
 		return m, nil
@@ -134,78 +135,29 @@ func (m Model) handleBase(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) handleVideo(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	config := backend.GetSettings()
-
-	switch msg.Button {
-	case tea.MouseButtonWheelDown:
-		return m.wheel(config.KeysNext)
-	case tea.MouseButtonWheelUp:
-		return m.wheel(config.KeysPrevious)
-	}
-
 	return m.dispatch(config.KeysPause)
 }
 
 func (m Model) handleComments(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	config := backend.GetSettings()
-
-	switch msg.Button {
-	case tea.MouseButtonWheelDown:
-		return m.wheel(config.KeysNext)
-	case tea.MouseButtonWheelUp:
-		return m.wheel(config.KeysPrevious)
-	}
-
 	return m.dispatch(config.KeysSelect)
 }
 
 func (m Model) handleShare(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	config := backend.GetSettings()
-
-	switch msg.Button {
-	case tea.MouseButtonWheelDown:
-		return m.wheel(config.KeysNext)
-	case tea.MouseButtonWheelUp:
-		return m.wheel(config.KeysPrevious)
-	}
-
 	return m.dispatch(config.KeysSelect)
 }
 
 func (m Model) handleHelp(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	config := backend.GetSettings()
-
-	switch msg.Button {
-	case tea.MouseButtonWheelDown:
-		return m.wheel(config.KeysNext)
-	case tea.MouseButtonWheelUp:
-		return m.wheel(config.KeysPrevious)
-	}
-
 	return m, nil
 }
 
 func (m Model) handleChats(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	config := backend.GetSettings()
-
-	switch msg.Button {
-	case tea.MouseButtonWheelDown:
-		return m.wheel(config.KeysNext)
-	case tea.MouseButtonWheelUp:
-		return m.wheel(config.KeysPrevious)
-	}
-
 	return m.dispatch(config.KeysSelect)
 }
 
 func (m Model) handleReact(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	config := backend.GetSettings()
-
-	switch msg.Button {
-	case tea.MouseButtonWheelDown:
-		return m.wheel(config.KeysNext)
-	case tea.MouseButtonWheelUp:
-		return m.wheel(config.KeysPrevious)
-	}
-
 	return m.dispatch(config.KeysSelect)
 }
