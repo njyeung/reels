@@ -12,6 +12,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/njyeung/reels/backend"
 	"github.com/njyeung/reels/player"
 	"github.com/njyeung/reels/tui/colors"
@@ -80,6 +81,7 @@ func (m *Model) syncFrame() {
 func (m Model) paintBrowsing() *screen.Screen {
 	l := m.browsingLayout()
 	s := screen.New(m.width, m.height)
+	s.SetZone(s.Bounds(), &screen.Zone{Value: int(noneTarget)})
 
 	video := &screen.Object{Kind: screen.ObjVideo}
 	s.SetObj(l.video, video)
@@ -189,7 +191,8 @@ func (m Model) paintStatus(s *screen.Screen, r screen.Rect) {
 	plain(gray300.Render(muteIcon))
 
 	if m.status == statusLoading || m.comments.loading || m.backend.IsSyncing() {
-		s.SetContent(screen.Rect{X: r.Right() - 1, Y: r.Y, W: 1, H: 1}, m.spinner.View(), nil)
+		_, spin := r.SplitRight(1)
+		s.SetContent(spin, m.spinner.View(), nil)
 	}
 }
 
@@ -217,6 +220,8 @@ func (m Model) paintMusic(s *screen.Screen, r screen.Rect) {
 
 // paintCaption paints the reel caption, wrapped to the rect and clipped by it.
 func (m Model) paintCaption(s *screen.Screen, r screen.Rect) {
+	s.SetZone(r, &screen.Zone{Value: int(captionTarget)})
+
 	caption := m.currentReel.Caption
 	if m.showNavbar {
 		caption = screen.Truncate(strings.ReplaceAll(caption, "\n", " "), r.W, "...")
@@ -225,8 +230,54 @@ func (m Model) paintCaption(s *screen.Screen, r screen.Rect) {
 	s.SetContent(r, screen.Wrap(renderWithMentions(caption, gray300), r.W), nil)
 }
 
+// isMentionChar reports whether r can appear in an @ mention handle.
+func isMentionChar(r rune) bool {
+	return (r >= 'a' && r <= 'z') ||
+		(r >= 'A' && r <= 'Z') ||
+		(r >= '0' && r <= '9') ||
+		r == '_' || r == '.'
+}
+
+// renderWithMentions renders text, styling @mentions with blue500 and the
+// remainder with base.
+func renderWithMentions(text string, base lipgloss.Style) string {
+	var b strings.Builder
+	runes := []rune(text)
+	i := 0
+	for i < len(runes) {
+		if runes[i] == '@' {
+			j := i + 1
+			for j < len(runes) && isMentionChar(runes[j]) {
+				j++
+			}
+			if j > i+1 {
+				b.WriteString(blue400.Render(string(runes[i:j])))
+				i = j
+				continue
+			}
+		}
+		start := i
+		for i < len(runes) {
+			if runes[i] == '@' {
+				j := i + 1
+				for j < len(runes) && isMentionChar(runes[j]) {
+					j++
+				}
+				if j > i+1 {
+					break
+				}
+			}
+			i++
+		}
+		b.WriteString(base.Render(string(runes[start:i])))
+	}
+	return b.String()
+}
+
 // paintNavbar paints the key hints under the caption.
 func (m Model) paintNavbar(s *screen.Screen, r screen.Rect) {
+	s.SetZone(r, &screen.Zone{Value: int(captionTarget)})
+
 	config := backend.GetSettings()
 	hints := []string{
 		displayKeys(config.KeysNext) + ": next  " + displayKeys(config.KeysPrevious) + ": prev",

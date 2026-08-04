@@ -22,11 +22,13 @@ const (
 type target int
 
 const (
-	likeTarget target = iota
+	noneTarget target = iota
+	likeTarget
 	commentTarget
 	repostTarget
 	saveTarget
 	yankTarget
+	captionTarget
 )
 
 func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
@@ -123,6 +125,8 @@ func (m Model) handleBase(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		keys = config.KeysSave
 	case yankTarget:
 		keys = config.KeysCopyLink
+	case captionTarget:
+		keys = config.KeysNavbar
 	}
 
 	return m.dispatch(keys)
