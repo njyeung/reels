@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.4.2]
+- Fix: update Instagram doc_ids
+- Mouse support: Basic actions (clicking on heart to like, scroll wheel, etc)
+- Fix: race condition on startup which causes blank state
+
 ## [1.4.1]
 - Enable viewing comment replies (expand a comment to read its replies)
 - Fix: consistent reel border and progress bar on macOS
