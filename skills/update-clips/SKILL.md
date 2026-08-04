@@ -1,6 +1,6 @@
 ---
 name: update-clips
-description: Update the Instagram reels/clips GraphQL constants in backend/graphql.go when Instagram changes their reels feed API (clips doc_id, friendly name, app ID). Use when reels stop loading in the feed or when chat-mode reel prefetch fails, or when the user pastes reels-tab network request data from the browser.
+description: Update the Instagram reels/clips GraphQL constants in backend/graphql.go when Instagram changes their reels feed API (clips doc_id, friendly name, app ID). Use when chat-mode reel fetch fails, or when the user pastes reels-tab network request data from the browser.
 ---
 
 # Update Clips Skill
