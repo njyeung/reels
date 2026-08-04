@@ -50,6 +50,39 @@ func (r Rect) SplitTop(n int) (top, rest Rect) {
 	return top, rest
 }
 
+// SplitBottom cuts n rows off the bottom of r, returning what is left above them
+// and those rows. n is clamped to r's height.
+//
+// The cut piece comes second here, and in SplitRight, so that every split's
+// results read in screen order: top to bottom, left to right.
+func (r Rect) SplitBottom(n int) (rest, bottom Rect) {
+	n = min(max(n, 0), max(r.H, 0))
+	h := max(r.H, 0) - n
+	rest = Rect{X: r.X, Y: r.Y, W: r.W, H: h}
+	bottom = Rect{X: r.X, Y: r.Y + h, W: r.W, H: n}
+	return rest, bottom
+}
+
+// SplitLeft cuts n columns off the left of r, returning those columns and what
+// is left beside them. n is clamped to r's width, so splitting past the right
+// edge yields an empty remainder rather than a negative one.
+func (r Rect) SplitLeft(n int) (left, rest Rect) {
+	n = min(max(n, 0), max(r.W, 0))
+	left = Rect{X: r.X, Y: r.Y, W: n, H: r.H}
+	rest = Rect{X: r.X + n, Y: r.Y, W: max(r.W, 0) - n, H: r.H}
+	return left, rest
+}
+
+// SplitRight cuts n columns off the right of r, returning what is left beside
+// them and those columns. n is clamped to r's width.
+func (r Rect) SplitRight(n int) (rest, right Rect) {
+	n = min(max(n, 0), max(r.W, 0))
+	w := max(r.W, 0) - n
+	rest = Rect{X: r.X, Y: r.Y, W: w, H: r.H}
+	right = Rect{X: r.X + w, Y: r.Y, W: n, H: r.H}
+	return rest, right
+}
+
 // Row returns row i of r as a single-row rect, i counted from r's top.
 func (r Rect) Row(i int) Rect {
 	if i < 0 || i >= r.H {
