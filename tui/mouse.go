@@ -53,8 +53,6 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// The band picks the region that owns the cell; what the click means within
-	// that region is the handler's business.
 	switch value / panelTargetBand * panelTargetBand {
 	case baseTargetOffset:
 		return m.handleBase(msg)

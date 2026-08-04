@@ -17,10 +17,10 @@ const (
 	initialCommentsDocID        = "37622913243966296"
 	initialCommentsFriendlyName = "PolarisPostCommentsContainerQuery"
 
-	paginationDocID        = "27544211905201475"
+	paginationDocID        = "28082902984733691"
 	paginationFriendlyName = "PolarisPostCommentsPaginationQuery"
 
-	childCommentsDocID        = "37441967968750542"
+	childCommentsDocID        = "27823744063932558"
 	childCommentsFriendlyName = "PolarisPostChildCommentsQuery"
 
 	clipsDocID        = "28115468621393196"
