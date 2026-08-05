@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/njyeung/reels/tui"
+	"github.com/njyeung/reels/tui/editor"
 )
 
 var Version = "dev"
@@ -22,6 +23,7 @@ type SyncFile struct {
 func main() {
 	loginFlag := flag.Bool("login", false, "Open browser in headed mode for Instagram login, also used for debugging since the app does not try to control the browser.")
 	headedFlag := flag.Bool("headed", false, "Run browser in headed mode")
+	editorFlag := flag.Bool("config", false, "Edit keybinds. Does not launch the browser.")
 	versionFlag := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
 
@@ -29,10 +31,6 @@ func main() {
 		fmt.Println(Version)
 		return
 	}
-
-	// If installed via npm and a newer release exists, swap the binary on disk
-	// and re-exec into it. Does nothing for non-npm installs or when already up
-	// to date. Must run before any child processes are spawned.
 
 	// Set up directories:
 	// Browser data: 	~/.local/share/reels/
@@ -45,18 +43,28 @@ func main() {
 	cacheDir := filepath.Join(homeDir, ".cache", "reels")
 	configDir := filepath.Join(homeDir, ".config", "reels")
 
-	// Create synchronized file wrapper for both Bubble Tea and video renderer
-	syncOut := &SyncFile{File: os.Stdout}
+	if *editorFlag { // Config editor
+		p := tea.NewProgram(
+			editor.NewModel(userDataDir, logDir, cacheDir, configDir),
+			tea.WithAltScreen(),
+		)
+		if _, err := p.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	} else { // Reels TUI app
+		syncOut := &SyncFile{File: os.Stdout} // synced file wrapper for both Bubble Tea and Kitty Graphics Protocol
 
-	p := tea.NewProgram(
-		tui.NewModel(userDataDir, logDir, cacheDir, configDir, syncOut, Version, tui.Config{LoginMode: *loginFlag, HeadedMode: *headedFlag}),
-		tea.WithAltScreen(),
-		tea.WithMouseCellMotion(),
-		tea.WithOutput(syncOut),
-	)
+		p := tea.NewProgram(
+			tui.NewModel(userDataDir, logDir, cacheDir, configDir, syncOut, Version, tui.Config{LoginMode: *loginFlag, HeadedMode: *headedFlag}),
+			tea.WithAltScreen(),
+			tea.WithMouseCellMotion(),
+			tea.WithOutput(syncOut),
+		)
 
-	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		if _, err := p.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 	}
 }

@@ -51,6 +51,7 @@ reels
 ### Flags
 - `--headed` - Run browser in headed mode (visible browser window)
 - `--login` - Open browser window to log in to Instagram
+- `--config` - Edit your keybinds in the TUI
 
 ### Controls
 

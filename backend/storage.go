@@ -154,9 +154,8 @@ func (b *ChromeBackend) initStorage() error {
 	}
 
 	// write default settings if settings file doesn't exist
-	settingsPath := filepath.Join(b.configDir, "reels.conf")
-	if _, err := os.Stat(settingsPath); os.IsNotExist(err) {
-		writeConf(settingsPath, defaultSettings())
+	if _, err := os.Stat(filepath.Join(b.configDir, "reels.conf")); os.IsNotExist(err) {
+		WriteConf(b.configDir, defaultSettings())
 	}
 
 	return nil
@@ -343,10 +342,15 @@ func LoadSettings(configDir string) {
 	loadKey(conf, "key_react_open", &s.KeysReactOpen)
 	loadKey(conf, "key_react_close", &s.KeysReactClose)
 
+	settingsMu.Lock()
 	Config = s
+	settingsMu.Unlock()
 }
 
-func writeConf(path string, s Settings) error {
+// WriteConf writes s to reels.conf in configDir, replacing whatever is there.
+// The file is rewritten wholesale from the struct, so comments and hand-ordering
+// in it are not preserved.
+func WriteConf(configDir string, s Settings) error {
 	writeKeys := func(b *strings.Builder, name string, keys []string) {
 		for _, key := range keys {
 			if v, ok := KeyToConf[key]; ok {
@@ -368,7 +372,7 @@ func writeConf(path string, s Settings) error {
 	b.WriteString(fmt.Sprintf("reel_size_step = %d\n", s.ReelSizeStep))
 	b.WriteString(fmt.Sprintf("volume = %g\n", s.Volume))
 	b.WriteString(fmt.Sprintf("gif_cell_height = %d\n", s.GifCellHeight))
-	b.WriteString(fmt.Sprintf("panel_shrink = %d\n", s.PanelShrinkSteps))
+	b.WriteString(fmt.Sprintf("panel_shrink_steps = %d\n", s.PanelShrinkSteps))
 	b.WriteString("\n")
 	b.WriteString("# configurable keybinds\n")
 	writeKeys(&b, "key_next", s.KeysNext)
@@ -399,7 +403,7 @@ func writeConf(path string, s Settings) error {
 	writeKeys(&b, "key_react_open", s.KeysReactOpen)
 	writeKeys(&b, "key_react_close", s.KeysReactClose)
 
-	return os.WriteFile(path, []byte(b.String()), 0644)
+	return os.WriteFile(filepath.Join(configDir, "reels.conf"), []byte(b.String()), 0644)
 }
 
 func parseConf(path string) map[string][]string {
@@ -432,8 +436,7 @@ func (b *ChromeBackend) SetReelSize(width, height int) error {
 	snapshot := Config
 	settingsMu.Unlock()
 
-	path := filepath.Join(b.configDir, "reels.conf")
-	go writeConf(path, snapshot)
+	go WriteConf(b.configDir, snapshot)
 	return nil
 }
 
@@ -445,8 +448,7 @@ func (b *ChromeBackend) ToggleNavbar() bool {
 	snapshot := Config
 	settingsMu.Unlock()
 
-	path := filepath.Join(b.configDir, "reels.conf")
-	go writeConf(path, snapshot)
+	go WriteConf(b.configDir, snapshot)
 	return showNavbar
 }
 
@@ -457,8 +459,7 @@ func (b *ChromeBackend) SetVolume(vol float64) error {
 	snapshot := Config
 	settingsMu.Unlock()
 
-	path := filepath.Join(b.configDir, "reels.conf")
-	go writeConf(path, snapshot)
+	go WriteConf(b.configDir, snapshot)
 	return nil
 }
 
