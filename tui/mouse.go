@@ -85,7 +85,7 @@ var lastWheelStep time.Time
 
 // wheel dispatches a scroll notch as the key it stands for.
 func (m Model) wheel(keys []string) (tea.Model, tea.Cmd) {
-	const wheelStepInterval = 50 * time.Millisecond
+	const wheelStepInterval = 100 * time.Millisecond
 
 	// throttle scrolling, some terminals emit a burst per gesture.
 	now := time.Now()
