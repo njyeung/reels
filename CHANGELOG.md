@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.4.3]
+- Add reels --config: A TUI editor for rebinding keys without hand editing reels.conf
+- Fix: panel_shrink_steps was written back to reels.conf as panel_shrink
+- Fix: Throttle mouse scroll to 100ms
+
 ## [1.4.2]
 - Fix: update Instagram doc_ids
 - Mouse support: Basic actions (clicking on heart to like, scroll wheel, etc)
