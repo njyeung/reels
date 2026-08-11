@@ -21,25 +21,17 @@ var (
 	heading = lipgloss.NewStyle().Foreground(colors.Purple400Color).Bold(true)
 
 	selected = lipgloss.NewStyle().Foreground(colors.Pink500Color).Bold(true)
-	// resting marks the cursor row of the pane that doesn't have focus, so you
-	// can still see where you'd land on the way back.
 	resting  = lipgloss.NewStyle().Foreground(colors.Purple200Color)
-	danger   = lipgloss.NewStyle().Foreground(colors.Red500Color)
-	listened = lipgloss.NewStyle().Foreground(colors.Yellow400Color).Bold(true)
+	listened = lipgloss.NewStyle().Foreground(colors.Yellow300Color).Bold(true)
 
 	box        = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(colors.Gray800Color)
-	boxFocused = box.BorderForeground(colors.Pink700Color)
+	boxFocused = box.BorderForeground(colors.Pink500Color)
 )
 
 const (
-	// The panes stack, so the frame needs room for both plus a header and
-	// footer: 1 + (2 + 3) + (2 + bindsHeight) + 1 at the very least.
-	minWidth  = 56
-	minHeight = 15
 
-	// bindsHeight is the bottom pane's inner height: a heading, a blank row,
-	// then four bind rows. Fixed rather than sized to the selected action, so
-	// the top pane doesn't resize under the cursor as you move down it.
+	// bindsHeight is the bottom pane's fixed inner height:
+	// heading (1), blank row (1), bind rows (4).
 	bindsHeight = 6
 
 	// confColumn is where the description starts in a top-pane row.
@@ -47,8 +39,8 @@ const (
 )
 
 func (m Model) View() string {
-	if m.width < minWidth || m.height < minHeight {
-		return "\n  terminal too small\n"
+	if m.width == 0 || m.height == 0 {
+		return ""
 	}
 
 	// A header row, a footer row, and two rows of border per pane.
@@ -113,27 +105,20 @@ func (m Model) bindsPane(width int) string {
 	rows := make([]string, 0, len(m.binds())+1)
 	for i, key := range m.binds() {
 		text := "  key: " + screen.Truncate(confName(key), max(width-12, 1), "…")
-
-		// The trash sits on the cursor row only: it marks what d would remove.
-		// Spelled with the variation selector so it measures 2 columns, the
-		// width a terminal actually draws it at; the bare rune measures 1 and
-		// pushes the pane's right border out of line.
 		if m.pane == paneBinds && i == m.bind && !m.capturing {
-			rows = append(rows, danger.Render(text+"  🗑️"))
+			rows = append(rows, selected.Render(text+"  🗑️"))
 			continue
 		}
 		rows = append(rows, label.Render(text))
 	}
 
-	// Scroll to whichever row the next keypress acts on: the pending row while
-	// capturing, the cursor otherwise.
 	focus := m.bind
 	if m.capturing {
-		rows = append(rows, listened.Render("  key: ▊"))
+		rows = append(rows, listened.Render("  key: ")+m.caret.View())
 		focus = len(rows) - 1
 	}
 
-	visible := bindsHeight - 2 // the heading and the blank row under it
+	visible := bindsHeight - 2 // 4 rows of visible binds
 	start := 0
 	if focus >= visible {
 		start = focus - visible + 1
@@ -148,7 +133,6 @@ func (m Model) footer() string {
 		return " " + listened.Render("listening…") +
 			dim.Render("   press any key to bind it to "+actions[m.action].conf+"   ") +
 			subtle.Render("esc cancel")
-
 	case m.pane == paneActions:
 		return " " + subtle.Render("j/k move   l select   q quit")
 

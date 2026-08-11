@@ -12,6 +12,7 @@ package editor
 import (
 	"slices"
 
+	"github.com/charmbracelet/bubbles/cursor"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/njyeung/reels/backend"
 )
@@ -74,6 +75,8 @@ type Model struct {
 
 	capturing bool
 
+	caret cursor.Model
+
 	width, height int
 }
 
@@ -90,9 +93,14 @@ func NewModel(userDataDir, logDir, cacheDir, configDir string) Model {
 		*keys = slices.Clone(*keys)
 	}
 
+	caret := cursor.New()
+	caret.Style = listened
+	caret.SetChar(" ")
+
 	return Model{
 		configDir: configDir,
 		settings:  s,
+		caret:     caret,
 	}
 }
 
@@ -104,26 +112,33 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 
 	case tea.KeyMsg:
-		if m.handleKey(msg.String()) {
+		cmd, quit := m.handleKey(msg.String())
+		if quit {
 			return m, tea.Quit
 		}
+		return m, cmd
 	}
-	return m, nil
+
+	var cmd tea.Cmd
+	m.caret, cmd = m.caret.Update(msg)
+	return m, cmd
 }
 
-// handleKey applies a keypress, reporting whether the editor should quit.
-func (m *Model) handleKey(key string) (quit bool) {
+// handleKey applies a keypress, returning any command it started and whether
+// the editor should quit.
+func (m *Model) handleKey(key string) (cmd tea.Cmd, quit bool) {
 	if m.capturing {
 		m.capturing = false
+		m.caret.Blur()
 		if key != "esc" {
 			m.addBind(key)
 		}
-		return false
+		return nil, false
 	}
 
 	switch key {
 	case "q", "ctrl+c":
-		return true
+		return nil, true
 
 	case "j", "down":
 		m.moveCursor(1)
@@ -143,6 +158,7 @@ func (m *Model) handleKey(key string) (quit bool) {
 	case "a":
 		if m.pane == paneBinds {
 			m.capturing = true
+			return m.caret.Focus(), false
 		}
 
 	case "d":
@@ -150,7 +166,7 @@ func (m *Model) handleKey(key string) (quit bool) {
 			m.deleteBind()
 		}
 	}
-	return false
+	return nil, false
 }
 
 func (m *Model) moveCursor(delta int) {
@@ -159,8 +175,6 @@ func (m *Model) moveCursor(delta int) {
 		m.bind = 0
 		return
 	}
-	// max(..., 0) because an action can be left with no binds at all, and
-	// len-1 would put the cursor at -1.
 	m.bind = min(max(m.bind+delta, 0), max(len(m.binds())-1, 0))
 }
 
