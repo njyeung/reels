@@ -100,7 +100,8 @@ func (m Model) actionsPane(width, height int) string {
 // row while a capture is in flight.
 func (m Model) bindsPane(width int) string {
 	a := actions[m.action]
-	head := " " + heading.Render(a.conf) + dim.Render("   "+a.desc)
+	desc := screen.Truncate(a.desc, max(width-len(a.conf)-5, 1), "…")
+	head := " " + heading.Render(a.conf) + dim.Render("   "+desc)
 
 	rows := make([]string, 0, len(m.binds())+1)
 	for i, key := range m.binds() {
