@@ -60,9 +60,9 @@ reels
 
 |  Flag  | Effect |
 |--------|--------|
-| `--login` | Opens a visible browser to log in to Instagram. Reels won't drive the browser in this mode, which also makes it useful for debugging |
-| `--headed` | Runs the browser visibly while Reels still controls it. Use this to diagnose sync failures |
-| `--config` | Opens the keybind editor. Doesn't launch a browser |
+|  `--login`  | Opens a visible browser to log in to Instagram. Reels won't drive the browser in this mode, which also makes it useful for debugging |
+| `--headed`  | Runs the browser visibly while Reels still controls it. Use this to diagnose sync failures |
+| `--config`  | Opens the keybind editor. Doesn't launch a browser |
 | `--version` | Prints the version and exits |
 
 ## Terminal
