@@ -4,3 +4,4 @@ reels
 tests/venv/
 tests/__pycache__/
 tests/harness/__pycache__/
+notes/
