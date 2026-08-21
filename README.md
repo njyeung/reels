@@ -30,8 +30,6 @@
   <img src="https://img.shields.io/github/license/njyeung/reels" alt="License">
 </p>
 
-<br>
-
 ## Installation
 
 ### npm (macOS ARM64 / Linux x86_64 & ARM64)
