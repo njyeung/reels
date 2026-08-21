@@ -28,7 +28,7 @@
 
 
 <h3 align="center">
-  Reels TUI brings the full Instagram Reels experience to your terminal. Scroll your feed, browse comments, interact with your friends, and more.
+  Reels TUI brings the full Instagram Reels experience to your terminal. Scroll your feed, browse comments, interact with your friends, and more!
 </h3>
 
 ## Installation
@@ -61,32 +61,11 @@ reels
 reels
 ```
 
-<table>
-<thead>
-<tr>
-<th>Flag</th>
-<th>Effect</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td nowrap><code>--login</code></td>
-<td>Opens a visible browser to log in to Instagram. Reels won't drive the browser in this mode, which also makes it useful for debugging</td>
-</tr>
-<tr>
-<td nowrap><code>--headed</code></td>
-<td>Runs the browser visibly while Reels still controls it. Use this to diagnose sync failures</td>
-</tr>
-<tr>
-<td nowrap><code>--config</code></td>
-<td>Opens the keybind editor. Doesn't launch a browser</td>
-</tr>
-<tr>
-<td nowrap><code>--version</code></td>
-<td>Prints the version and exits</td>
-</tr>
-</tbody>
-</table>
+| Flag | Effect |
+| --- | --- |
+| `--login` | Opens a visible browser to log in to Instagram. Reels won't drive the browser in this mode, which also makes it useful for debugging |
+| `--headed` | Runs the browser visibly while Reels still controls it. Use this to diagnose sync failures |
+| `--config` | Opens the keybind editor. Doesn't launch a browser |
 
 ## Terminal
 You need a terminal that supports the **Kitty graphics protocol**:
