@@ -3,9 +3,9 @@
 </p>
 
 <p align="center">
-  <img src="assets/popos-demo.gif" alt="Reels TUI playing on PopOS" width="33%">
-  <img src="assets/macos-demo.gif" alt="Reels TUI playing on MacOS" width="33%">
-  <img src="assets/arch-demo.gif" alt="Reels TUI playing on Arch Linux" width="33%">
+  <img src="assets/popos-demo.gif" alt="Reels TUI playing on PopOS" width="32%">
+  <img src="assets/macos-demo.gif" alt="Reels TUI playing on MacOS" width="32%">
+  <img src="assets/arch-demo.gif" alt="Reels TUI playing on Arch Linux" width="32%">
 </p>
 
 
