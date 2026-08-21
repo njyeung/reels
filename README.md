@@ -95,7 +95,7 @@ You need a terminal that supports the **Kitty graphics protocol**:
 
 **Comments**
 
-`c` opens the panel, so you can read comments and laugh at the gifs. Expand any comment to read its replies.
+`c` opens the panel so you can read comments and laugh at the gifs. Expand any comment to read its replies.
 
 <video src="https://github.com/user-attachments/assets/d3f006c5-70ad-45e3-ab43-7e3b84ec9284" width="100%" muted autoplay loop playsinline controls>
 </video>
@@ -107,7 +107,7 @@ You need a terminal that supports the **Kitty graphics protocol**:
 
 **Share to DMs**
 
-`s` opens your suggested friends, `space` selects, `S` closes the panel and sends the reel to the selected friends.
+`s` opens your suggested friends, `space` selects, `S` closes the panel and shares the reel.
 
 <video src="https://github.com/user-attachments/assets/b08d6107-fbb1-44ef-b6cd-8f73bd6f244c" width="100%" muted autoplay loop playsinline controls>
 Sharing a reel to DMs
