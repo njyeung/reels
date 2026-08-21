@@ -10,23 +10,23 @@
 
 <br>
 
+<h3 align="center">
+  Reels TUI brings the full Instagram Reels experience to your terminal. Scroll your feed, browse comments, interact with your friends, and more!
+</h3>
+
 <p align="center">
+  <a href="https://github.com/njyeung/reels"><img src="https://img.shields.io/github/stars/njyeung/reels" alt="Stars"></a>
   <a href="https://www.npmjs.com/package/@reels/tui"><img src="https://img.shields.io/endpoint?url=https://proud-sun-d44c.nickjyeung.workers.dev&logo=npm" alt="npm"></a>
   <a href="https://aur.archlinux.org/packages/reels-bin"><img src="https://img.shields.io/aur/version/reels-bin" alt="AUR"></a>
   <a href="https://github.com/njyeung/homebrew-tap"><img src="https://img.shields.io/badge/brew-njyeung/tap-orange?logo=homebrew" alt="Homebrew"></a>
   <a href="https://github.com/njyeung/reels/releases/latest"><img src="https://img.shields.io/github/v/release/njyeung/reels" alt="Latest Release"></a>
 </p>
 <p align="center">
-  <a href="https://github.com/njyeung/reels"><img src="https://img.shields.io/github/stars/njyeung/reels" alt="Stars"></a>
   <img src="https://img.shields.io/github/last-commit/njyeung/reels" alt="Last Commit">
   <img src="https://img.shields.io/badge/macOS-supported-blue?logo=apple" alt="macOS">
   <img src="https://img.shields.io/badge/Linux-supported-blue?logo=linux" alt="Linux">
   <img src="https://img.shields.io/github/license/njyeung/reels" alt="License">
 </p>
-
-<h3 align="center">
-  Reels TUI brings the full Instagram Reels experience to your terminal. Scroll your feed, browse comments, interact with your friends, and more!
-</h3>
 
 <br>
 
