@@ -88,7 +88,8 @@ You need a terminal that supports the **Kitty graphics protocol**:
 
 `space` to like, `r` to repost, `b` to bookmark, `y` to copy the link. Or reach for the mouse and click the icons directly.
 
-<video src="assets/like-comment-repost-bookmark-share.mp4" width="100%"></video>
+<video src="https://github.com/user-attachments/assets/2e05b6a6-cd42-4068-9ac9-c2613fe5b389" width="100%" muted autoplay loop playsinline controls>
+</video>
 
 </td>
 <td width="50%">
@@ -97,7 +98,8 @@ You need a terminal that supports the **Kitty graphics protocol**:
 
 `c` opens the panel, so you can read comments and laugh at the gifs. Expand any comment to read its replies.
 
-<video src="assets/comments.mp4" width="100%"></video>
+<video src="https://github.com/user-attachments/assets/d3f006c5-70ad-45e3-ab43-7e3b84ec9284" width="100%" muted autoplay loop playsinline controls>
+</video>
 
 </td>
 </tr>
@@ -108,7 +110,9 @@ You need a terminal that supports the **Kitty graphics protocol**:
 
 `s` opens your suggested friends, `space` selects.
 
-<video src="assets/share-to-dms.mp4" width="100%"></video>
+<video src="https://github.com/user-attachments/assets/b08d6107-fbb1-44ef-b6cd-8f73bd6f244c" width="100%" muted autoplay loop playsinline controls>
+Sharing a reel to DMs
+</video>
 
 </td>
 <td width="50%">
@@ -117,7 +121,8 @@ You need a terminal that supports the **Kitty graphics protocol**:
 
 `d` to view reels your friends have shared with you. `x` to send a reaction back to their dms.
 
-<video src="assets/view-react-dm-reels.mp4" width="100%"></video>
+<video src="https://github.com/user-attachments/assets/ede9f0d2-b51b-49f5-b067-84fc8e2cc028" width="100%" muted autoplay loop playsinline controls>
+</video>
 
 </td>
 </tr>
@@ -133,9 +138,9 @@ The config TUI is a wrapper for `~/.config/reels/reels.conf` (which may also be 
 reels --config
 ```
 
-<!-- SHOT 10 — placeholder until the shoot lands. -->
 <p align="center">
-  <img src="assets/config.gif" alt="Editing keybinds with reels --config" width="80%">
+  <video src="https://github.com/user-attachments/assets/2111b13a-ac95-4b29-95dd-b145f4ff5e17" width="40%" muted autoplay loop playsinline controls>
+  </video>
 </p>
 
 
