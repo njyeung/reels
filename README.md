@@ -22,9 +22,13 @@
   <img src="assets/arch-demo.gif" alt="Reels TUI playing on Arch Linux" width="33%">
 </p>
 
+<br>
+
 <h3 align="center">
   Reels TUI brings the full Instagram Reels experience to your terminal. Scroll your feed, browse comments, interact with your friends, and more!
 </h3>
+
+<br>
 
 ## Installation
 
@@ -61,7 +65,7 @@ reels
 | `--login` | Opens a visible browser to log in to Instagram. |
 | `--headed` | Runs the browser visibly while Reels still controls it. Use this to diagnose sync failures |
 | `--config` | Opens the keybind editor. Doesn't launch a browser |
-| `--version` | Prints the app version and exits | 
+| `--version` | Prints the version and exits | 
 
 ## Terminal
 You need a terminal that supports the **Kitty graphics protocol**:
