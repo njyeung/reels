@@ -140,7 +140,7 @@ reels --config
 <table align="center">
 <tr>
 <td>
-<video src="https://github.com/user-attachments/assets/2111b13a-ac95-4b29-95dd-b145f4ff5e17" width="50%">
+<video src="https://github.com/user-attachments/assets/2111b13a-ac95-4b29-95dd-b145f4ff5e17" width="40%">
 </video>
 </td>
 </tr>
