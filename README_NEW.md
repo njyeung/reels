@@ -19,9 +19,10 @@
   <img src="assets/subtitle.svg" alt="Doomscrollbrainrotmaxxing in the terminal" width="500">
 </p>
 
-<!-- SHOT 01 — hero. Placeholder until the shoot lands. -->
 <p align="center">
-  <img src="assets/hero.gif" alt="Reels TUI playing an Instagram reel in a terminal" width="100%">
+  <img src="assets/arch-demo.gif" alt="Reels TUI playing on Arch Linux" width="33%">
+  <img src="assets/macos-demo.gif" alt="Reels TUI playing on MacOS" width="33%">
+  <img src="assets/popos-demo.gif" alt="Reels TUI playing on PopOS" width="33%">
 </p>
 
 ---
