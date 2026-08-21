@@ -61,6 +61,7 @@ reels
 | `--login` | Opens a visible browser to log in to Instagram. |
 | `--headed` | Runs the browser visibly while Reels still controls it. Use this to diagnose sync failures |
 | `--config` | Opens the keybind editor. Doesn't launch a browser |
+| `--version` | Prints the app version and exits | 
 
 ## Terminal
 You need a terminal that supports the **Kitty graphics protocol**:
