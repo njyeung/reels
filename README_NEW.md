@@ -15,9 +15,6 @@
 <p align="center">
   <img src="assets/banner.svg" alt="REELS TUI" width="100%">
 </p>
-<p align="center">
-  <img src="assets/subtitle.svg" alt="Doomscrollbrainrotmaxxing in the terminal" width="500">
-</p>
 
 <p align="center">
   <img src="assets/popos-demo.gif" alt="Reels TUI playing on PopOS" width="33%">
@@ -25,9 +22,14 @@
   <img src="assets/arch-demo.gif" alt="Reels TUI playing on Arch Linux" width="33%">
 </p>
 
----
+<p align="center">
+  <img src="assets/subtitle.svg" alt="Doomscrollbrainrotmaxxing in the terminal" width="500">
+</p>
 
-Reels TUI brings the full Instagram Reels experience to your terminal. Scroll your feed, browse comments, interact with your friends, and more.
+
+<p align="center">
+  Reels TUI brings the full Instagram Reels experience to your terminal. Scroll your feed, browse comments, interact with your friends, and more.
+</p>
 
 ## Installation
 
