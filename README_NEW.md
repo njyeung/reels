@@ -22,11 +22,6 @@
   <img src="assets/arch-demo.gif" alt="Reels TUI playing on Arch Linux" width="33%">
 </p>
 
-<p align="center">
-  <img src="assets/subtitle.svg" alt="Doomscrollbrainrotmaxxing in the terminal" width="500">
-</p>
-
-
 <h3 align="center">
   Reels TUI brings the full Instagram Reels experience to your terminal. Scroll your feed, browse comments, interact with your friends, and more!
 </h3>
@@ -252,3 +247,7 @@ reels
 ```
 
 </details>
+
+<p align="center">
+  <img src="assets/subtitle.svg" alt="Doomscrollbrainrotmaxxing in the terminal" width="500">
+</p>
