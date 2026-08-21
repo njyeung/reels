@@ -1,12 +1,4 @@
 <p align="center">
-  <a href="https://github.com/njyeung/reels"><img src="https://img.shields.io/github/stars/njyeung/reels" alt="Stars"></a>
-  <img src="https://img.shields.io/github/last-commit/njyeung/reels" alt="Last Commit">
-  <img src="https://img.shields.io/badge/macOS-supported-blue?logo=apple" alt="macOS">
-  <img src="https://img.shields.io/badge/Linux-supported-blue?logo=linux" alt="Linux">
-  <img src="https://img.shields.io/github/license/njyeung/reels" alt="License">
-</p>
-
-<p align="center">
   <img src="assets/banner.svg" alt="REELS TUI" width="100%">
 </p>
 
@@ -23,6 +15,13 @@
   <a href="https://aur.archlinux.org/packages/reels-bin"><img src="https://img.shields.io/aur/version/reels-bin" alt="AUR"></a>
   <a href="https://github.com/njyeung/homebrew-tap"><img src="https://img.shields.io/badge/brew-njyeung/tap-orange?logo=homebrew" alt="Homebrew"></a>
   <a href="https://github.com/njyeung/reels/releases/latest"><img src="https://img.shields.io/github/v/release/njyeung/reels" alt="Latest Release"></a>
+</p>
+<p align="center">
+  <a href="https://github.com/njyeung/reels"><img src="https://img.shields.io/github/stars/njyeung/reels" alt="Stars"></a>
+  <img src="https://img.shields.io/github/last-commit/njyeung/reels" alt="Last Commit">
+  <img src="https://img.shields.io/badge/macOS-supported-blue?logo=apple" alt="macOS">
+  <img src="https://img.shields.io/badge/Linux-supported-blue?logo=linux" alt="Linux">
+  <img src="https://img.shields.io/github/license/njyeung/reels" alt="License">
 </p>
 
 <h3 align="center">
