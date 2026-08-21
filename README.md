@@ -15,78 +15,16 @@
 <p align="center">
   <img src="assets/banner.svg" alt="REELS TUI" width="100%">
 </p>
+
 <p align="center">
-  <img src="assets/demo_popos.gif" width="35%" />
-  <img src="assets/demo_macos.gif" width="35%">
-  <img src="assets/demo_arch.gif" width="26%" />
-</p>
-<p align="center">
-  <img src="assets/subtitle.svg" alt="Doomscrollbrainrotmaxxing in the terminal" width="500">
+  <img src="assets/popos-demo.gif" alt="Reels TUI playing on PopOS" width="33%">
+  <img src="assets/macos-demo.gif" alt="Reels TUI playing on MacOS" width="33%">
+  <img src="assets/arch-demo.gif" alt="Reels TUI playing on Arch Linux" width="33%">
 </p>
 
----
-
-## Prerequisites
-
-### Terminal
-You need a terminal that supports the **Kitty graphics protocol**:
-- [Kitty](https://sw.kovidgoyal.net/kitty/) (recommended)
-- [Ghostty](https://ghostty.org/) (recommended)
-- [WezTerm](https://wezfurlong.org/wezterm/) (recommended)
-- [iTerm2](https://iterm2.com/) (recommended)
-- [st](https://st.suckless.org/) (recommended)
-- [Konsole](https://konsole.kde.org/)
-- [Warp](https://www.warp.dev/)
-- [wayst](https://github.com/91861/wayst)
-
-### Chrome (LINUX ARM64 ONLY)
-Chrome is automatically downloaded on first run if no system Chrome/Chromium is found; No action is needed for most platforms. The exception is Linux ARM64, where Chrome For Testing isn't available yet ([coming Q2 2026!](https://blog.chromium.org/2026/03/bringing-chrome-to-arm64-linux-devices.html)). If you are on Linux ARM64, you'll need to install Chrome, Chromium, or Brave manually before running Reels.
-
-## Usage
-
-```bash
-reels
-```
-
-### Flags
-- `--headed` - Run browser in headed mode (visible browser window)
-- `--login` - Open browser window to log in to Instagram
-- `--config` - Edit your keybinds in the TUI
-
-### Controls
-
-| reels.conf bind | Default | Action |
-|-----------------|---------|--------|
-| `key_next` | `j` | Next reel (scrolls panels when open) |
-| `key_previous` | `k` | Previous reel (scrolls panels when open) |
-| `key_seek_backward` | `h` | Seek backward by 5 seconds |
-| `key_seek_forward` | `l` | Seek forward by 5 seconds |
-| `key_like` | `space` | Like/unlike |
-| `key_repost` | `r` | Repost/unrepost current reel |
-| `key_select` | `space` | Select friend in share/friends panel. Overrides any other bind while either panel is open |
-| `key_pause` | `p` | Pause/resume current reel |
-| `key_save` | `b` | Save/Unsave (bookmark) current reel |
-| `key_navbar` | `e` | Toggle navbar, a condensed version of the help menu |
-| `key_comments_open` | `c` | Open comments |
-| `key_comments_close` | `C` | Close comments |
-| `key_share_open` | `s` | Open share panel. Allows you to share reels with instagram's suggested top friends. |
-| `key_share_close` | `S` | Close Share panel & sends to friends' DMs (if any are selected) |
-| `key_friends_open` | `d` | Open DM friends panel to view reels shared by friends |
-| `key_friends_close` | `D` | Close DM friends panel / exit friend mode |
-| `key_react_open` | `x` | Open react panel to react to a friend's reel (friend mode only) |
-| `key_react_close` | `X` | Close react panel (friend mode only) |
-| `key_copy_link` | `y` | Copy reel link to clipboard |
-| `key_mute` | `m` | Mute current reel |
-| `key_vol_up` | `]` | Volume up |
-| `key_vol_down` | `[` | Volume down |
-| `key_reel_size_inc` | `=` | Enlarge video |
-| `key_reel_size_dec` | `-` | Shrink video |
-| `key_help_open` | `?` | Help panel shows the current keybinds |
-| `key_help_close`| `?` | Close help panel |
-| `key_quit` | `q` | Quit |
-| `key_quit` | `ctrl+c` | Quit |
-
-All keybinds are configurable in `reels.conf`. Each action supports multiple binds. Open/close pairs (like `key_comments_open` and `key_comments_close`) can be bound to the same key to toggle.
+<h3 align="center">
+  Reels TUI brings the full Instagram Reels experience to your terminal. Scroll your feed, browse comments, interact with your friends, and more!
+</h3>
 
 ## Installation
 
@@ -112,8 +50,112 @@ yay -S reels-bin
 reels
 ```
 
-### Pre-built Binaries
+## Usage
 
+```bash
+reels
+```
+
+| Flag | Effect |
+| --- | --- |
+| `--login` | Opens a visible browser to log in to Instagram. Reels won't drive the browser in this mode, which also makes it useful for debugging |
+| `--headed` | Runs the browser visibly while Reels still controls it. Use this to diagnose sync failures |
+| `--config` | Opens the keybind editor. Doesn't launch a browser |
+
+## Terminal
+You need a terminal that supports the **Kitty graphics protocol**:
+- [Kitty](https://sw.kovidgoyal.net/kitty/) (recommended)
+- [Ghostty](https://ghostty.org/) (recommended)
+- [WezTerm](https://wezfurlong.org/wezterm/) (recommended)
+- [iTerm2](https://iterm2.com/) (recommended)
+- [st](https://st.suckless.org/) (recommended)
+- [Konsole](https://konsole.kde.org/)
+- [Warp](https://www.warp.dev/)
+- [wayst](https://github.com/91861/wayst)
+
+## Features
+
+<table>
+<tr>
+<td width="50%">
+
+**Like, repost, save**
+
+`space` to like, `r` to repost, `b` to bookmark, `y` to copy the link. Or reach for the mouse and click the icons directly.
+
+<video src="https://github.com/user-attachments/assets/2e05b6a6-cd42-4068-9ac9-c2613fe5b389" width="100%" muted autoplay loop playsinline controls>
+</video>
+
+</td>
+<td width="50%">
+
+**Comments**
+
+`c` opens the panel, so you can read comments and laugh at the gifs. Expand any comment to read its replies.
+
+<video src="https://github.com/user-attachments/assets/d3f006c5-70ad-45e3-ab43-7e3b84ec9284" width="100%" muted autoplay loop playsinline controls>
+</video>
+
+</td>
+</tr>
+<tr>
+<td width="50%">
+
+**Share to DMs**
+
+`s` opens your suggested friends, `space` selects, `S` closes the panel and sends the reel to the selected friends.
+
+<video src="https://github.com/user-attachments/assets/b08d6107-fbb1-44ef-b6cd-8f73bd6f244c" width="100%" muted autoplay loop playsinline controls>
+Sharing a reel to DMs
+</video>
+
+</td>
+<td width="50%">
+
+**Watch and react to what friends sent you**
+
+`d` to view reels your friends have shared with you. `x` to send a reaction back to their dms.
+
+<video src="https://github.com/user-attachments/assets/ede9f0d2-b51b-49f5-b067-84fc8e2cc028" width="100%" muted autoplay loop playsinline controls>
+</video>
+
+</td>
+</tr>
+</table>
+
+## Config
+
+All keybinds are configurable. Each action supports multiple binds. Open/close pairs can be bound to the same key to toggle.
+
+The config TUI is a wrapper for `~/.config/reels/reels.conf` (which may also be edited by hand):
+
+```bash
+reels --config
+```
+
+<table align="center">
+<tr>
+<td>
+<video src="https://github.com/user-attachments/assets/2111b13a-ac95-4b29-95dd-b145f4ff5e17" width="50%">
+</video>
+</td>
+</tr>
+</table>
+
+
+**See [CONFIG.md](CONFIG.md) for the full list of settings and their defaults.**
+
+## File paths
+
+| What | Where |
+|------|-------|
+| Settings | `~/.config/reels/reels.conf` |
+| Cache | `~/.cache/reels/` |
+| Browser data | `~/.local/share/reels/` |
+| Logs | `~/.local/state/reels/reels.log` |
+
+
+## Pre-built Binaries
 Download the latest release from [GitHub Releases](https://github.com/njyeung/reels/releases):
 
 | Platform | Binary |
@@ -122,7 +164,7 @@ Download the latest release from [GitHub Releases](https://github.com/njyeung/re
 | Linux (ARM64) | `reels-linux-arm64` |
 | macOS (Apple Silicon) | `reels-darwin-arm64` |
 
-### Building from Source (For Developers)
+## Building from source (For Developers)
 
 Requires Go 1.25+ and FFmpeg 8+ development libraries.
 
@@ -141,56 +183,71 @@ cd reels
 go build -o reels .
 ```
 
-## File Paths
+## Troubleshooting
 
-- Settings: `~/.config/reels/reels.conf`
-- Cache: `~/.cache/reels/`
-- Chrome Data: `~/.local/shared/reels/`
-- Logs: `~/.local/state/reels/reels.log`
+<details>
+<summary><b>My terminal shows no video at all</b></summary>
 
-`Debugging tip: If Reels TUI persistently fails with an error, try rm -rf ~/.local/shared/reels/`
+<br>
 
-## Default settings
+It is likely that your terminal does not properly support the **Kitty graphics protocol**. See [Terminal](#Terminal).
 
+</details>
+
+
+<details>
+<summary><b>"could not complete initial sync" on startup</b></summary>
+
+<br>
+
+Almost always means the saved session didn't stick, even if you clicked **Save Info**.
+
+Diagnose by relaunch with the browser visible:
+
+```bash
+reels --headed
 ```
-# Default config (created on first run)
 
-show_navbar = true
-retina_scale = 2    # auto detects 2 on macOS, 1 on Linux by default
-reel_width = 270
-reel_height = 480
-reel_size_step = 30
-volume = 1
-gif_cell_height = 5
-panel_shrink_steps = 4  # how many reel_size_steps to shrink when opening a panel
+If the window is sitting on an Instagram login screen, log in and click **Save Info** again.
 
-# Configurable keybinds (multiple binds per action supported)
-key_next = j
-key_previous = k
-key_pause = p
-key_mute = m
-key_like = space
-key_repost = r
-key_navbar = e
-key_vol_up = ]
-key_vol_down = [
-key_reel_size_inc = =
-key_reel_size_dec = -
-key_copy_link = y
-key_save = b
-key_seek_forward = l
-key_seek_backward = h
-key_share_open = s
-key_share_close = S
-key_select = space
-key_friends_open = d
-key_friends_close = D
-key_react_open = x
-key_react_close = X
-key_comments_open = c
-key_comments_close = C
-key_help_open = ?
-key_help_close = ?
-key_quit = q
-key_quit = ctrl+c
+</details>
+
+
+<details>
+<summary><b>Linux ARM64: Chrome doesn't download</b></summary>
+
+<br>
+
+Chrome is automatically downloaded on first run if no system Chrome/Chromium is found; No action is needed for most platforms. The exception is Linux ARM64, where Chrome For Testing isn't available yet ([coming Q2 2026!](https://blog.chromium.org/2026/03/bringing-chrome-to-arm64-linux-devices.html)).
+
+On Linux ARM64, install Chrome, Chromium, or Brave manually before running Reels.
+
+</details>
+
+
+<details><summary><b>High CPU usage</b></summary>
+
+<br>
+
+Try using one of the [recommended terminals](#terminal). These terminals support reading image data from a shared memory object rather than having Reels TUI base64 encode and print it to stdout.
+
+</details>
+
+
+<details>
+<summary><b>Nothing works</b></summary>
+
+<br>
+
+Sometimes, the Chrome profile may be left in an unrecoverable state. Wipe the chrome-data and restart:
+
+```bash
+rm -rf ~/.local/share/reels/
+reels
 ```
+
+</details>
+
+<p align="center">
+  <img src="assets/subtitle.svg" alt="Doomscrollbrainrotmaxxing in the terminal" width="500">
+</p>
