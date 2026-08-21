@@ -8,7 +8,6 @@
   <img src="assets/arch-demo.gif" alt="Reels TUI playing on Arch Linux" width="33%">
 </p>
 
-<br>
 
 <h3 align="center">
   Reels TUI brings the full Instagram Reels experience to your terminal. Scroll your feed, browse comments, interact with your friends, and more!
