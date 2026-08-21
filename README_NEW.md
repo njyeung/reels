@@ -108,7 +108,7 @@ You need a terminal that supports the **Kitty graphics protocol**:
 
 **Share to DMs**
 
-`s` opens your suggested friends, `space` selects.
+`s` opens your suggested friends, `space` selects, `S` closes the panel and sends the reel to the selected friends.
 
 <video src="https://github.com/user-attachments/assets/b08d6107-fbb1-44ef-b6cd-8f73bd6f244c" width="100%" muted autoplay loop playsinline controls>
 Sharing a reel to DMs
@@ -138,10 +138,15 @@ The config TUI is a wrapper for `~/.config/reels/reels.conf` (which may also be 
 reels --config
 ```
 
-<p align="center">
-  <video src="https://github.com/user-attachments/assets/2111b13a-ac95-4b29-95dd-b145f4ff5e17" width="40%" muted autoplay loop playsinline controls>
-  </video>
-</p>
+<table align="center">
+<tr>
+<td>
+<video src="https://github.com/user-attachments/assets/2111b13a-ac95-4b29-95dd-b145f4ff5e17" width="600" muted autoplay loop playsinline controls>
+Editing keybinds with reels --config
+</video>
+</td>
+</tr>
+</table>
 
 
 **See [CONFIG.md](CONFIG.md) for the full list of settings and their defaults.**
@@ -187,6 +192,16 @@ go build -o reels .
 ## Troubleshooting
 
 <details>
+<summary><b>My terminal shows no video at all</b></summary>
+
+<br>
+
+It is likely that your terminal does not properly support the **Kitty graphics protocol**. See [Terminal](#Terminal).
+
+</details>
+
+
+<details>
 <summary><b>"could not complete initial sync" on startup</b></summary>
 
 <br>
@@ -203,14 +218,6 @@ If the window is sitting on an Instagram login screen, log in and click **Save I
 
 </details>
 
-<details>
-<summary><b>My terminal shows no video at all</b></summary>
-
-<br>
-
-It is likely that your terminal does not properly support the **Kitty graphics protocol**. See [Terminal](#Terminal).
-
-</details>
 
 <details>
 <summary><b>Linux ARM64: Chrome doesn't download</b></summary>
@@ -223,6 +230,7 @@ On Linux ARM64, install Chrome, Chromium, or Brave manually before running Reels
 
 </details>
 
+
 <details><summary><b>High CPU usage</b></summary>
 
 <br>
@@ -230,6 +238,7 @@ On Linux ARM64, install Chrome, Chromium, or Brave manually before running Reels
 Try using one of the [recommended terminals](#terminal). These terminals support reading image data from a shared memory object rather than having Reels TUI base64 encode and print it to stdout.
 
 </dtails>
+
 
 <details>
 <summary><b>Nothing works</b></summary>
