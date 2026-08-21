@@ -88,7 +88,7 @@ You need a terminal that supports the **Kitty graphics protocol**:
 
 `space` to like, `r` to repost, `b` to bookmark, `y` to copy the link. Or reach for the mouse and click the icons directly.
 
-<img src="assets/like-comment-repost-bookmark-share.mp4" alt="Liking, reposting and saving a reel with the keyboard and mouse" width="100%">
+<video src="assets/like-comment-repost-bookmark-share.mp4" alt="Liking, reposting and saving a reel with the keyboard and mouse" width="100%">
 
 </td>
 <td width="50%">
@@ -97,7 +97,7 @@ You need a terminal that supports the **Kitty graphics protocol**:
 
 `c` opens the panel, so you can read comments and laugh at the gifs. Expand any comment to read its replies.
 
-<img src="assets/comments.mp4" alt="Reading comments" width="100%">
+<video src="assets/comments.mp4" alt="Reading comments" width="100%">
 
 </td>
 </tr>
@@ -108,7 +108,7 @@ You need a terminal that supports the **Kitty graphics protocol**:
 
 `s` opens your suggested friends, `space` selects, `S` sends and closes.
 
-<img src="assets/share-to-dms.mp4" alt="Sharing a reel to DMs" width="100%">
+<video src="assets/share-to-dms.mp4" alt="Sharing a reel to DMs" width="100%">
 
 </td>
 <td width="50%">
@@ -117,7 +117,7 @@ You need a terminal that supports the **Kitty graphics protocol**:
 
 `d` to view reels your friends have shared with you. `x` to send a reaction back to their dms.
 
-<img src="assets/view-react-dm-reels.mp4" alt="Watching and reacting to reels shared by friends" width="100%">
+<video src="assets/view-react-dm-reels.mp4" alt="Watching and reacting to reels shared by friends" width="100%">
 
 </td>
 </tr>
