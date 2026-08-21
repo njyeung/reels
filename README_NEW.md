@@ -141,8 +141,7 @@ reels --config
 <table align="center">
 <tr>
 <td>
-<video src="https://github.com/user-attachments/assets/2111b13a-ac95-4b29-95dd-b145f4ff5e17" width="600" muted autoplay loop playsinline controls>
-Editing keybinds with reels --config
+<video src="https://github.com/user-attachments/assets/2111b13a-ac95-4b29-95dd-b145f4ff5e17" width="50%">
 </video>
 </td>
 </tr>
