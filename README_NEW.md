@@ -27,9 +27,9 @@
 </p>
 
 
-<h2 align="center">
+<h3 align="center">
   Reels TUI brings the full Instagram Reels experience to your terminal. Scroll your feed, browse comments, interact with your friends, and more.
-</h2>
+</h3>
 
 ## Installation
 
