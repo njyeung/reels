@@ -80,89 +80,44 @@ You need a terminal that supports the **Kitty graphics protocol**:
 
 ## Features
 
-<!-- SHOTS 02-09 — placeholders until the shoot lands. -->
-
 <table>
-<tr>
-<td width="50%">
-
-**Scroll the feed**
-
-`j` / `k` to move, or just use the scroll wheel.
-
-<img src="assets/scroll.gif" alt="Scrolling the feed" width="100%">
-
-</td>
-<td width="50%">
-
-**Seek within a reel**
-
-`l` jumps forward 5 seconds, `h` goes back.
-
-<img src="assets/seek.gif" alt="Seeking within a reel" width="100%">
-
-</td>
-</tr>
 <tr>
 <td width="50%">
 
 **Like, repost, save**
 
-`space` to like, `r` to repost, `b` to bookmark. `y` copies the link.
+`space` to like, `r` to repost, `b` to bookmark, `y` to copy the link. Or reach for the mouse and click the icons directly.
 
-<img src="assets/hud.gif" alt="Liking, reposting and saving a reel" width="100%">
+<img src="assets/like-comment-repost-bookmark-share.mp4" alt="Liking, reposting and saving a reel with the keyboard and mouse" width="100%">
 
 </td>
 <td width="50%">
 
 **Comments**
 
-`c` opens the panel, `C` closes it. Expand any comment to read its replies — the reel
-keeps playing the whole time.
+`c` opens the panel, so you can read comments and laugh at the gifs. Expand any comment to read its replies.
 
-<img src="assets/comments.gif" alt="Reading comments" width="100%">
+<img src="assets/comments.mp4" alt="Reading comments" width="100%">
 
 </td>
 </tr>
 <tr>
-<td width="50%">
-
-**Mouse support**
-
-Click the heart to like. Click the reel to pause. Click the caption to toggle the
-navbar.
-
-<img src="assets/mouse.gif" alt="Using the mouse" width="100%">
-
-</td>
 <td width="50%">
 
 **Share to DMs**
 
 `s` opens your suggested friends, `space` selects, `S` sends and closes.
 
-<img src="assets/share.gif" alt="Sharing a reel to DMs" width="100%">
-
-</td>
-</tr>
-<tr>
-<td width="50%">
-
-**Watch what friends sent you**
-
-`d` opens your chats. Reels shared with you play with a blue border and your friend's
-profile picture.
-
-<img src="assets/dm.gif" alt="Watching reels shared by friends" width="100%">
+<img src="assets/share-to-dms.mp4" alt="Sharing a reel to DMs" width="100%">
 
 </td>
 <td width="50%">
 
-**React to their reels**
+**Watch and react to what friends sent you**
 
-`x` opens the react panel. Reactions float over the reel as animated emoji.
+`d` to view reels your friends have shared with you. `x` to send a reaction back to their dms.
 
-<img src="assets/react.gif" alt="Reacting to a friend's reel" width="100%">
+<img src="assets/view-react-dm-reels.mp4" alt="Watching and reacting to reels shared by friends" width="100%">
 
 </td>
 </tr>
