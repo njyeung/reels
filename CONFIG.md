@@ -1,10 +1,8 @@
 # Config
 
----
-
 Reels stores its settings and keybinds in one file:
 
-```text
+```bash
 ~/.config/reels/reels.conf
 ```
 

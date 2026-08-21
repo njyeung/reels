@@ -58,12 +58,32 @@ reels
 reels
 ```
 
-|  Flag  | Effect |
-|--------|--------|
-|  `--login`  | Opens a visible browser to log in to Instagram. Reels won't drive the browser in this mode, which also makes it useful for debugging |
-| `--headed`  | Runs the browser visibly while Reels still controls it. Use this to diagnose sync failures |
-| `--config`  | Opens the keybind editor. Doesn't launch a browser |
-| `--version` | Prints the version and exits |
+<table>
+<thead>
+<tr>
+<th>Flag</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td nowrap><code>--login</code></td>
+<td>Opens a visible browser to log in to Instagram. Reels won't drive the browser in this mode, which also makes it useful for debugging</td>
+</tr>
+<tr>
+<td nowrap><code>--headed</code></td>
+<td>Runs the browser visibly while Reels still controls it. Use this to diagnose sync failures</td>
+</tr>
+<tr>
+<td nowrap><code>--config</code></td>
+<td>Opens the keybind editor. Doesn't launch a browser</td>
+</tr>
+<tr>
+<td nowrap><code>--version</code></td>
+<td>Prints the version and exits</td>
+</tr>
+</tbody>
+</table>
 
 ## Terminal
 You need a terminal that supports the **Kitty graphics protocol**:
@@ -75,59 +95,6 @@ You need a terminal that supports the **Kitty graphics protocol**:
 - [Konsole](https://konsole.kde.org/)
 - [Warp](https://www.warp.dev/)
 - [wayst](https://github.com/91861/wayst)
-
-## Troubleshooting
-
-<details>
-<summary><b>"Syncing failed", or startup hangs before the feed appears</b></summary>
-
-<br>
-
-Nearly always means the saved session didn't stick, even if you clicked **Save Info**.
-
-Relaunch with the browser visible:
-
-```bash
-reels --headed
-```
-
-If the window is sitting on an Instagram login screen, log in and click **Save Info** again.
-
-</details>
-
-<details>
-<summary><b>My terminal shows no video at all</b></summary>
-
-<br>
-
-It is likely that your terminal does not properly support the **Kitty graphics protocol**. See [Terminal](#Terminal).
-
-</details>
-
-<details>
-<summary><b>Linux ARM64: Chrome won't download</b></summary>
-
-<br>
-
-Chrome is automatically downloaded on first run if no system Chrome/Chromium is found; No action is needed for most platforms. The exception is Linux ARM64, where Chrome For Testing isn't available yet ([coming Q2 2026!](https://blog.chromium.org/2026/03/bringing-chrome-to-arm64-linux-devices.html)).
-
-On Linux ARM64, install Chrome, Chromium, or Brave manually before running Reels.
-
-</details>
-
-<details>
-<summary><b>Nothing works</b></summary>
-
-<br>
-
-Sometimes, the Chrome profile may be left in an unrecoverable state. Wipe the chrome-data and restart:
-
-```bash
-rm -rf ~/.local/share/reels/
-reels
-```
-
-</details>
 
 ## Features
 
@@ -223,7 +190,7 @@ profile picture.
 
 All keybinds are configurable. Each action supports multiple binds. Open/close pairs can be bound to the same key to toggle.
 
-Edit them in the TUI:
+The config TUI is a wrapper for `~/.config/reels/reels.conf` (which may also be edited by hand):
 
 ```bash
 reels --config
@@ -234,7 +201,6 @@ reels --config
   <img src="assets/config.gif" alt="Editing keybinds with reels --config" width="80%">
 </p>
 
-The config TUI is simply a wrapper for `~/.config/reels/reels.conf`, which can be edited by hand.
 
 **See [CONFIG.md](CONFIG.md) for the full list of settings and their defaults.**
 
@@ -276,14 +242,63 @@ cd reels
 go build -o reels .
 ```
 
----
+## Troubleshooting
 
-<!-- SHOT 11 — credibility strip. Reusing existing captures for now. -->
-<p align="center">
-  <img src="assets/demo_popos.gif" width="32%" />
-  <img src="assets/demo_macos.gif" width="32%">
-  <img src="assets/demo_arch.gif" width="24%" />
-</p>
-<p align="center">
-  <sub>Pop!_OS · macOS · Arch</sub>
-</p>
+<details>
+<summary><b>"could not complete initial sync" on startup</b></summary>
+
+<br>
+
+Almost always means the saved session didn't stick, even if you clicked **Save Info**.
+
+Diagnose by relaunch with the browser visible:
+
+```bash
+reels --headed
+```
+
+If the window is sitting on an Instagram login screen, log in and click **Save Info** again.
+
+</details>
+
+<details>
+<summary><b>My terminal shows no video at all</b></summary>
+
+<br>
+
+It is likely that your terminal does not properly support the **Kitty graphics protocol**. See [Terminal](#Terminal).
+
+</details>
+
+<details>
+<summary><b>Linux ARM64: Chrome doesn't download</b></summary>
+
+<br>
+
+Chrome is automatically downloaded on first run if no system Chrome/Chromium is found; No action is needed for most platforms. The exception is Linux ARM64, where Chrome For Testing isn't available yet ([coming Q2 2026!](https://blog.chromium.org/2026/03/bringing-chrome-to-arm64-linux-devices.html)).
+
+On Linux ARM64, install Chrome, Chromium, or Brave manually before running Reels.
+
+</details>
+
+<details><summary><b>High CPU usage</b></summary>
+
+<br>
+
+Try using one of the [recommended terminals](#terminal). These terminals support reading image data from a shared memory object rather than having Reels TUI base64 encode and print it to stdout.
+
+</dtails>
+
+<details>
+<summary><b>Nothing works</b></summary>
+
+<br>
+
+Sometimes, the Chrome profile may be left in an unrecoverable state. Wipe the chrome-data and restart:
+
+```bash
+rm -rf ~/.local/share/reels/
+reels
+```
+
+</details>
