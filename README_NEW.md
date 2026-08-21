@@ -231,7 +231,7 @@ On Linux ARM64, install Chrome, Chromium, or Brave manually before running Reels
 
 Try using one of the [recommended terminals](#terminal). These terminals support reading image data from a shared memory object rather than having Reels TUI base64 encode and print it to stdout.
 
-</dtails>
+</details>
 
 
 <details>
