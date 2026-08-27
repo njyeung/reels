@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.4.4]
+- Fix: Update Instagram comments doc_ids to match new frontend
+- Fix: Stray gap before @mentions in multi-line captions
+
 ## [1.4.3]
 - Add reels --config: A TUI editor for rebinding keys without hand editing reels.conf
 - Fix: panel_shrink_steps was written back to reels.conf as panel_shrink
