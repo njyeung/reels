@@ -206,7 +206,7 @@ It is likely that your terminal does not properly support the **Kitty graphics p
 
 Almost always means the saved session didn't stick, even if you clicked **Save Info**.
 
-Diagnose by relaunch with the browser visible:
+Diagnose by relaunching with the browser visible:
 
 ```bash
 reels --headed
