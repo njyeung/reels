@@ -287,7 +287,8 @@ func (cp *CommentsPanel) Paint(s *screen.Screen, r screen.Rect) (lastPlaced int)
 			y += cp.gifCellHeight
 		} else {
 			text := screen.Rect{X: body.X + textIndent, Y: y, W: max(body.W-textIndent, 0), H: body.Bottom() - y}
-			wrapped := screen.Wrap(renderWithMentions(strings.ReplaceAll(comment.Text, "\n", " "), gray50), text.W)
+			// reuse caption render logic
+			wrapped := screen.Wrap(renderWithMentions(strings.ReplaceAll(comment.Text, "\n", " ")), text.W)
 			if wrapped != "" {
 				_, endY := s.SetContent(text, wrapped, zone)
 				placed = endY < body.Bottom()

@@ -12,7 +12,6 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/njyeung/reels/backend"
 	"github.com/njyeung/reels/player"
 	"github.com/njyeung/reels/tui/colors"
@@ -226,7 +225,7 @@ func (m Model) paintCaption(s *screen.Screen, r screen.Rect) {
 		caption = screen.Truncate(strings.ReplaceAll(caption, "\n", " "), r.W, "...")
 	}
 
-	s.SetContent(r, screen.Wrap(renderWithMentions(caption, gray300), r.W), nil)
+	s.SetContent(r, screen.Wrap(renderWithMentions(caption), r.W), nil)
 }
 
 // isMentionChar reports whether r can appear in an @ mention handle.
@@ -239,7 +238,7 @@ func isMentionChar(r rune) bool {
 
 // renderWithMentions renders text, styling @mentions with blue500 and the
 // remainder with base.
-func renderWithMentions(text string, base lipgloss.Style) string {
+func renderWithMentions(text string) string {
 	var b strings.Builder
 	runes := []rune(text)
 	i := 0
@@ -268,7 +267,12 @@ func renderWithMentions(text string, base lipgloss.Style) string {
 			}
 			i++
 		}
-		b.WriteString(base.Render(string(runes[start:i])))
+		for k, line := range strings.Split(string(runes[start:i]), "\n") {
+			if k > 0 {
+				b.WriteByte('\n')
+			}
+			b.WriteString(gray50.Render(line))
+		}
 	}
 	return b.String()
 }
