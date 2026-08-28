@@ -13,6 +13,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/njyeung/reels/backend"
+	"github.com/njyeung/reels/discord"
 	"github.com/njyeung/reels/player"
 	"github.com/njyeung/reels/tui/colors"
 	"github.com/njyeung/reels/tui/screen"
@@ -695,6 +696,8 @@ func (m *Model) navigateToReel(direction int) tea.Cmd {
 	m.comments.Clear()
 	if info, err := m.backend.GetReel(index); err == nil {
 		m.currentReel = info
+		discord.SetState("Watching a reel by @" + info.Username)
+		discord.SetReelURL("https://www.instagram.com/reel/" + info.Code)
 	}
 	go m.backend.SyncTo(index)
 	return m.startPlayback(index)
