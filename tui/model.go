@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/njyeung/reels/backend"
+	"github.com/njyeung/reels/discord"
 	"github.com/njyeung/reels/player"
 	"github.com/njyeung/reels/player/shm"
 	"github.com/njyeung/reels/tui/screen"
@@ -432,6 +433,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case reelLoadedMsg:
 		m.currentReel = msg.info
+		discord.SetState("Watching a reel by @" + msg.info.Username)
+		discord.SetReelURL("https://www.instagram.com/reel/" + msg.info.Code)
 		m.state = stateBrowsing
 		m.status = statusLoading
 		m.musicScrollOffset = 0
@@ -506,12 +509,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) View() string {
 	switch m.state {
 	case stateLoading:
+		discord.SetDetails("Starting Reels TUI")
 		return m.viewLoading()
 	case stateLogin:
 		return m.viewLogin()
 	case stateError:
 		return m.viewError()
 	case stateBrowsing:
+		discord.SetDetails("Doomscrolling")
 		return m.viewBrowsing()
 	default:
 		return ""

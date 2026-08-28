@@ -53,7 +53,7 @@ func (hp *HelpPanel) buildEntries() {
 		{displayKeys(config.KeysShareOpen), "share via DM"},
 		{displayKeys(config.KeysShareClose), "send & close share"},
 		{displayKeys(config.KeysSelect), "select (share/friends/react/replies)"},
-		{displayKeys(config.KeysCopyLink), "copyh link"},
+		{displayKeys(config.KeysCopyLink), "copy link"},
 		{displayKeys(config.KeysSave), "bookmark"},
 		{displayKeys(config.KeysNavbar), "toggle navbar"},
 		{displayKeys(config.KeysVolUp), "volume up"},

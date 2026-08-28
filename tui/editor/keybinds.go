@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/bubbles/cursor"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/njyeung/reels/backend"
+	"github.com/njyeung/reels/discord"
 )
 
 // action is one editable line in reels.conf: the key it is written under, a
@@ -82,7 +83,6 @@ type Model struct {
 
 // NewModel loads reels.conf and returns the editor over it.
 func NewModel(userDataDir, logDir, cacheDir, configDir string) Model {
-	backend.InitLogger(logDir)
 	backend.NewChromeBackend(userDataDir, cacheDir, configDir)
 	backend.LoadSettings(configDir)
 
@@ -96,6 +96,8 @@ func NewModel(userDataDir, logDir, cacheDir, configDir string) Model {
 	caret := cursor.New()
 	caret.Style = listened
 	caret.SetChar(" ")
+
+	discord.SetDetails("Editing Config")
 
 	return Model{
 		configDir: configDir,

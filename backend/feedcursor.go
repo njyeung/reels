@@ -238,7 +238,7 @@ func (fc *FeedCursor) SyncTo(index int) error {
 			}
 		}
 
-		time.Sleep(time.Duration(1500+rand.Intn(500)) * time.Millisecond)
+		time.Sleep(time.Duration(1000+rand.Intn(300)) * time.Millisecond)
 	}
 
 	return fmt.Errorf("failed to sync to index %d after %d scrolls", index, MaxRetries)
