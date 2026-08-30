@@ -166,7 +166,9 @@ func serveConnection(conn net.Conn) {
 
 	go func() {
 		for {
-			writeFrame(conn, opFrame, setActivity())
+			if err := writeFrame(conn, opFrame, setActivity()); err != nil {
+				return
+			}
 			time.Sleep(minUpdateInterval)
 		}
 	}()
