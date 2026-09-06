@@ -1,11 +1,12 @@
 package screen
 
-// Zone is a click target. Value is set and intrepreted by the caller to decide which zone was clicked.
+// Zone is a click target. Value is set and interpreted by the caller to decide
+// which zone was clicked.
 type Zone struct {
 	Value any
 }
 
-// A pointer this this specific NoZone is passed in order to clear a zone
+// NoZone is passed to SetZone or SetContent to clear an existing zone.
 var NoZone = &Zone{}
 
 func resolveZone(cur, want *Zone) *Zone {
@@ -18,6 +19,8 @@ func resolveZone(cur, want *Zone) *Zone {
 	return want
 }
 
+// SetZone marks r as belonging to zone. A nil zone preserves existing zones;
+// NoZone clears them.
 func (s *Screen) SetZone(r Rect, zone *Zone) {
 	clip := r.Intersect(s.Bounds())
 	for y := clip.Y; y < clip.Bottom(); y++ {

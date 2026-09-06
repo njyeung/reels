@@ -14,7 +14,6 @@ import (
 
 var Version = "dev"
 
-// SyncFile wraps *os.File with a mutex to serialize writes while preserving Fd() for ioctls
 type SyncFile struct {
 	mu sync.Mutex
 	*os.File

@@ -59,26 +59,23 @@ func (s *Screen) SetObj(r Rect, obj *Object) {
 // actually covers, in the order the objects are first encountered.
 //
 // Comparing Visible against Obj.Want tells you whether an object is fully
-// visible, partly clipped, or scrolled away entirely.
+// visible or partly clipped. Objects entirely outside the screen are omitted.
 func (s *Screen) GetObjs() []Extent {
 	var out []Extent
+	indices := make(map[*Object]int)
 	for y := range s.h {
 		for x := range s.w {
 			obj := s.cells[y*s.w+x].Obj
 			if obj == nil {
 				continue
 			}
-			found := false
-			for i := range out {
-				if out[i].Obj == obj {
-					out[i].Visible = grow(out[i].Visible, x, y)
-					found = true
-					break
-				}
+			if i, ok := indices[obj]; ok {
+				out[i].Visible = grow(out[i].Visible, x, y)
+				continue
 			}
-			if !found {
-				out = append(out, Extent{Obj: obj, Visible: Rect{X: x, Y: y, W: 1, H: 1}})
-			}
+
+			indices[obj] = len(out)
+			out = append(out, Extent{Obj: obj, Visible: Rect{X: x, Y: y, W: 1, H: 1}})
 		}
 	}
 	return out

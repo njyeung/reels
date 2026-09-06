@@ -9,7 +9,7 @@ func StringWidth(str string) int {
 }
 
 // Truncate shortens str to fit width columns, ending it with tail if anything
-// was dropped. Tail is counted inside width
+// was dropped. Tail is counted inside width.
 func Truncate(str string, width int, tail string) string {
 	return ansi.Truncate(str, width, tail)
 }
