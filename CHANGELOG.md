@@ -1,5 +1,8 @@
 # Changelog
 
+## [1.4.5]
+- Discord rich presence
+
 ## [1.4.4]
 - Fix: Update Instagram comments doc_ids to match new frontend
 - Fix: Stray gap before @mentions in multi-line captions
