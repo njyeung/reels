@@ -127,9 +127,13 @@ func connectToDiscord() (net.Conn, error) {
 	}
 
 	op, payload, err := readFrame(conn)
-	if err != nil || op != opFrame {
+	if err != nil {
 		_ = conn.Close()
 		return nil, err
+	}
+	if op != opFrame {
+		_ = conn.Close()
+		return nil, fmt.Errorf("unexpected handshake opcode: %d", op)
 	}
 
 	var ready struct {
