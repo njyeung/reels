@@ -1,5 +1,8 @@
 # Changelog
 
+## [1.4.6]
+- Fix: Send button (sharing reels to friends)
+
 ## [1.4.5]
 - Discord rich presence
 
