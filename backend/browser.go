@@ -769,10 +769,12 @@ func (b *ChromeBackend) SendShare() (bool, error) {
 			document.querySelectorAll('[data-reels-send-btn]').forEach(el => {
 				el.removeAttribute('data-reels-send-btn');
 			});
-
-			const buttons = document.querySelectorAll('div[role="button"]');
+			const dialog = document.querySelector('div[role="dialog"][aria-label="Share"]');
+			if (!dialog) return 'notfound';
+			const labels = ['send', 'send separately'];
+			const buttons = dialog.querySelectorAll('div[role="button"]');
 			for (const btn of buttons) {
-				if (btn.textContent.trim().toLowerCase().includes('send')) {
+				if (labels.includes(btn.textContent.trim().toLowerCase())) {
 					btn.setAttribute('data-reels-send-btn', 'true');
 					return btn.getAttribute('aria-disabled') === 'true' ? 'disabled' : 'ok';
 				}
