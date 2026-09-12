@@ -1,6 +1,7 @@
 package discord
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -158,12 +159,13 @@ type incoming struct {
 }
 
 func serveConnection(conn net.Conn) {
-
+	ctx, cancel := context.WithCancel(context.Background())
 	frames := make(chan incoming, 1)
-	done := make(chan struct{})
 	ticker := time.NewTicker(minUpdateInterval)
 
-	defer close(done)
+	// Defers run LIFO: conn.Close first unblocks a reader waiting in readFrame,
+	// then cancel releases one parked on the frames send with nobody receiving.
+	defer cancel()
 	defer conn.Close()
 	defer ticker.Stop()
 
@@ -172,7 +174,7 @@ func serveConnection(conn net.Conn) {
 			op, payload, err := readFrame(conn)
 			select {
 			case frames <- incoming{op: op, payload: payload, err: err}:
-			case <-done:
+			case <-ctx.Done():
 				return
 			}
 			if err != nil {
