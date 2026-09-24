@@ -170,18 +170,18 @@ Download the latest release from [GitHub Releases](https://github.com/njyeung/re
 
 ## Building from source (For Developers)
 
-Requires Go 1.25+ and FFmpeg 8+ development libraries.
+Requires Go 1.25+ and FFmpeg 9+ development libraries.
 
 Pre-built binaries ship with FFmpeg statically linked. For development, dynamically linking against a system FFmpeg makes building and iteration faster (simply `go build -o reels`). You can still build using docker, but I highly recommend installing the correct versions of FFmpeg following the directions below:
 
-**macOS:** Requires `ffmpeg-full` from [Homebrew](https://brew.sh) (`brew install ffmpeg-full`), [MacPorts](https://ports.macports.org/port/ffmpeg/), or FFmpeg 8+ built from [source](https://github.com/ffmpeg/ffmpeg). The standard `brew install ffmpeg` is missing required framework link flags.
+**macOS:** Requires `ffmpeg-full` from [Homebrew](https://brew.sh) (`brew install ffmpeg-full`), [MacPorts](https://ports.macports.org/port/ffmpeg/), or FFmpeg 9+ built from [source](https://github.com/ffmpeg/ffmpeg). The standard `brew install ffmpeg` is missing required framework link flags.
 
-**Linux:** Requires FFmpeg 8+ development libraries from your package manager (e.g. `sudo pacman -S ffmpeg` on Arch, `sudo apt install ffmpeg` on Debian/Ubuntu). This usually works fine as long as your packages are updated.
+**Linux:** Requires FFmpeg 9+ development libraries from your package manager (e.g. `sudo pacman -S ffmpeg` on Arch, `sudo apt install ffmpeg` on Debian/Ubuntu). This usually works fine as long as your packages are updated.
 
 ```bash
 # brew install ffmpeg-full      on macOS
 # sudo apt install ffmpeg       on Linux
-# ffmpeg -version               should be 8+
+# ffmpeg -version               should be 9+
 git clone https://github.com/njyeung/reels.git
 cd reels
 go build -o reels .

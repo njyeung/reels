@@ -38,7 +38,7 @@ Consumer binaries ship without logging, so there's usually no log to attach. If 
 
 ## Development setup
 
-Building from source is covered in the [README](README.md#building-from-source-for-developers) (Go 1.25+, FFmpeg 8+ dev libraries). FFmpeg 8+ is required because go-astiav only supports 8+; when it moves to a newer version, so do we.
+Building from source is covered in the [README](README.md#building-from-source-for-developers) (Go 1.25+, FFmpeg 9+ dev libraries). FFmpeg 9+ is required because go-astiav only supports 9+; when it moves to a newer version, so do we.
 
 - Run with `--headed` to show the browser window, which makes debugging much easier.
 - `log.go` provides a logging helper. Keep logging **out of `main`**. Use it on feature branches while developing, then strip it before merging to keep consumer binaries clean.
@@ -53,7 +53,7 @@ However, you must also ensure that your final code builds valid consumer binarie
 2. Push a new tag to trigger the build.
 3. Confirm all target binaries build successfully.
 
-Testing is difficult because there are so many ways to interact with Instagram, but `tests/` takes a black-box approach. `test.py` builds the binary, runs it under Kitty, and drives Reels TUI by sending keystrokes and observing browser state. You'll need a logged-in account, Kitty, Chrome, and FFmpeg 8+. Coverage is minimal and contributions are welcome, as long as they keep treating the app as a black box.
+Testing is difficult because there are so many ways to interact with Instagram, but `tests/` takes a black-box approach. `test.py` builds the binary, runs it under Kitty, and drives Reels TUI by sending keystrokes and observing browser state. You'll need a logged-in account, Kitty, Chrome, and FFmpeg 9+. Coverage is minimal and contributions are welcome, as long as they keep treating the app as a black box.
 
 You are also welcome to scroll reels for a few minutes to test your feature. That is already more coverage than the existing tests.
 

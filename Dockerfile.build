@@ -27,13 +27,13 @@ RUN git clone --depth 1 --branch 1.5.1 https://code.videolan.org/videolan/dav1d.
     ninja -C build && \
     ninja -C build install
 
-# Build FFmpeg 8.0.1
+# Build FFmpeg 9.0.2
 # static, decode-only, minimal codecs
 # Built-in decoders (h264, hevc, vp9, aac, mp3, opus, vorbis) need no external libs
 # Only dav1d is added for faster AV1 decoding
-RUN wget https://ffmpeg.org/releases/ffmpeg-8.0.1.tar.xz && \
-    tar xf ffmpeg-8.0.1.tar.xz && \
-    cd ffmpeg-8.0.1 && \
+RUN wget https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz && \
+    tar xf ffmpeg-9.0.2.tar.xz && \
+    cd ffmpeg-9.0.2 && \
     ./configure \
         --prefix=/usr/local \
         --enable-gpl \
@@ -59,7 +59,7 @@ RUN wget https://ffmpeg.org/releases/ffmpeg-8.0.1.tar.xz && \
     make -j$(nproc) && \
     make install && \
     ldconfig && \
-    cd / && rm -rf /tmp/ffmpeg-8.0.1* /tmp/dav1d
+    cd / && rm -rf /tmp/ffmpeg-9.0.2* /tmp/dav1d
 
 # Bake CGO flags into the image
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig
