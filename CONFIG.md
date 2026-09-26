@@ -61,6 +61,8 @@ You can also edit keybinds by hand.
 | `key_friends_close` | `D` | Close the DM friends panel or exit friend mode |
 | `key_react_open` | `x` | Open the reaction panel in friend mode |
 | `key_react_close` | `X` | Close the reaction panel |
+| `key_shazam_open` | `z` | Identify the current reel's song with Shazam |
+| `key_shazam_close` | `Z` | Close the Shazam panel |
 | `key_copy_link` | `y` | Copy the current reel's link |
 | `key_mute` | `m` | Mute or unmute playback |
 | `key_vol_up` | `]` | Increase volume |
@@ -159,4 +161,6 @@ key_friends_open = d
 key_friends_close = D
 key_react_open = x
 key_react_close = X
+key_shazam_open = z
+key_shazam_close = Z
 ```

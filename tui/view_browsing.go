@@ -111,6 +111,8 @@ func (m Model) paintBrowsing() *screen.Screen {
 			m.chats.Paint(s, l.panel)
 		case m.react.IsOpen():
 			m.react.Paint(s, l.panel)
+		case m.shazam.IsOpen():
+			m.shazam.Paint(s, l.panel)
 		case !m.panelOpen():
 			m.paintCaption(s, l.caption)
 			m.paintNavbar(s, l.navbar)
@@ -487,6 +489,18 @@ func (m Model) updateBrowsing(key string) (tea.Model, tea.Cmd) {
 			m.react.Open()
 			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
 		}
+
+	case m.shazam.IsOpen() && slices.Contains(config.KeysShazamClose, key):
+		m.shazam.Close()
+		m.closePanelLayout()
+
+	case !m.shazam.IsOpen() && slices.Contains(config.KeysShazamOpen, key):
+		if m.currentReel != nil && !m.panelOpen() {
+			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
+			if m.shazam.Open(m.currentReel.PK) {
+				return m, m.recognizeSong(m.currentReel.Index, m.currentReel.PK)
+			}
+		}
 	case m.chats.IsOpen() && slices.Contains(config.KeysChatsClose, key):
 		// if selecting a friend's dm to visit (chat panel), close key will close
 		// that panel first. else, fall through to the next case
@@ -619,6 +633,21 @@ func (m Model) reactToCurrent(emoji string, index int) tea.Cmd {
 	}
 }
 
+// recognizeSong shazams the reel at index and loads the downloaded cover art.
+func (m Model) recognizeSong(index int, pk string) tea.Cmd {
+	return func() tea.Msg {
+		song, err := m.backend.Shazam(index)
+		var cover *player.Img
+		if song != nil && song.CoverArt != "" {
+			if loaded, err := player.LoadCover(song.CoverArt); err == nil {
+				loaded.ResizeToCells(shazamCoverCellHeight)
+				cover = loaded
+			}
+		}
+		return shazamResultMsg{pk: pk, song: song, cover: cover, err: err}
+	}
+}
+
 func (m Model) sendShare() tea.Cmd {
 	return func() tea.Msg {
 		sent, err := m.backend.SendShare()
@@ -632,9 +661,9 @@ func (m Model) sendShare() tea.Cmd {
 	}
 }
 
-// panelOpen returns true if any overlay panel (comments, share, help, chats, react) is open.
+// panelOpen returns true if any overlay panel (comments, share, help, chats, react, shazam) is open.
 func (m Model) panelOpen() bool {
-	return m.comments.IsOpen() || m.share.IsOpen() || m.help.IsOpen() || m.chats.IsOpen() || m.react.IsOpen()
+	return m.comments.IsOpen() || m.share.IsOpen() || m.help.IsOpen() || m.chats.IsOpen() || m.react.IsOpen() || m.shazam.IsOpen()
 }
 
 // scrollPanel dispatches scroll/cursor movement to the active panel.
@@ -659,6 +688,9 @@ func (m *Model) scrollPanel(direction int) bool {
 	}
 	if m.react.IsOpen() {
 		m.react.MoveCursor(direction, panel)
+		return true
+	}
+	if m.shazam.IsOpen() {
 		return true
 	}
 	if m.comments.IsOpen() {

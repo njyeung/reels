@@ -35,23 +35,32 @@ type visibleImage struct {
 
 // LoadPFP decodes a profile image from disk. Profile pictures render circular.
 func LoadPFP(path string) (*Img, error) {
+	return loadImg(path, true)
+}
+
+// LoadCover decodes album cover art from disk. Covers render square.
+func LoadCover(path string) (*Img, error) {
+	return loadImg(path, false)
+}
+
+func loadImg(path string, circular bool) (*Img, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("open pfp: %w", err)
+		return nil, fmt.Errorf("open img: %w", err)
 	}
 	defer f.Close()
 
 	img, _, err := image.Decode(f)
 	if err != nil {
-		return nil, fmt.Errorf("decode pfp: %w", err)
+		return nil, fmt.Errorf("decode img: %w", err)
 	}
 
 	bounds := img.Bounds()
 	if bounds.Dx() == 0 || bounds.Dy() == 0 {
-		return nil, fmt.Errorf("pfp has zero dimensions")
+		return nil, fmt.Errorf("img has zero dimensions")
 	}
 
-	return &Img{src: img, circular: true}, nil
+	return &Img{src: img, circular: circular}, nil
 }
 
 // ResizeToCells scales the image to a target number of terminal cells.

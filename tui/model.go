@@ -11,33 +11,54 @@ import (
 	"github.com/njyeung/reels/discord"
 	"github.com/njyeung/reels/player"
 	"github.com/njyeung/reels/player/shm"
+	"github.com/njyeung/reels/shazam"
 	"github.com/njyeung/reels/tui/screen"
 )
 
 // Messages
 type (
-	backendReadyMsg  struct{}
-	backendErrorMsg  struct{ err error }
+	backendReadyMsg struct{}
+	backendErrorMsg struct {
+		err error
+	}
 	loginRequiredMsg struct{}
 	loginSuccessMsg  struct{}
-	reelLoadedMsg    struct{ info *backend.ReelInfo }
-	reelErrorMsg     struct{ err error }
-	backendEventMsg  backend.Event
-	videoErrorMsg    struct{ err error }
-	videoReadyMsg    struct {
+	reelLoadedMsg    struct {
+		info *backend.ReelInfo
+	}
+	reelErrorMsg struct {
+		err error
+	}
+	backendEventMsg backend.Event
+	videoErrorMsg   struct {
+		err error
+	}
+	videoReadyMsg struct {
 		index           int
 		pfp             *player.Img
 		contextFloating []floatingItem // reel-context pfps from the download (repost/like/sent)
 		chatFloating    []floatingItem // chat-mode sender + reactor pfps
 	}
-	selfReactedMsg       struct{ index int }
-	musicTickMsg         struct{}
-	shareResetMsg        struct{}
-	shareSentMsg         struct{}
-	shareClosedMsg       struct{}
-	shareFailedMsg       struct{}
-	versionCheckMsg      struct{ latest string }
-	loadingMsgsMsg       struct{ messages []string }
+	selfReactedMsg struct {
+		index int
+	}
+	shazamResultMsg struct {
+		pk    string
+		song  *shazam.Song
+		cover *player.Img
+		err   error
+	}
+	musicTickMsg    struct{}
+	shareResetMsg   struct{}
+	shareSentMsg    struct{}
+	shareClosedMsg  struct{}
+	shareFailedMsg  struct{}
+	versionCheckMsg struct {
+		latest string
+	}
+	loadingMsgsMsg struct {
+		messages []string
+	}
 	loadingMsgTickMsg    struct{}
 	loadingScrollTickMsg struct{}
 	loadingFadeTickMsg   struct{}
@@ -103,6 +124,10 @@ type Model struct {
 
 	// React panel picks a reaction to send to the current chat-mode reel
 	react *ReactPanel
+
+	// Shazam panel shows the song identified in the current reel
+	shazam *ShazamPanel
+
 	// dmReelsReady gates opening the chats panel until the background DM
 	// collection + reel prefetch has finished (EventDMReelsReady)
 	dmReelsReady bool
@@ -174,6 +199,7 @@ func NewModel(userDataDir, logDir, cacheDir, configDir string, output io.Writer,
 		help:       NewHelpPanel(),
 		chats:      NewChatsPanel(),
 		react:      NewReactPanel(),
+		shazam:     NewShazamPanel(),
 		flags:      flags,
 		showNavbar: settings.ShowNavbar,
 		version:    version,
@@ -321,6 +347,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.share.ResizePfps()
 		} else if m.comments.IsOpen() {
 			m.comments.ResizeGifs()
+		} else if m.shazam.IsOpen() {
+			m.shazam.ResizeCover()
 		}
 
 	case spinner.TickMsg:
@@ -495,6 +523,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.currentReel != nil && m.currentReel.Index == msg.index {
 			m.floating = append(slices.Clone(m.reelFloating), m.chatFloating(msg.index)...)
 		}
+		return m, nil
+
+	case shazamResultMsg:
+		m.shazam.SetResult(msg.pk, msg.song, msg.cover, msg.err)
 		return m, nil
 
 	case videoErrorMsg:

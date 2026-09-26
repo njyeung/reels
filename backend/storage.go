@@ -12,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/njyeung/reels/shazam"
 )
 
 type Settings struct {
@@ -56,6 +58,9 @@ type Settings struct {
 
 	KeysReactOpen  []string
 	KeysReactClose []string
+
+	KeysShazamOpen  []string
+	KeysShazamClose []string
 }
 
 var Config Settings
@@ -121,6 +126,7 @@ var (
 	sharePfpCache *fifoCache
 	gifCache      *fifoCache
 	dmPfpCache    *fifoCache
+	coverArtCache *fifoCache
 
 	cacheMu sync.Mutex
 	// inProgress tracks downloads currently in flight; channel is closed when done
@@ -137,6 +143,7 @@ func (b *ChromeBackend) initStorage() error {
 	sharePfpCache = newFIFOCache(SharePfpCacheSize)
 	gifCache = newFIFOCache(GifCacheSize)
 	dmPfpCache = newFIFOCache(DMPfpCacheSize)
+	coverArtCache = newFIFOCache(CoverArtCacheSize)
 	inProgress = make(map[string]chan struct{})
 	liked = make(map[string]bool)
 
@@ -203,6 +210,17 @@ func (b *ChromeBackend) cacheSharePfp(name string, data []byte) string {
 	return path
 }
 
+// cacheCoverArt writes Shazam cover art to the cache directory with FIFO
+// eviction. Keyed by track so shazaming the same song twice reuses the file.
+func (b *ChromeBackend) cacheCoverArt(key string, data []byte) string {
+	path := filepath.Join(b.cacheDir, fmt.Sprintf("cover_%s.jpg", key))
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return ""
+	}
+	coverArtCache.add(path)
+	return path
+}
+
 func defaultSettings() Settings {
 	s := Settings{
 		ShowNavbar:       true,
@@ -245,6 +263,9 @@ func defaultSettings() Settings {
 
 		KeysReactOpen:  []string{"x"},
 		KeysReactClose: []string{"X"},
+
+		KeysShazamOpen:  []string{"z"},
+		KeysShazamClose: []string{"Z"},
 	}
 
 	if goruntime.GOOS == "darwin" {
@@ -341,6 +362,8 @@ func LoadSettings(configDir string) {
 	loadKey(conf, "key_friends_close", &s.KeysChatsClose)
 	loadKey(conf, "key_react_open", &s.KeysReactOpen)
 	loadKey(conf, "key_react_close", &s.KeysReactClose)
+	loadKey(conf, "key_shazam_open", &s.KeysShazamOpen)
+	loadKey(conf, "key_shazam_close", &s.KeysShazamClose)
 
 	settingsMu.Lock()
 	Config = s
@@ -402,6 +425,8 @@ func WriteConf(configDir string, s Settings) error {
 	writeKeys(&b, "key_friends_close", s.KeysChatsClose)
 	writeKeys(&b, "key_react_open", s.KeysReactOpen)
 	writeKeys(&b, "key_react_close", s.KeysReactClose)
+	writeKeys(&b, "key_shazam_open", s.KeysShazamOpen)
+	writeKeys(&b, "key_shazam_close", s.KeysShazamClose)
 
 	return os.WriteFile(filepath.Join(configDir, "reels.conf"), []byte(b.String()), 0644)
 }
@@ -670,4 +695,28 @@ func (b *ChromeBackend) Download(index int) (string, string, []FloatingPfpFile, 
 	}
 
 	return videoFile, pfpFile, floatingPfpPaths, nil
+}
+
+// Shazam identifies the song in the reel at index and downloads its cover art
+// to the cache directory, replacing song.CoverArt with the local path
+func (b *ChromeBackend) Shazam(index int) (*shazam.Song, error) {
+	// the reel is usually already downloaded, making this a cache lookup
+	videoFile, _, _, err := b.Download(index)
+	if err != nil {
+		return nil, err
+	}
+
+	song, err := shazam.Recognize(b.feedCtx, videoFile)
+	if err != nil || song == nil {
+		return nil, err
+	}
+
+	var coverArt string
+	if song.CoverArt != "" {
+		if data := fetchURLsHTTP([]string{song.CoverArt}); data[0] != nil {
+			coverArt = b.cacheCoverArt(song.Key, data[0])
+		}
+	}
+	song.CoverArt = coverArt
+	return song, nil
 }

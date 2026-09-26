@@ -3,6 +3,8 @@ package backend
 import (
 	"context"
 	"sync"
+
+	"github.com/njyeung/reels/shazam"
 )
 
 // ChromeBackend implements Backend using chromedp
@@ -152,6 +154,11 @@ type Backend interface {
 	// context item pfps (reposts/likes from friends) to the cache directory.
 	Download(index int) (videoPath string, pfpPath string, floatingPfps []FloatingPfpFile, err error)
 
+	// Shazam identifies the song in the reel at index. The returned Song's
+	// CoverArt is a local path in the cache directory ("" if it couldn't be
+	// fetched). Returns (nil, nil) when there's no match.
+	Shazam(index int) (*shazam.Song, error)
+
 	// Events returns a channel for backend events (new reels captured, etc)
 	Events() <-chan Event
 
@@ -204,6 +211,7 @@ const (
 	GifCacheSize      = 1000 // surely your screen isn't big enough to store 1000 gifs
 	SharePfpCacheSize = 50
 	DMPfpCacheSize    = 1000 // surely you don't have 1000 friends
+	CoverArtCacheSize = 1    // shazaming a new reel replaces the old song card
 )
 
 // MusicInfo contains song metadata when a reel has music

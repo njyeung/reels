@@ -23,7 +23,7 @@ type browsingLayout struct {
 	video    screen.Rect // the player's own footprint
 	username screen.Rect
 	music    screen.Rect
-	panel    screen.Rect // comments/share/help/chats/react, when one is open
+	panel    screen.Rect // comments/share/help/chats/react/shazam, when one is open
 	caption  screen.Rect // the whole panel area, or one line of it under a navbar
 	navbar   screen.Rect // empty unless the navbar is showing
 }

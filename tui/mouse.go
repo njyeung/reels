@@ -16,7 +16,8 @@ const (
 	helpPanelTargetOffset     = 3000
 	chatsPanelTargetOffset    = 4000
 	reactPanelTargetOffset    = 5000
-	videoTargetOffset         = 6000
+	shazamPanelTargetOffset   = 6000
+	videoTargetOffset         = 7000
 )
 
 type target int
@@ -68,6 +69,8 @@ func (m Model) updateMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.handleChats(msg)
 	case reactPanelTargetOffset:
 		return m.handleReact(msg)
+	case shazamPanelTargetOffset:
+		return m.handleShazam(msg)
 	}
 
 	return m, nil
@@ -158,4 +161,8 @@ func (m Model) handleChats(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 func (m Model) handleReact(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	config := backend.GetSettings()
 	return m.dispatch(config.KeysSelect)
+}
+
+func (m Model) handleShazam(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
+	return m, nil
 }

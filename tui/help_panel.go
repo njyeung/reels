@@ -64,6 +64,8 @@ func (hp *HelpPanel) buildEntries() {
 		{displayKeys(config.KeysChatsClose), "close DMs / exit chat mode"},
 		{displayKeys(config.KeysReactOpen), "react to reel (chat mode)"},
 		{displayKeys(config.KeysReactClose), "close react panel (chat mode)"},
+		{displayKeys(config.KeysShazamOpen), "shazam the song"},
+		{displayKeys(config.KeysShazamClose), "close shazam"},
 		{displayKeys(config.KeysHelpOpen), "help"},
 		{displayKeys(config.KeysHelpClose), "close help"},
 		{displayKeys(config.KeysQuit), "quit"},
