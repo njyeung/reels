@@ -134,7 +134,6 @@ func (sp *ShazamPanel) ResizeCover() {
 
 // Paint paints the panel into r: a header, then the cover art with the title,
 // artist and links beside it, or a status line while listening or on no match.
-// Only the text column scrolls, the cover stays pinned to the top.
 func (sp *ShazamPanel) Paint(s *screen.Screen, r screen.Rect) {
 	if !sp.isOpen || r.Empty() {
 		return

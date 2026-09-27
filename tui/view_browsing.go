@@ -920,8 +920,6 @@ func copyToClipboard(text string) {
 	cmd.Run()
 }
 
-// openURL opens url in the default browser. Output is dropped so the launcher
-// can't draw over the TUI.
 func openURL(url string) {
 	name := "xdg-open"
 	if goruntime.GOOS == "darwin" {
@@ -929,7 +927,6 @@ func openURL(url string) {
 	}
 	cmd := exec.Command(name, url)
 	if cmd.Start() == nil {
-		// xdg-open can linger with some handlers, so reap it off the UI goroutine
 		go cmd.Wait()
 	}
 }
