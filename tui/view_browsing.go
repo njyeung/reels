@@ -362,6 +362,17 @@ func (m Model) updateBrowsing(key string) (tea.Model, tea.Cmd) {
 		}
 		return m, m.reactToCurrent(emoji, m.currentReel.Index)
 
+	// Shazam select opens the highlighted link in the browser
+	case m.shazam.IsOpen() && slices.Contains(config.KeysSelect, key):
+		url := m.shazam.CursorURL()
+		if url == "" {
+			return m, nil
+		}
+		openURL(url)
+		m.shazam.Close()
+		m.closePanelLayout()
+		return m, nil
+
 	// Share select takes priority over other keys when share panel is open
 	case m.share.IsOpen() && slices.Contains(config.KeysSelect, key):
 		if m.shareSending {
@@ -691,6 +702,7 @@ func (m *Model) scrollPanel(direction int) bool {
 		return true
 	}
 	if m.shazam.IsOpen() {
+		m.shazam.MoveCursor(direction, panel)
 		return true
 	}
 	if m.comments.IsOpen() {
@@ -906,4 +918,18 @@ func copyToClipboard(text string) {
 	}
 	cmd.Stdin = strings.NewReader(text)
 	cmd.Run()
+}
+
+// openURL opens url in the default browser. Output is dropped so the launcher
+// can't draw over the TUI.
+func openURL(url string) {
+	name := "xdg-open"
+	if goruntime.GOOS == "darwin" {
+		name = "open"
+	}
+	cmd := exec.Command(name, url)
+	if cmd.Start() == nil {
+		// xdg-open can linger with some handlers, so reap it off the UI goroutine
+		go cmd.Wait()
+	}
 }

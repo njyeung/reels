@@ -164,5 +164,6 @@ func (m Model) handleReact(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) handleShazam(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
-	return m, nil
+	config := backend.GetSettings()
+	return m.dispatch(config.KeysSelect)
 }
