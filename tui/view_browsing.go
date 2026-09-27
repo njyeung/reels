@@ -497,7 +497,7 @@ func (m Model) updateBrowsing(key string) (tea.Model, tea.Cmd) {
 	case !m.shazam.IsOpen() && slices.Contains(config.KeysShazamOpen, key):
 		if m.currentReel != nil && !m.panelOpen() {
 			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
-			if m.shazam.Open(m.currentReel.PK) {
+			if m.shazam.Open() {
 				return m, m.recognizeSong(m.currentReel.Index, m.currentReel.PK)
 			}
 		}

@@ -19,7 +19,6 @@ const (
 // after closing, so reopening on the same reel doesn't hit Shazam again.
 type ShazamPanel struct {
 	isOpen    bool
-	pk        string // reel the result belongs to
 	listening bool
 	song      *shazam.Song // nil when there's no match
 	cover     *player.Img
@@ -36,12 +35,8 @@ func (sp *ShazamPanel) IsOpen() bool {
 
 // Open opens the panel on reel pk. Returns true if the caller should start
 // listening, false when the panel already has (or is fetching) pk's result.
-func (sp *ShazamPanel) Open(pk string) bool {
+func (sp *ShazamPanel) Open() bool {
 	sp.isOpen = true
-	if pk == sp.pk && sp.err == nil {
-		return false
-	}
-	sp.pk = pk
 	sp.listening = true
 	sp.song = nil
 	sp.cover = nil
@@ -56,9 +51,6 @@ func (sp *ShazamPanel) Close() {
 // SetResult stores a finished shazam, dropping it if the panel has since
 // moved on to a different reel.
 func (sp *ShazamPanel) SetResult(pk string, song *shazam.Song, cover *player.Img, err error) {
-	if pk != sp.pk {
-		return
-	}
 	sp.listening = false
 	sp.song = song
 	sp.cover = cover
