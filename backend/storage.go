@@ -12,8 +12,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/njyeung/reels/shazam"
 )
 
 type Settings struct {
@@ -695,28 +693,4 @@ func (b *ChromeBackend) Download(index int) (string, string, []FloatingPfpFile, 
 	}
 
 	return videoFile, pfpFile, floatingPfpPaths, nil
-}
-
-// Shazam identifies the song in the reel at index and downloads its cover art
-// to the cache directory, replacing song.CoverArt with the local path
-func (b *ChromeBackend) Shazam(index int) (*shazam.Song, error) {
-	// the reel is usually already downloaded, making this a cache lookup
-	videoFile, _, _, err := b.Download(index)
-	if err != nil {
-		return nil, err
-	}
-
-	song, err := shazam.Recognize(b.feedCtx, videoFile)
-	if err != nil || song == nil {
-		return nil, err
-	}
-
-	var coverArt string
-	if song.CoverArt != "" {
-		if data := fetchURLsHTTP([]string{song.CoverArt}); data[0] != nil {
-			coverArt = b.cacheCoverArt(song.Key, data[0])
-		}
-	}
-	song.CoverArt = coverArt
-	return song, nil
 }

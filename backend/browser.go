@@ -12,6 +12,7 @@ import (
 
 	"github.com/chromedp/cdproto/fetch"
 	"github.com/chromedp/chromedp"
+	"github.com/njyeung/reels/shazam"
 )
 
 // NewChromeBackend creates a new Chrome-based backend
@@ -212,6 +213,30 @@ func (b *ChromeBackend) GetReel(index int) (*ReelInfo, error) {
 		return nil, fmt.Errorf("reel pk=%s not in cache", pk)
 	}
 	return &ReelInfo{Index: index, Total: total, Reel: reel}, nil
+}
+
+// Shazam identifies the song in the reel at index and downloads its cover art
+// to the cache directory, replacing song.CoverArt with the local path
+func (b *ChromeBackend) Shazam(index int) (*shazam.Song, error) {
+	// the reel is usually already downloaded, making this a cache lookup
+	videoFile, _, _, err := b.Download(index)
+	if err != nil {
+		return nil, err
+	}
+
+	song, err := shazam.Recognize(b.feedCtx, videoFile)
+	if err != nil || song == nil {
+		return nil, err
+	}
+
+	var coverArt string
+	if song.CoverArt != "" {
+		if data := fetchURLsHTTP([]string{song.CoverArt}); data[0] != nil {
+			coverArt = b.cacheCoverArt(song.Key, data[0])
+		}
+	}
+	song.CoverArt = coverArt
+	return song, nil
 }
 
 // updateReelComments appends comments to a reel by PK, or sets them if none exist yet.
