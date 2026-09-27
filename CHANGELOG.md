@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.4.7]
+- Shazam any reel (default bind z to open Z to close)
+- Link to FFmpeg 9
+
 ## [1.4.6]
 - Fix: Send button (sharing reels to friends)
 
