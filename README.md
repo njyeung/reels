@@ -125,6 +125,20 @@ Sharing a reel to DMs
 
 </td>
 </tr>
+<tr>
+<td width="50%">
+
+**Shazam built-in**
+
+`z` identifies the song playing in **any** reel. Pick a link with `space` to open it in Apple Music, Spotify, YouTube Music, or Shazam.
+
+<video src="https://github.com/user-attachments/assets/1116f3c5-a13d-42cd-b003-3524f72e7653" width="100%" muted autoplay loop playsinline controls>
+</video>
+
+</td>
+<td width="50%">
+</td>
+</tr>
 </table>
 
 ## Config
