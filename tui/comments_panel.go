@@ -19,7 +19,7 @@ type CommentsPanel struct {
 	loading  bool // true while fetching more comments
 
 	// Which reel these comments belong to
-	reelPK string
+	reel *backend.Reel
 
 	// GIF state
 	gifAnims      map[string]*player.GifAnimation
@@ -40,26 +40,26 @@ func (cp *CommentsPanel) IsOpen() bool {
 }
 
 // Open opens the comments panel for the given reel
-func (cp *CommentsPanel) Open(reelPK string) {
+func (cp *CommentsPanel) Open(reel *backend.Reel) {
 	cp.isOpen = true
 	cp.cursor = 0
 	cp.scroll = 0
 
-	if cp.reelPK != reelPK {
+	if cp.reel == nil || cp.reel.PK != reel.PK {
 		cp.comments = make([]backend.Comment, 0)
 		cp.gifAnims = nil
 	}
 
-	cp.reelPK = reelPK
+	cp.reel = reel
 }
 
 // Close closes the comments panel
-// Preserves reelPK and comments for potential reopening
+// Preserves reel and comments for potential reopening
 func (cp *CommentsPanel) Close() {
 	cp.isOpen = false
 	cp.cursor = 0
 	cp.scroll = 0
-	// Note: we intentionally keep reelPK, comments, and gifAnims
+	// Note: we intentionally keep reel, comments, and gifAnims
 	// so they can be restored if the user reopens for the same reel
 }
 
@@ -69,7 +69,7 @@ func (cp *CommentsPanel) Clear() {
 	cp.comments = make([]backend.Comment, 0)
 	cp.cursor = 0
 	cp.scroll = 0
-	cp.reelPK = ""
+	cp.reel = nil
 	cp.gifAnims = nil
 }
 
@@ -124,7 +124,7 @@ func (cp *CommentsPanel) MoveCursor(delta int, r screen.Rect) {
 // SetComments sets the comments to display
 // Returns true if the comments were accepted (belong to current reel)
 func (cp *CommentsPanel) SetComments(reelPK string, comments []backend.Comment, r screen.Rect) bool {
-	if !cp.isOpen || cp.reelPK != reelPK {
+	if !cp.CanAccept(reelPK) {
 		return false
 	}
 
@@ -275,6 +275,9 @@ func (cp *CommentsPanel) Paint(s *screen.Screen, r screen.Rect) (lastPlaced int)
 		if comment.IsVerified {
 			username += " " + blue500.Render("✓")
 		}
+		if comment.Username == cp.reel.Username {
+			username += " " + gray400.Render("author")
+		}
 		s.SetContent(body.Row(y-body.Y).Indent(userIndent), username, zone)
 		y++
 
@@ -325,5 +328,5 @@ func (cp *CommentsPanel) ShouldFetchMore() bool {
 
 // // CanAccept returns true if the panel can accept comments for the given reel
 func (cp *CommentsPanel) CanAccept(reelPK string) bool {
-	return cp.isOpen && cp.reelPK == reelPK
+	return cp.isOpen && cp.reel != nil && cp.reel.PK == reelPK
 }

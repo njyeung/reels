@@ -458,7 +458,7 @@ func (m Model) updateBrowsing(key string) (tea.Model, tea.Cmd) {
 
 	case !m.comments.IsOpen() && slices.Contains(config.KeysCommentsOpen, key):
 		if !m.backend.IsSyncing() && m.currentReel != nil && !m.currentReel.CommentsDisabled && !m.panelOpen() {
-			m.comments.Open(m.currentReel.PK)
+			m.comments.Open(&m.currentReel.Reel)
 			m.resizeReel(-(config.ReelSizeStep * config.PanelShrinkSteps))
 
 			if m.currentReel.Comments != nil {
