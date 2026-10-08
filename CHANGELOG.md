@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.4.8]
+- Fix: Update Instagram comments doc_ids to match new frontend
+- Show an "author" tag next to comments from the reel's poster
+
 ## [1.4.7]
 - Shazam any reel (default bind z to open Z to close)
 - Link to FFmpeg 9
