@@ -27,6 +27,8 @@ type AVPlayer struct {
 	needsRedrawVid atomic.Bool
 	volume         atomic.Value // float64, 0.0–1.0
 
+	events chan Event
+
 	playMu   sync.Mutex
 	configMu sync.Mutex
 
@@ -97,6 +99,7 @@ func NewAVPlayer() *AVPlayer {
 	p := &AVPlayer{
 		output:      os.Stdout,
 		retinaScale: 1,
+		events:      make(chan Event, 100),
 	}
 	p.volume.Store(float64(1))
 	return p
@@ -216,6 +219,11 @@ func (p *AVPlayer) Play(videoPath string) error {
 	return nil
 }
 
+// Events returns the event channel
+func (p *AVPlayer) Events() <-chan Event {
+	return p.events
+}
+
 // initSession creates a configured play session ready for rendering.
 func (p *AVPlayer) initSession(videoPath string) (*playSession, error) {
 	cfg := p.sessionConfig()
@@ -255,6 +263,12 @@ func (p *AVPlayer) playbackLoop(videoPath string, session *playSession) {
 
 		if !p.playing.Load() {
 			return
+		}
+
+		// reached the end of the video, don't block playback if the TUI isn't reading
+		select {
+		case p.events <- Event{Type: EventReelEnded}:
+		default:
 		}
 
 		var err error

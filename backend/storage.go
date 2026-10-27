@@ -16,6 +16,7 @@ import (
 
 type Settings struct {
 	ShowNavbar       bool
+	AutoScroll       bool
 	RetinaScale      int
 	ReelWidth        int
 	ReelHeight       int
@@ -31,6 +32,7 @@ type Settings struct {
 	KeysLike         []string
 	KeysRepost       []string
 	KeysNavbar       []string
+	KeysAutoScroll   []string
 	KeysReelSizeInc  []string
 	KeysReelSizeDec  []string
 	KeysVolUp        []string
@@ -236,6 +238,7 @@ func defaultSettings() Settings {
 		KeysLike:         []string{" "},
 		KeysRepost:       []string{"r"},
 		KeysNavbar:       []string{"e"},
+		KeysAutoScroll:   []string{"a"},
 		KeysReelSizeInc:  []string{"="},
 		KeysReelSizeDec:  []string{"-"},
 		KeysVolUp:        []string{"]"},
@@ -297,6 +300,9 @@ func LoadSettings(configDir string) {
 	if vals, ok := conf["show_navbar"]; ok {
 		s.ShowNavbar = (vals[len(vals)-1] == "true")
 	}
+	if vals, ok := conf["auto_scroll"]; ok {
+		s.AutoScroll = (vals[len(vals)-1] == "true")
+	}
 	if vals, ok := conf["retina_scale"]; ok {
 		if n, err := strconv.Atoi(vals[len(vals)-1]); err == nil {
 			s.RetinaScale = n
@@ -340,6 +346,7 @@ func LoadSettings(configDir string) {
 	loadKey(conf, "key_like", &s.KeysLike)
 	loadKey(conf, "key_repost", &s.KeysRepost)
 	loadKey(conf, "key_navbar", &s.KeysNavbar)
+	loadKey(conf, "key_auto_scroll", &s.KeysAutoScroll)
 	loadKey(conf, "key_vol_up", &s.KeysVolUp)
 	loadKey(conf, "key_vol_down", &s.KeysVolDown)
 	loadKey(conf, "key_reel_size_inc", &s.KeysReelSizeInc)
@@ -385,6 +392,7 @@ func WriteConf(configDir string, s Settings) error {
 	var b strings.Builder
 	b.WriteString("# insta reels TUI config\n\n")
 	b.WriteString(fmt.Sprintf("show_navbar = %t\n", s.ShowNavbar))
+	b.WriteString(fmt.Sprintf("auto_scroll = %t\n", s.AutoScroll))
 	b.WriteString(fmt.Sprintf("retina_scale = %d\n", s.RetinaScale))
 	b.WriteString("\n")
 	b.WriteString("# reels will be scales within this bounding box\n")
@@ -403,6 +411,7 @@ func WriteConf(configDir string, s Settings) error {
 	writeKeys(&b, "key_like", s.KeysLike)
 	writeKeys(&b, "key_repost", s.KeysRepost)
 	writeKeys(&b, "key_navbar", s.KeysNavbar)
+	writeKeys(&b, "key_auto_scroll", s.KeysAutoScroll)
 	writeKeys(&b, "key_vol_up", s.KeysVolUp)
 	writeKeys(&b, "key_vol_down", s.KeysVolDown)
 	writeKeys(&b, "key_reel_size_inc", s.KeysReelSizeInc)
@@ -473,6 +482,18 @@ func (b *ChromeBackend) ToggleNavbar() bool {
 
 	go WriteConf(b.configDir, snapshot)
 	return showNavbar
+}
+
+// ToggleAutoScroll updates autoscroll state to !state, persists to disk, and returns the new state
+func (b *ChromeBackend) ToggleAutoScroll() bool {
+	settingsMu.Lock()
+	Config.AutoScroll = !Config.AutoScroll
+	autoScroll := Config.AutoScroll
+	snapshot := Config
+	settingsMu.Unlock()
+
+	go WriteConf(b.configDir, snapshot)
+	return autoScroll
 }
 
 // SetVolume updates volume and persists to disk

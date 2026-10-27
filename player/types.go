@@ -39,6 +39,9 @@ type Player interface {
 
 	// SetSize sets the video display dimensions in pixels
 	SetSize(width, height int)
+
+	// Events returns a channel for player events (reel ended, etc)
+	Events() <-chan Event
 }
 
 // Clock provides the audio clock for video sync
@@ -92,3 +95,15 @@ const (
 	GifImageID    = 200
 	StaticImageID = 300
 )
+
+// EventType represents different player events
+type EventType int
+
+const (
+	EventReelEnded EventType = iota
+)
+
+// Event is sent from player to frontend
+type Event struct {
+	Type EventType
+}

@@ -30,6 +30,7 @@ type (
 		err error
 	}
 	backendEventMsg backend.Event
+	playerEventMsg  player.Event
 	videoErrorMsg   struct {
 		err error
 	}
@@ -108,6 +109,7 @@ type Model struct {
 	status  status
 
 	showNavbar    bool
+	autoScroll    bool
 	browsingFrame *screen.Screen
 
 	// Comments panel encapsulates all comments UI state
@@ -202,6 +204,7 @@ func NewModel(userDataDir, logDir, cacheDir, configDir string, output io.Writer,
 		shazam:     NewShazamPanel(),
 		flags:      flags,
 		showNavbar: settings.ShowNavbar,
+		autoScroll: settings.AutoScroll,
 		version:    version,
 	}
 }
@@ -242,12 +245,16 @@ func (m Model) startBackend() tea.Msg {
 	return backendReadyMsg{}
 }
 
-func (m Model) listenForEvents() tea.Msg {
+func (m Model) listenForBackendEvents() tea.Msg {
 	event, ok := <-m.backend.Events()
 	if !ok {
 		return nil
 	}
 	return backendEventMsg(event)
+}
+
+func (m Model) listenForPlayerEvents() tea.Msg {
+	return playerEventMsg(<-m.player.Events())
 }
 
 // loadCurrentReel resolves the reel the feed is parked on.
@@ -407,7 +414,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = statusLoading
 		return m, tea.Batch(
 			m.loadCurrentReel,
-			m.listenForEvents,
+			m.listenForBackendEvents,
+			m.listenForPlayerEvents,
 			m.musicTick(),
 		)
 
@@ -448,16 +456,16 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case backend.EventDMReelsReady:
 			m.dmReelsReady = true
 			if msg.Count > 0 {
-				return m, tea.Batch(m.hud.ShowDMNotify(msg.Count), m.listenForEvents)
+				return m, tea.Batch(m.hud.ShowDMNotify(msg.Count), m.listenForBackendEvents)
 			}
 		case backend.EventChatModeExited:
 			m.player.Stop()
 			m.status = statusLoading
 			m.comments.Clear()
 			m.hud.HideChatBanner()
-			return m, tea.Batch(m.loadCurrentReel, m.listenForEvents)
+			return m, tea.Batch(m.loadCurrentReel, m.listenForBackendEvents)
 		}
-		return m, m.listenForEvents
+		return m, m.listenForBackendEvents
 
 	case reelLoadedMsg:
 		m.currentReel = msg.info
@@ -475,7 +483,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.musicTick()
 
 	case volumeHoldMsg, volumeFadeTickMsg, dmNotifyHoldMsg, dmNotifyFadeTickMsg,
-		chatBannerHoldMsg, chatBannerFadeTickMsg:
+		chatBannerHoldMsg, chatBannerFadeTickMsg, autoScrollHoldMsg, autoScrollFadeTickMsg:
 		if handled, updated, cmd := m.updateHUD(msg); handled {
 			return updated, cmd
 		}
@@ -528,6 +536,17 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case shazamResultMsg:
 		m.shazam.SetResult(msg.pk, msg.song, msg.cover, msg.err)
 		return m, nil
+
+	case playerEventMsg:
+		switch msg.Type {
+		case player.EventReelEnded:
+			if m.autoScroll && !m.panelOpen() {
+				if cmd := m.navigateToReel(1); cmd != nil {
+					return m, tea.Batch(cmd, m.listenForPlayerEvents)
+				}
+			}
+		}
+		return m, m.listenForPlayerEvents
 
 	case videoErrorMsg:
 		m.status = statusVideoError

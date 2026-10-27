@@ -18,6 +18,8 @@ type (
 	dmNotifyFadeTickMsg   struct{}
 	chatBannerHoldMsg     struct{ gen int }
 	chatBannerFadeTickMsg struct{}
+	autoScrollHoldMsg     struct{ gen int }
+	autoScrollFadeTickMsg struct{}
 )
 
 // hudItem identifies which overlay is currently displayed.
@@ -27,6 +29,7 @@ type hudItem int
 const (
 	hudNone hudItem = iota
 	hudChatBanner
+	hudAutoScroll
 	hudVolume
 	hudDMNotify
 )
@@ -48,6 +51,10 @@ type HUD struct {
 	chatBannerGen      int
 	chatBannerTitle    string
 	chatBannerKeys     []string
+
+	// autoscroll toggle: 0=hidden, 1=visible (holding), 2-7=fading out
+	autoScrollFadeStep int
+	autoScrollGen      int
 }
 
 // ShowVolume triggers the volume indicator
@@ -61,10 +68,27 @@ func (h *HUD) ShowVolume() tea.Cmd {
 	return h.volumeHoldTick()
 }
 
+// ShowAutoScroll triggers the autoscroll on/off indicator
+func (h *HUD) ShowAutoScroll() tea.Cmd {
+	if h.active == hudVolume {
+		h.volumeFadeStep = 0
+	}
+	if h.active == hudDMNotify {
+		h.dmNotifyFadeStep = 0
+	}
+	h.active = hudAutoScroll
+	h.autoScrollFadeStep = 1
+	h.autoScrollGen++
+	return h.autoScrollHoldTick()
+}
+
 // ShowDMNotify triggers the DM reels notification
 func (h *HUD) ShowDMNotify(count int) tea.Cmd {
 	if h.active == hudVolume {
 		h.volumeFadeStep = 0
+	}
+	if h.active == hudAutoScroll {
+		h.autoScrollFadeStep = 0
 	}
 	h.active = hudDMNotify
 	h.dmNotifyFadeStep = 1
@@ -76,6 +100,9 @@ func (h *HUD) ShowDMNotify(count int) tea.Cmd {
 func (h *HUD) ShowChatBanner(title string, keysReactOpen []string) tea.Cmd {
 	if h.active == hudVolume {
 		h.volumeFadeStep = 0
+	}
+	if h.active == hudAutoScroll {
+		h.autoScrollFadeStep = 0
 	}
 	if h.active == hudDMNotify {
 		h.dmNotifyFadeStep = 0
@@ -98,10 +125,10 @@ func (h *HUD) HideChatBanner() {
 	}
 }
 
-// paintHUD paints the active overlay — volume bar, DM notification or chat
-// banner — into the single row the layout set aside for it. That rect is empty
-// when the frame is too short to hold the overlay, so there is no room to check
-// for here.
+// paintHUD paints the active overlay — volume bar, autoscroll state, DM
+// notification or chat banner — into the single row the layout set aside for
+// it. That rect is empty when the frame is too short to hold the overlay, so
+// there is no room to check for here.
 func (m Model) paintHUD(s *screen.Screen, r screen.Rect) {
 	if r.Empty() || m.hud.active == hudNone {
 		return
@@ -121,6 +148,14 @@ func (m Model) paintHUD(s *screen.Screen, r screen.Rect) {
 		bar := filledStyle.Render(strings.Repeat("█", filled)) +
 			emptyStyle.Render(strings.Repeat("░", max(r.W-filled, 0)))
 		s.SetContent(r, bar, nil)
+
+	case hudAutoScroll:
+		style := lipgloss.NewStyle().Foreground(lipgloss.Color(hudFadeColor(m.hud.autoScrollFadeStep)))
+		text := "autoscroll off"
+		if m.autoScroll {
+			text = "autoscroll on"
+		}
+		paintCentered(s, r, style, text)
 
 	case hudChatBanner:
 		style := lipgloss.NewStyle().Foreground(lipgloss.Color(hudFadeColor(m.hud.chatBannerFadeStep)))
@@ -208,6 +243,30 @@ func (m Model) updateHUD(msg tea.Msg) (bool, Model, tea.Cmd) {
 			return true, m, nil
 		}
 		return true, m, m.hud.chatBannerFadeTick()
+
+	case autoScrollHoldMsg:
+		if msg.gen != m.hud.autoScrollGen {
+			return true, m, nil
+		}
+		if m.hud.autoScrollFadeStep == 1 {
+			m.hud.autoScrollFadeStep = 2
+			return true, m, m.hud.autoScrollFadeTick()
+		}
+		return true, m, nil
+
+	case autoScrollFadeTickMsg:
+		if m.hud.autoScrollFadeStep < 2 {
+			return true, m, nil
+		}
+		m.hud.autoScrollFadeStep++
+		if m.hud.autoScrollFadeStep > 7 {
+			m.hud.autoScrollFadeStep = 0
+			if m.hud.active == hudAutoScroll {
+				m.hud.active = hudNone
+			}
+			return true, m, nil
+		}
+		return true, m, m.hud.autoScrollFadeTick()
 	}
 
 	return false, m, nil
@@ -248,6 +307,19 @@ func (h HUD) chatBannerHoldTick() tea.Cmd {
 func (h HUD) chatBannerFadeTick() tea.Cmd {
 	return tea.Tick(60*time.Millisecond, func(t time.Time) tea.Msg {
 		return chatBannerFadeTickMsg{}
+	})
+}
+
+func (h HUD) autoScrollHoldTick() tea.Cmd {
+	gen := h.autoScrollGen
+	return tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+		return autoScrollHoldMsg{gen: gen}
+	})
+}
+
+func (h HUD) autoScrollFadeTick() tea.Cmd {
+	return tea.Tick(60*time.Millisecond, func(t time.Time) tea.Msg {
+		return autoScrollFadeTickMsg{}
 	})
 }
 

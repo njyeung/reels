@@ -537,6 +537,10 @@ func (m Model) updateBrowsing(key string) (tea.Model, tea.Cmd) {
 		showNavbar := m.backend.ToggleNavbar()
 		m.showNavbar = showNavbar
 
+	case slices.Contains(config.KeysAutoScroll, key):
+		m.autoScroll = m.backend.ToggleAutoScroll()
+		return m, m.hud.ShowAutoScroll()
+
 	case slices.Contains(config.KeysReelSizeInc, key):
 		m.resizeReel(config.ReelSizeStep)
 

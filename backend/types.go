@@ -90,6 +90,10 @@ type Backend interface {
 	// Returns true if navbar should be shown, false if hidden.
 	ToggleNavbar() bool
 
+	// ToggleAutoScroll toggles moving to the next reel when one ends and persists the state.
+	// Returns the new state.
+	ToggleAutoScroll() bool
+
 	// SetVolume updates volume and persists to disk
 	SetVolume(vol float64) error
 

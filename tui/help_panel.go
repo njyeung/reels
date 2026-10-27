@@ -43,6 +43,7 @@ func (hp *HelpPanel) buildEntries() {
 		{displayKeys(config.KeysNext), "next"},
 		{displayKeys(config.KeysPrevious), "prev"},
 		{displayKeys(config.KeysPause), "pause"},
+		{displayKeys(config.KeysAutoScroll), "toggle autoscroll"},
 		{displayKeys(config.KeysLike), "like"},
 		{displayKeys(config.KeysRepost), "repost"},
 		{displayKeys(config.KeysMute), "mute"},

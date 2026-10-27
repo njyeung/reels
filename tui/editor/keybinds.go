@@ -32,6 +32,7 @@ var actions = []action{
 	{"key_seek_backward", "seek backward", func(s *backend.Settings) *[]string { return &s.KeysSeekBackward }},
 	{"key_seek_forward", "seek forward", func(s *backend.Settings) *[]string { return &s.KeysSeekForward }},
 	{"key_pause", "pause / resume", func(s *backend.Settings) *[]string { return &s.KeysPause }},
+	{"key_auto_scroll", "toggle autoscroll", func(s *backend.Settings) *[]string { return &s.KeysAutoScroll }},
 	{"key_like", "like / unlike", func(s *backend.Settings) *[]string { return &s.KeysLike }},
 	{"key_repost", "repost / unrepost", func(s *backend.Settings) *[]string { return &s.KeysRepost }},
 	{"key_save", "bookmark", func(s *backend.Settings) *[]string { return &s.KeysSave }},

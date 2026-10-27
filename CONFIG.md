@@ -20,6 +20,7 @@ Settings must be edited directly in `reels.conf`.
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `show_navbar` | `true` | Show the condensed control bar when Reels starts. Toggling the navbar while using Reels updates this value |
+| `auto_scroll` | `false` | Move to the next reel when the current one ends. Toggling autoscroll while using Reels updates this value |
 | `retina_scale` | `2` on macOS, `1` elsewhere | Scale rendered video for high-density displays. Try `1` if video is too large or rendering is slow |
 | `reel_width` | `270` | Initial reel width in pixels |
 | `reel_height` | `480` | Initial reel height in pixels |
@@ -28,7 +29,7 @@ Settings must be edited directly in `reels.conf`.
 | `gif_cell_height` | `5` | Terminal-cell height used for animated GIFs in comments |
 | `panel_shrink_steps` | `4` | Number of `reel_size_step` increments by which the reel shrinks when a panel opens |
 
-Resizing the reel, changing the volume, or toggling the navbar while using Reels updates `reels.conf` automatically.
+Resizing the reel, changing the volume, or toggling the navbar or autoscroll while using Reels updates `reels.conf` automatically.
 
 ## Keybinds
 
@@ -49,6 +50,7 @@ You can also edit keybinds by hand.
 | `key_seek_backward` | `h` | Seek backward 5 seconds |
 | `key_seek_forward` | `l` | Seek forward 5 seconds |
 | `key_pause` | `p` | Pause or resume playback |
+| `key_auto_scroll` | `a` | Toggle autoscroll |
 | `key_like` | `space` | Like or unlike the current reel |
 | `key_repost` | `r` | Repost or unrepost the current reel |
 | `key_save` | `b` | Save or unsave the current reel |
@@ -119,6 +121,7 @@ Mouse controls are fixed and cannot be rebound.
 # default config (created on first run)
 
 show_navbar = true
+auto_scroll = false
 
 # auto detects 2 on macOS, 1 on Linux by default
 retina_scale = 2
@@ -140,6 +143,7 @@ key_mute = m
 key_like = space
 key_repost = r
 key_navbar = e
+key_auto_scroll = a
 key_vol_up = ]
 key_vol_down = [
 key_reel_size_inc = =
