@@ -205,7 +205,8 @@ func (b *ChromeBackend) FetchMoreComments() {
 		"last":       nil,
 		"media_id":   reelPK,
 		"sort_order": "popular",
-		"__relay_internal__pv__PolarisIsLoggedInrelayprovider": true,
+		"__relay_internal__pv__PolarisIsLoggedInrelayprovider":                  true,
+		"__relay_internal__pv__PolarisThreadsStyleCommentsEnabledrelayprovider": false,
 	}
 	req, err := newGraphQLRequest(b.ctx, template, paginationDocID, paginationFriendlyName, readEndpoint, vars)
 	if err != nil {
@@ -277,7 +278,8 @@ func (b *ChromeBackend) FetchChildComments(parentPK string) {
 		"media_id":          reelPK,
 		"parent_comment_id": parentPK,
 		"is_chronological":  nil,
-		"__relay_internal__pv__PolarisIsLoggedInrelayprovider": true,
+		"__relay_internal__pv__PolarisIsLoggedInrelayprovider":                  true,
+		"__relay_internal__pv__PolarisThreadsStyleCommentsEnabledrelayprovider": false,
 	}
 	req, err := newGraphQLRequest(b.ctx, template, childCommentsDocID, childCommentsFriendlyName, readEndpoint, vars)
 	if err != nil {

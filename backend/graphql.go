@@ -14,13 +14,13 @@ import (
 )
 
 const (
-	initialCommentsDocID        = "27896580903354254"
+	initialCommentsDocID        = "39490101983970943"
 	initialCommentsFriendlyName = "PolarisPostCommentsContainerQuery"
 
-	paginationDocID        = "28428885330094742"
+	paginationDocID        = "30160792753520860"
 	paginationFriendlyName = "PolarisPostCommentsPaginationQuery"
 
-	childCommentsDocID        = "28027289793632076"
+	childCommentsDocID        = "28826392170350483"
 	childCommentsFriendlyName = "PolarisPostChildCommentsQuery"
 
 	clipsDocID        = "28115468621393196"
