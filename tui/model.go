@@ -462,7 +462,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.player.Stop()
 			m.status = statusLoading
 			m.comments.Clear()
-			m.hud.HideChatBanner()
 			return m, tea.Batch(m.loadCurrentReel, m.listenForBackendEvents)
 		}
 		return m, m.listenForBackendEvents

@@ -23,7 +23,6 @@ type (
 )
 
 // hudItem identifies which overlay is currently displayed.
-// Higher values = higher priority.
 type hudItem int
 
 const (
@@ -57,72 +56,61 @@ type HUD struct {
 	autoScrollGen      int
 }
 
+// activate makes item the displayed overlay and hides all the others.
+func (h *HUD) activate(item hudItem) {
+	h.volumeFadeStep = 0
+	h.dmNotifyFadeStep = 0
+	h.chatBannerFadeStep = 0
+	h.autoScrollFadeStep = 0
+
+	h.active = item
+	switch item {
+	case hudVolume:
+		h.volumeFadeStep = 1
+	case hudDMNotify:
+		h.dmNotifyFadeStep = 1
+	case hudChatBanner:
+		h.chatBannerFadeStep = 1
+	case hudAutoScroll:
+		h.autoScrollFadeStep = 1
+	}
+}
+
 // ShowVolume triggers the volume indicator
 func (h *HUD) ShowVolume() tea.Cmd {
-	if h.active > hudVolume {
-		return nil
-	}
-	h.active = hudVolume
-	h.volumeFadeStep = 1
+	h.activate(hudVolume)
+
 	h.volumeGen++
+
 	return h.volumeHoldTick()
 }
 
 // ShowAutoScroll triggers the autoscroll on/off indicator
 func (h *HUD) ShowAutoScroll() tea.Cmd {
-	if h.active == hudVolume {
-		h.volumeFadeStep = 0
-	}
-	if h.active == hudDMNotify {
-		h.dmNotifyFadeStep = 0
-	}
-	h.active = hudAutoScroll
-	h.autoScrollFadeStep = 1
+	h.activate(hudAutoScroll)
+
 	h.autoScrollGen++
+
 	return h.autoScrollHoldTick()
 }
 
 // ShowDMNotify triggers the DM reels notification
 func (h *HUD) ShowDMNotify(count int) tea.Cmd {
-	if h.active == hudVolume {
-		h.volumeFadeStep = 0
-	}
-	if h.active == hudAutoScroll {
-		h.autoScrollFadeStep = 0
-	}
-	h.active = hudDMNotify
-	h.dmNotifyFadeStep = 1
+	h.activate(hudDMNotify)
+
 	h.dmNotifyCount = count
+
 	return h.dmNotifyHoldTick()
 }
 
 // ShowChatBanner triggers the ephemeral chat-mode banner
 func (h *HUD) ShowChatBanner(title string, keysReactOpen []string) tea.Cmd {
-	if h.active == hudVolume {
-		h.volumeFadeStep = 0
-	}
-	if h.active == hudAutoScroll {
-		h.autoScrollFadeStep = 0
-	}
-	if h.active == hudDMNotify {
-		h.dmNotifyFadeStep = 0
-	}
-	h.active = hudChatBanner
-	h.chatBannerFadeStep = 1
+	h.activate(hudChatBanner)
+
 	h.chatBannerTitle = title
 	h.chatBannerKeys = keysReactOpen
 	h.chatBannerGen++
 	return h.chatBannerHoldTick()
-}
-
-// HideChatBanner dismisses the banner immediately. Called on chat-mode
-// exit, where the react hint would be stale.
-func (h *HUD) HideChatBanner() {
-	h.chatBannerFadeStep = 0
-	h.chatBannerGen++
-	if h.active == hudChatBanner {
-		h.active = hudNone
-	}
 }
 
 // paintHUD paints the active overlay — volume bar, autoscroll state, DM
