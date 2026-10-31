@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.4.10]
+- Autoscroll: automatically advance to the next reel when one ends (default bind a to toggle on/off). @Lavanic (#16)
+- Fix: Update Instagram comments doc_ids to match new frontend
+- Refactor HUD overlay logic (notification banner behavior will differ slightly)
+
 ## [1.4.9]
 - chrome-for-testing released for linux-arm64! Reels TUI now installs chrome for linux-arm64 if no system chrome is found (mirroring linux-amd64 and macOS-arm64)
 - Chrome bumped from 147.0.7727.50 to 155.0.8059.39
