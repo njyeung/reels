@@ -101,7 +101,8 @@ func (fc *FeedCursor) domPK() (string, error) {
 					let parent = video.parentElement;
 					for (let i = 0; i < 12; i++) {
 						if (!parent) break;
-						const img = parent.querySelector('img[src*="ig_cache_key"]');
+						const img = [...parent.querySelectorAll('img[src*="ig_cache_key"]')]
+							.find(img => !/\/t51\.\d+-19\//.test(img.src));
 						if (img) return img.src;
 						parent = parent.parentElement;
 					}
