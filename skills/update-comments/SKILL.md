@@ -76,7 +76,7 @@ Triggered by opening a reel's comments, then clicking **"View all X replies"** u
 | `doc_id` | `childCommentsDocID` | `FetchChildComments()` (`backend/comments.go`) |
 | `fb_api_req_friendly_name` | `childCommentsFriendlyName` | `FetchChildComments()` (`backend/comments.go`) |
 
-The variables carry `parent_comment_id` and `media_id` (plus null `after`/`before`/`first`/`last`/`is_chronological`). This request is independent of the initial/pagination pair — it only affects expanding replies, so the user may not always provide it.
+The variables carry `parent_comment_id` (plus null `after`/`before`/`first`/`last` and the `__relay_internal__pv__*` flags) — no `media_id`. The response root is `data.fetch__XIGComment.child_comments_connection` (mapped by `childCommentsResponse`). This request is independent of the initial/pagination pair — it only affects expanding replies, so the user may not always provide it.
 
 ## Step-by-step process
 
@@ -127,7 +127,7 @@ Update only the constants that changed in `backend/graphql.go`. Use the Edit too
 
 Beyond the constants, Instagram could also change:
 
-- **Response JSON structure**: The `commentsResponse` struct (`backend/comments.go`) maps the GraphQL response. If comments stop appearing entirely (not just pagination), the response shape may have changed. The key field is `xdt_api__v1__media__media_id__comments__connection` — if this string changes, the fetch-interception routers (`processFeedGraphQLBody()` / `processDMGraphQLBody()` in `backend/graphql.go`) won't even route to comments processing.
+- **Response JSON structure**: The `commentsResponse` struct (`backend/comments.go`) maps the GraphQL response. If comments stop appearing entirely (not just pagination), the response shape may have changed. The response root is `data.comments_media.comments_connection` (previously `xdt_api__v1__media__media_id__comments__connection`) and the routers match on `"comments_media"` — if this changes, the fetch-interception routers (`processFeedGraphQLBody()` / `processDMGraphQLBody()` in `backend/graphql.go`) won't even route to comments processing.
 - **Reels response structure**: Similarly, `xdt_api__v1__clips__home__connection_v2` routes reel responses. If reels stop loading, this may have changed (see the `update-clips` skill).
 - **Pagination variables**: `FetchMoreComments()` (`backend/comments.go`) builds a specific variables JSON with fields like `after`, `first`, `media_id`, `sort_order`. If pagination returns empty results despite correct doc_id, these field names may have changed.
 
@@ -140,6 +140,6 @@ If the user reports issues beyond "pagination doesn't work", investigate these s
 | Comments load but can't load more | `initialCommentsDocID` changed (validation fails, pagination disabled) |
 | Pagination request returns errors | `paginationDocID` or `paginationFriendlyName` changed |
 | "View all X replies" won't expand | `childCommentsDocID` or `childCommentsFriendlyName` changed |
-| No comments load at all | Response structure changed (`xdt_api__v1__media__media_id__comments__connection` renamed) |
+| No comments load at all | Response structure changed (`comments_media.comments_connection` renamed) |
 | No reels load at all | Response structure changed (`xdt_api__v1__clips__home__connection_v2` renamed) |
 | Everything fails | `expectedAppID` changed |

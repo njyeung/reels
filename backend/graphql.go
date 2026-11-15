@@ -14,13 +14,13 @@ import (
 )
 
 const (
-	initialCommentsDocID        = "39490101983970943"
+	initialCommentsDocID        = "28967752479583802"
 	initialCommentsFriendlyName = "PolarisPostCommentsContainerQuery"
 
-	paginationDocID        = "30160792753520860"
+	paginationDocID        = "29250323357962155"
 	paginationFriendlyName = "PolarisPostCommentsPaginationQuery"
 
-	childCommentsDocID        = "28826392170350483"
+	childCommentsDocID        = "29474154138887404"
 	childCommentsFriendlyName = "PolarisPostChildCommentsQuery"
 
 	clipsDocID        = "28115468621393196"
@@ -334,7 +334,7 @@ func (b *ChromeBackend) processDMGraphQLBody(ctx context.Context, e *fetch.Event
 		b.dm.CaptureTemplate(decodePostData(e))
 		b.processThreadResponse(bodyStr)
 
-	case strings.Contains(bodyStr, "xdt_api__v1__media__media_id__comments__connection"):
+	case strings.Contains(bodyStr, `"comments_media"`):
 		postData := decodePostData(e)
 		// Skip pagination responses, FetchMoreComments handles those directly
 		if !strings.Contains(postData, paginationFriendlyName) {
@@ -370,7 +370,7 @@ func (b *ChromeBackend) processFeedGraphQLBody(ctx context.Context, e *fetch.Eve
 	case strings.Contains(bodyStr, "xdt_api__v1__clips__home__connection_v2"):
 		b.dm.CaptureTemplate(decodePostData(e))
 		b.processReelResponse(bodyStr)
-	case strings.Contains(bodyStr, "xdt_api__v1__media__media_id__comments__connection"):
+	case strings.Contains(bodyStr, `"comments_media"`):
 		postData := decodePostData(e)
 		// Skip pagination responses, FetchMoreComments handles those directly
 		if !strings.Contains(postData, paginationFriendlyName) {

@@ -35,16 +35,18 @@ type commentEdge struct {
 	Node commentNode `json:"node"`
 }
 
-// commentsResponse represents the xdt_api__v1__media__media_id__comments__connection GraphQL response structure
+// commentsResponse represents the comments_media.comments_connection GraphQL response structure
 type commentsResponse struct {
 	Data struct {
-		Connection struct {
-			Edges    []commentEdge `json:"edges"`
-			PageInfo struct {
-				EndCursor   string `json:"end_cursor"`
-				HasNextPage bool   `json:"has_next_page"`
-			} `json:"page_info"`
-		} `json:"xdt_api__v1__media__media_id__comments__connection"`
+		Media struct {
+			Connection struct {
+				Edges    []commentEdge `json:"edges"`
+				PageInfo struct {
+					EndCursor   string `json:"end_cursor"`
+					HasNextPage bool   `json:"has_next_page"`
+				} `json:"page_info"`
+			} `json:"comments_connection"`
+		} `json:"comments_media"`
 	} `json:"data"`
 }
 
@@ -52,9 +54,11 @@ type commentsResponse struct {
 // returned by PolarisPostChildCommentsQuery. Replies arrive in a single page.
 type childCommentsResponse struct {
 	Data struct {
-		Connection struct {
-			Edges []commentEdge `json:"edges"`
-		} `json:"xdt_api__v1__media__media_id__comments__parent_comment_id__child_comments__connection"`
+		Comment struct {
+			Connection struct {
+				Edges []commentEdge `json:"edges"`
+			} `json:"child_comments_connection"`
+		} `json:"fetch__XIGComment"`
 	} `json:"data"`
 }
 
@@ -155,14 +159,14 @@ func (b *ChromeBackend) processCommentsResponse(body string, requestPostData str
 		return
 	}
 
-	comments := b.extractComments(resp.Data.Connection.Edges, "")
+	comments := b.extractComments(resp.Data.Media.Connection.Edges, "")
 
 	reelPK := b.comments.GetReelPK()
 	if reelPK != "" {
 		b.updateReelComments(reelPK, comments)
 	}
 
-	pageInfo := resp.Data.Connection.PageInfo
+	pageInfo := resp.Data.Media.Connection.PageInfo
 
 	// Only enable pagination if the request passes validation
 	if validateCommentsRequest(requestPostData, appID) && (!pageInfo.HasNextPage || pageInfo.EndCursor != "") {
@@ -199,14 +203,17 @@ func (b *ChromeBackend) FetchMoreComments() {
 
 	// Build pagination variables
 	vars := map[string]interface{}{
-		"after":      cursor,
-		"before":     nil,
-		"first":      10,
-		"last":       nil,
-		"media_id":   reelPK,
-		"sort_order": "popular",
+		"after":                         cursor,
+		"first":                         10,
+		"is_mobile_web":                 false,
+		"liked_by_author_badge_enabled": false,
+		"media_id":                      reelPK,
+		"sort_order":                    "popular",
+		"__relay_internal__pv__PolarisIsMobileWebrelayprovider":                 false,
+		"__relay_internal__pv__PolarisLikedByAuthorBadgeEnabledrelayprovider":   false,
 		"__relay_internal__pv__PolarisIsLoggedInrelayprovider":                  true,
 		"__relay_internal__pv__PolarisThreadsStyleCommentsEnabledrelayprovider": false,
+		"__relay_internal__pv__PolarisPinnedCommentsEnabledrelayprovider":       false,
 	}
 	req, err := newGraphQLRequest(b.ctx, template, paginationDocID, paginationFriendlyName, readEndpoint, vars)
 	if err != nil {
@@ -235,15 +242,15 @@ func (b *ChromeBackend) FetchMoreComments() {
 		return
 	}
 
-	newComments := b.extractComments(paginationResp.Data.Connection.Edges, "")
+	newComments := b.extractComments(paginationResp.Data.Media.Connection.Edges, "")
 	if len(newComments) > 0 {
 		b.updateReelComments(reelPK, newComments)
 	}
 
 	// Update cursor for next pagination
 	b.setCommentsPagination(
-		paginationResp.Data.Connection.PageInfo.EndCursor,
-		paginationResp.Data.Connection.PageInfo.HasNextPage,
+		paginationResp.Data.Media.Connection.PageInfo.EndCursor,
+		paginationResp.Data.Media.Connection.PageInfo.HasNextPage,
 	)
 }
 
@@ -273,13 +280,13 @@ func (b *ChromeBackend) FetchChildComments(parentPK string) {
 	vars := map[string]interface{}{
 		"after":             nil,
 		"before":            nil,
+		"parent_comment_id": parentPK,
 		"first":             nil,
 		"last":              nil,
-		"media_id":          reelPK,
-		"parent_comment_id": parentPK,
-		"is_chronological":  nil,
 		"__relay_internal__pv__PolarisIsLoggedInrelayprovider":                  true,
+		"__relay_internal__pv__PolarisLikedByAuthorBadgeEnabledrelayprovider":   false,
 		"__relay_internal__pv__PolarisThreadsStyleCommentsEnabledrelayprovider": false,
+		"__relay_internal__pv__PolarisPinnedCommentsEnabledrelayprovider":       false,
 	}
 	req, err := newGraphQLRequest(b.ctx, template, childCommentsDocID, childCommentsFriendlyName, readEndpoint, vars)
 	if err != nil {
@@ -300,7 +307,7 @@ func (b *ChromeBackend) FetchChildComments(parentPK string) {
 		return
 	}
 
-	children := b.extractComments(resp.Data.Connection.Edges, parentPK)
+	children := b.extractComments(resp.Data.Comment.Connection.Edges, parentPK)
 	if len(children) > 0 {
 		b.insertChildComments(reelPK, parentPK, children)
 	}
