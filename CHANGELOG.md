@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.4.11]
+- Fix: Update Instagram comments doc_ids to match new frontend
+- Fix: Parsing new Instagram frontend layout
+
 ## [1.4.10]
 - Autoscroll: automatically advance to the next reel when one ends (default bind a to toggle on/off). @Lavanic (#16)
 - Fix: Update Instagram comments doc_ids to match new frontend
